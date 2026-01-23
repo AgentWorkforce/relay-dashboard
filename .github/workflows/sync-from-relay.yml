@@ -1,0 +1,79 @@
+name: Sync from Relay
+
+on:
+  repository_dispatch:
+    types: [sync-dashboard]
+  workflow_dispatch:
+    inputs:
+      relay_version:
+        description: 'Relay version to sync with'
+        required: false
+        type: string
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout relay-dashboard
+        uses: actions/checkout@v4
+
+      - name: Checkout relay
+        uses: actions/checkout@v4
+        with:
+          repository: AgentWorkforce/relay
+          path: relay-source
+          token: ${{ secrets.RELAY_SYNC_TOKEN }}
+
+      - name: Sync dashboard files
+        run: |
+          # Sync frontend
+          rsync -av --delete \
+            relay-source/src/dashboard/app/ \
+            src/app/
+          rsync -av --delete \
+            relay-source/src/dashboard/react-components/ \
+            src/components/
+          rsync -av --delete \
+            relay-source/src/dashboard/lib/ \
+            src/lib/
+          rsync -av --delete \
+            relay-source/src/dashboard/types/ \
+            src/types/
+          rsync -av --delete \
+            relay-source/src/dashboard/landing/ \
+            src/landing/
+
+          # Sync server
+          rsync -av --delete \
+            relay-source/packages/dashboard/src/ \
+            server/
+
+          # Sync config files
+          cp relay-source/src/dashboard/tailwind.config.js ./
+          cp relay-source/src/dashboard/postcss.config.js ./
+
+          # Fix import paths
+          find src -type f -name "*.tsx" -exec sed -i 's|react-components|components|g' {} +
+
+      - name: Update version
+        if: github.event.client_payload.version != ''
+        run: |
+          npm version ${{ github.event.client_payload.version }} --no-git-tag-version
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          commit-message: "sync: Update dashboard from relay ${{ github.event.client_payload.version || 'latest' }}"
+          title: "Sync dashboard from relay"
+          body: |
+            This PR syncs the dashboard code from the relay repository.
+
+            Version: ${{ github.event.client_payload.version || 'latest' }}
+
+            Triggered by: ${{ github.event_name }}
+          branch: sync/relay-dashboard
+          delete-branch: true
