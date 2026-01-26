@@ -53,27 +53,12 @@ describe('server types', () => {
 });
 
 /**
- * Integration tests for server initialization
+ * Note: Full integration tests for server.ts require:
+ * - @agent-relay/storage (SqliteStorageAdapter)
+ * - @agent-relay/sdk (RelayClient)
+ * - @agent-relay/bridge (MultiProjectClient, AgentSpawner)
+ * - Actual file system setup (data dir, team config)
  *
- * These tests would require setting up actual dependencies.
- * Skipped in unit tests, can be enabled for integration testing.
+ * For API testing without these dependencies, use proxy-server in mock mode
+ * (see proxy-server.test.ts which covers the same API surface).
  */
-describe.skip('server integration', () => {
-  // These tests require actual @agent-relay packages and file system setup
-  // They should be run as part of an integration test suite
-
-  it('should start dashboard on specified port', async () => {
-    // Would need:
-    // - Temp directory for data
-    // - Temp team config
-    // - Port available
-  });
-
-  it('should respond to health check', async () => {
-    // Would need running server
-  });
-
-  it('should handle /api/data requests', async () => {
-    // Would need storage initialized
-  });
-});
