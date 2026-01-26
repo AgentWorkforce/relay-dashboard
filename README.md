@@ -263,13 +263,6 @@ docker run -p 3888:3888 -e RELAY_URL=http://relay:3889 relay-dashboard
 
 Export to `out/` and deploy to any static host. Configure reverse proxy for `/api/*` and `/ws`.
 
-## Publishing
-
-```bash
-npm run build
-npm publish --access public
-```
-
 ## Features
 
 - **Real-time monitoring** - Live agent status, messages, and activity via WebSocket
@@ -282,4 +275,4 @@ npm publish --access public
 
 ## License
 
-MIT
+Apache-2.0 - Copyright 2025 Agent Workforce Incorporated
