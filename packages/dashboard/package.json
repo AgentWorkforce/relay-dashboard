@@ -1,0 +1,65 @@
+{
+  "name": "@agent-relay/dashboard",
+  "version": "2.0.20",
+  "description": "Web dashboard UI for Agent Relay - visual agent coordination and management",
+  "type": "module",
+  "files": [
+    "out",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "next dev -p 3888",
+    "build": "next build",
+    "start": "next start -p 3888",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rm -rf out .next"
+  },
+  "dependencies": {
+    "@nangohq/frontend": "^0.69.20",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-search": "^0.16.0",
+    "@xterm/xterm": "^6.0.0",
+    "next": "^14.0.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-syntax-highlighter": "^16.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
+    "@testing-library/react": "^14.3.1",
+    "@types/node": "^22.19.3",
+    "@types/react": "18.3.27",
+    "@types/react-dom": "^18.2.18",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "@vitest/coverage-v8": "^3.2.4",
+    "autoprefixer": "^10.4.23",
+    "jsdom": "^24.0.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AgentWorkforce/relay-dashboard.git",
+    "directory": "packages/dashboard"
+  },
+  "keywords": [
+    "agent-relay",
+    "dashboard",
+    "web-ui",
+    "react",
+    "nextjs"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

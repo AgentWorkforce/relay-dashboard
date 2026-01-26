@@ -1,88 +1,37 @@
 {
-  "name": "@agent-relay/dashboard",
-  "version": "2.0.0",
-  "description": "Standalone web dashboard for Agent Relay - visual agent coordination and management",
-  "type": "module",
-  "main": "dist/server/index.js",
-  "types": "dist/server/index.d.ts",
-  "bin": {
-    "relay-dashboard": "./dist/server/start.js"
-  },
-  "exports": {
-    ".": {
-      "types": "./dist/server/index.d.ts",
-      "import": "./dist/server/index.js"
-    },
-    "./server": {
-      "types": "./dist/server/index.d.ts",
-      "import": "./dist/server/index.js"
-    }
-  },
-  "files": [
-    "dist",
-    "out",
-    "README.md"
+  "name": "relay-dashboard-monorepo",
+  "version": "2.0.20",
+  "private": true,
+  "description": "Monorepo for Agent Relay dashboard packages",
+  "workspaces": [
+    "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:next\" \"npm run dev:server\"",
-    "dev:next": "next dev -p 3888",
-    "dev:server": "tsx watch server/start.ts",
-    "build": "npm run build:next && npm run build:server",
-    "build:next": "next build",
-    "build:server": "tsc -p tsconfig.server.json",
-    "start": "node dist/server/start.js",
-    "start:next": "next start -p 3888",
-    "lint": "next lint",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "clean": "rm -rf dist out .next",
-    "prepublishOnly": "npm run build",
-    "deploy": "npm run build && fly deploy"
-  },
-  "dependencies": {
-    "express": "^5.2.1",
-    "http-proxy-middleware": "^3.0.0",
-    "ws": "^8.18.3",
-    "@nangohq/frontend": "^0.69.20",
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/addon-search": "^0.16.0",
-    "@xterm/xterm": "^6.0.0",
-    "next": "^14.0.4",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-syntax-highlighter": "^16.1.0"
+    "dev": "concurrently \"npm run dev -w @agent-relay/dashboard\" \"npm run dev -w @agent-relay/dashboard-server\"",
+    "dev:mock": "concurrently \"npm run dev -w @agent-relay/dashboard\" \"npm run dev:mock -w @agent-relay/dashboard-server\"",
+    "build": "npm run build -w @agent-relay/dashboard && npm run build -w @agent-relay/dashboard-server",
+    "start": "concurrently \"npm run start -w @agent-relay/dashboard\" \"npm run start -w @agent-relay/dashboard-server\"",
+    "start:mock": "concurrently \"npm run start -w @agent-relay/dashboard\" \"npm run start:mock -w @agent-relay/dashboard-server\"",
+    "lint": "npm run lint -w @agent-relay/dashboard",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspaces",
+    "test:watch": "npm run test:watch --workspaces",
+    "test:coverage": "npm run test:coverage --workspaces",
+    "clean": "npm run clean --workspaces && rm -rf node_modules",
+    "publish:dashboard": "npm publish -w @agent-relay/dashboard",
+    "publish:server": "npm publish -w @agent-relay/dashboard-server",
+    "publish:all": "npm run publish:dashboard && npm run publish:server",
+    "version:patch": "npm version patch --workspaces --no-git-tag-version",
+    "version:minor": "npm version minor --workspaces --no-git-tag-version",
+    "version:major": "npm version major --workspaces --no-git-tag-version"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.18",
-    "@testing-library/react": "^14.3.1",
-    "@types/express": "^5.0.6",
-    "@types/node": "^22.19.3",
-    "@types/react": "18.3.27",
-    "@types/react-dom": "^18.2.18",
-    "@types/react-syntax-highlighter": "^15.5.13",
-    "@types/ws": "^8.18.1",
-    "autoprefixer": "^10.4.23",
-    "concurrently": "^8.2.2",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.18",
-    "tsx": "^4.19.0",
-    "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
-  },
-  "publishConfig": {
-    "access": "public"
+    "concurrently": "^8.2.2"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/AgentWorkforce/relay-dashboard.git"
   },
-  "keywords": [
-    "agent-relay",
-    "dashboard",
-    "web-ui",
-    "agent-coordination",
-    "ai-agents"
-  ],
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"

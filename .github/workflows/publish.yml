@@ -5,10 +5,23 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
+      package:
+        description: 'Package to publish'
+        required: true
+        type: choice
+        options:
+          - all
+          - dashboard
+          - dashboard-server
       version:
-        description: 'Version to publish (leave empty to use package.json version)'
+        description: 'Version bump type (only for workflow_dispatch)'
         required: false
-        type: string
+        type: choice
+        options:
+          - ''
+          - patch
+          - minor
+          - major
 
 jobs:
   publish:
@@ -30,10 +43,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Build
         run: npm run build
 
-      - name: Publish to npm
-        run: npm publish --provenance --access public
+      - name: Test
+        run: npm run test
+
+      - name: Publish @agent-relay/dashboard
+        if: github.event_name == 'release' || github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard'
+        run: npm publish -w @agent-relay/dashboard --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @agent-relay/dashboard-server
+        if: github.event_name == 'release' || github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard-server'
+        run: npm publish -w @agent-relay/dashboard-server --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

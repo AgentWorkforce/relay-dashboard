@@ -1,31 +1,60 @@
 # Agent Relay Dashboard
 
-Standalone web dashboard for Agent Relay - a pure presentation layer over the relay protocol.
+Web dashboard for [Agent Relay](https://github.com/anthropics/agent-relay) - real-time agent monitoring, communication, and fleet management.
+
+**Works out-of-the-box** - sensible defaults, no configuration required. Can also run standalone with mock data for testing and demos.
+
+![Dashboard Screenshot](docs/screenshot.png)
+
+## Quick Start
+
+```bash
+# Install
+npm install
+
+# Run in standalone mode (no dependencies required)
+npm run dev:mock
+
+# Or run connected to relay daemon
+npm run dev
+```
 
 ## Architecture
 
+The dashboard supports two operation modes:
+
+### Mock Mode (Standalone)
 ```
-┌─────────────────────┐     ┌─────────────────────┐
-│   Dashboard UI      │     │   Relay Daemon      │
-│   (Next.js)         │     │   (relay)           │
-│                     │     │                     │
-│   ┌─────────────┐   │     │   ┌─────────────┐   │
-│   │  React      │   │     │   │  Agents     │   │
-│   │  Components │   │     │   │  Storage    │   │
-│   └──────┬──────┘   │     │   │  Bridge     │   │
-│          │          │     │   └─────────────┘   │
-│   ┌──────▼──────┐   │     │                     │
-│   │  API Client │───┼─────┼─▶ HTTP/WebSocket    │
-│   └─────────────┘   │     │   Port 3889         │
-│                     │     │                     │
-└─────────────────────┘     └─────────────────────┘
-     Port 3888
+┌─────────────────────────────────────────────────┐
+│               Dashboard                          │
+│  ┌──────────────────────────────────────────┐   │
+│  │           Next.js Frontend                │   │
+│  │   React Components • Hooks • API Client   │   │
+│  └────────────────┬─────────────────────────┘   │
+│                   │                              │
+│  ┌────────────────▼─────────────────────────┐   │
+│  │        Express Server (Mock Mode)         │   │
+│  │   Returns fixture data • No deps needed   │   │
+│  └──────────────────────────────────────────┘   │
+│                                                  │
+│              Port 3888                           │
+└─────────────────────────────────────────────────┘
 ```
 
-The dashboard is **purely presentational** - all business logic lives in the relay daemon:
-- **No direct database access** - queries via relay API
-- **No agent management logic** - commands sent to relay daemon
-- **No @agent-relay/* dependencies** - completely decoupled
+### Proxy Mode (Production)
+```
+┌─────────────────────┐     ┌─────────────────────┐
+│   Dashboard         │     │   Relay Daemon      │
+│  ┌──────────────┐   │     │                     │
+│  │  Next.js UI  │   │     │   ┌─────────────┐   │
+│  └───────┬──────┘   │     │   │  Agents     │   │
+│          │          │     │   │  Storage    │   │
+│  ┌───────▼──────┐   │     │   │  Bridge     │   │
+│  │ Proxy Server │───┼─────┼─▶ └─────────────┘   │
+│  └──────────────┘   │     │                     │
+│     Port 3888       │     │     Port 3889       │
+└─────────────────────┘     └─────────────────────┘
+```
 
 ## Installation
 
@@ -39,39 +68,64 @@ npx @agent-relay/dashboard
 
 ## Usage
 
-### With Relay Daemon Running
+### Standalone Mode (No Dependencies)
+
+Perfect for development, testing, and demos:
 
 ```bash
-# Start relay daemon (in another terminal)
-agent-relay up
+# Using npm scripts
+npm run dev:mock          # Development with hot reload
+npm run start:mock        # Production build
 
-# Start dashboard
-relay-dashboard
-# or
-npx @agent-relay/dashboard
+# Using CLI
+relay-dashboard --mock
+relay-dashboard -m -v     # Mock mode with verbose logging
 ```
 
-### Configuration
+### Connected to Relay Daemon
 
 ```bash
-# Custom port
-relay-dashboard --port 3000
+# Start relay daemon first
+agent-relay up
 
-# Custom relay daemon URL
-relay-dashboard --relay-url http://remote-relay:3889
+# Then start dashboard
+relay-dashboard
+npm run dev
+```
 
-# Verbose logging
-relay-dashboard --verbose
+### CLI Options
+
+```
+relay-dashboard [options]
+
+Options:
+  -p, --port <port>        Port to listen on (default: 3888)
+  -r, --relay-url <url>    Relay daemon URL (default: http://localhost:3889)
+  -s, --static-dir <path>  Static files directory (default: ./out)
+  -m, --mock               Run in mock mode - no relay daemon required
+  -v, --verbose            Enable verbose logging
+  -h, --help               Show help
+
+Examples:
+  relay-dashboard                  # Proxy mode
+  relay-dashboard --mock           # Standalone with mock data
+  relay-dashboard -m -v            # Mock mode, verbose
+  relay-dashboard -p 4000 -m       # Custom port
 ```
 
 ### Environment Variables
 
+All environment variables are **optional** - sensible defaults work out-of-the-box.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | 3888 | Dashboard server port |
-| `RELAY_URL` | http://localhost:3889 | Relay daemon URL to proxy to |
-| `STATIC_DIR` | ./out | Path to static files |
+| `RELAY_URL` | http://localhost:3889 | Relay daemon URL |
+| `STATIC_DIR` | ./out | Static files directory |
+| `MOCK` | false | Enable mock mode |
 | `VERBOSE` | false | Enable verbose logging |
+| `CORS_ORIGINS` | (none) | Allowed CORS origins (comma-separated, or `*`) |
+| `REQUEST_TIMEOUT` | 30000 | Request timeout in milliseconds |
 
 ## Development
 
@@ -79,54 +133,117 @@ relay-dashboard --verbose
 # Install dependencies
 npm install
 
-# Run development server
+# Development (proxy mode - needs relay daemon)
 npm run dev
 
-# Build for production
+# Development (mock mode - standalone)
+npm run dev:mock
+
+# Build
 npm run build
 
-# Start production server
-npm start
-```
+# Run tests
+npm test
 
-Development mode runs:
-- Frontend (Next.js): http://localhost:3888
-- Expects relay daemon at: http://localhost:3889
+# Type checking
+npm run typecheck
+
+# Test coverage
+npm run test:coverage
+```
 
 ## Project Structure
 
+This is a monorepo with two packages:
+
 ```
 relay-dashboard/
-├── src/
-│   ├── app/           # Next.js App Router pages
-│   ├── components/    # React components (65+)
-│   │   ├── hooks/     # Custom React hooks (25+)
-│   │   ├── channels/  # Channel management
-│   │   ├── layout/    # Layout components
-│   │   └── settings/  # Settings panels
-│   ├── lib/           # API clients & utilities
-│   ├── types/         # TypeScript definitions
-│   └── landing/       # Landing page
-├── server/            # Minimal proxy server
-│   ├── server.ts      # Express + WS proxy
-│   ├── start.ts       # CLI entry point
-│   └── index.ts       # Package exports
-├── public/            # Static assets
-└── out/               # Built static site
+├── packages/
+│   ├── dashboard/              # @agent-relay/dashboard (Next.js frontend)
+│   │   ├── src/
+│   │   │   ├── app/           # App Router pages
+│   │   │   ├── components/    # React components
+│   │   │   │   └── hooks/    # Custom React hooks
+│   │   │   ├── lib/          # API clients & utilities
+│   │   │   └── types/        # TypeScript definitions
+│   │   ├── public/           # Static assets
+│   │   └── out/              # Built static site
+│   │
+│   └── dashboard-server/       # @agent-relay/dashboard-server (Express backend)
+│       ├── server.ts          # Express + WebSocket server
+│       ├── start.ts           # CLI entry point
+│       └── mocks/             # Mock data for standalone mode
+│           ├── fixtures.ts    # Mock agents, messages, etc.
+│           └── routes.ts      # Mock API endpoints
+│
+├── package.json               # Root workspace config
+└── README.md
 ```
+
+## Testing
+
+The dashboard includes comprehensive tests:
+
+```bash
+# Run all tests
+npm test
+
+# Watch mode
+npm run test:watch
+
+# Coverage report
+npm run test:coverage
+```
+
+### Test Categories
+
+- **Server Tests** - Mock mode, proxy mode, health checks
+- **Fixture Tests** - Validates mock data structure
+- **Component Tests** - React component tests
+
+## Mock Data
+
+Mock mode includes realistic fixture data for:
+
+- **Agents** - Multiple agents with different statuses
+- **Messages** - Sample message threads
+- **Sessions** - Active and historical sessions
+- **Channels** - Team communication channels
+- **Decisions** - Pending approval/choice decisions
+- **Tasks** - Task assignments with various states
+- **Fleet** - Multi-server fleet statistics
+- **Metrics** - System and agent metrics
+
+All fixtures are in `packages/dashboard-server/mocks/fixtures.ts` and can be customized.
+
+## API Endpoints
+
+### In Mock Mode
+Returns fixture data for all endpoints:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/data` | Dashboard data (agents, messages, sessions) |
+| `GET /api/agents/:name/online` | Agent online status |
+| `POST /api/spawn` | Spawn agent (mock) |
+| `POST /api/send` | Send message (mock) |
+| `GET /api/channels` | List channels |
+| `GET /api/decisions` | List pending decisions |
+| `GET /api/tasks` | List tasks |
+| `GET /api/metrics` | System metrics |
+| `GET /api/fleet/stats` | Fleet statistics |
+| `WS /ws` | WebSocket (sends periodic mock updates) |
+
+### In Proxy Mode
+Forwards to relay daemon at configured URL.
 
 ## Deployment
 
 ### Fly.io
 
 ```bash
-# Create app
 fly apps create relay-dashboard
-
-# Set secrets
-fly secrets set RELAY_URL=https://your-relay-daemon.fly.dev
-
-# Deploy
+fly secrets set RELAY_URL=https://your-relay.fly.dev
 fly deploy
 ```
 
@@ -134,52 +251,34 @@ fly deploy
 
 ```bash
 docker build -t relay-dashboard .
+
+# Mock mode
+docker run -p 3888:3888 -e MOCK=true relay-dashboard
+
+# Proxy mode
 docker run -p 3888:3888 -e RELAY_URL=http://relay:3889 relay-dashboard
 ```
 
-### Vercel / Static Hosting
+### Static Hosting
 
-The `out/` directory contains a static export. Deploy to any static host and configure a reverse proxy for `/api/*` and `/ws` to your relay daemon.
+Export to `out/` and deploy to any static host. Configure reverse proxy for `/api/*` and `/ws`.
 
 ## Publishing
 
 ```bash
-# Build and publish to npm
+npm run build
 npm publish --access public
 ```
 
-## Syncing with Relay
-
-This repository can be synced from the relay repo via GitHub Actions.
-
-### Automatic Sync (Optional)
-
-See [.github/RELAY_WORKFLOW_TRIGGER.md](.github/RELAY_WORKFLOW_TRIGGER.md) for instructions on setting up automatic syncing when dashboard code changes in the relay repo.
-
-## API Endpoints (Proxied)
-
-All API requests are proxied to the relay daemon:
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /api/agents` | List all agents |
-| `POST /api/agents/spawn` | Spawn a new agent |
-| `POST /api/messages` | Send a message |
-| `GET /api/messages` | Get message history |
-| `WS /ws` | Real-time WebSocket connection |
-
-See the relay daemon documentation for full API reference.
-
 ## Features
 
-- Real-time agent monitoring and management
-- Multi-workspace support
-- Channel-based team coordination
-- Activity feed and broadcasts
-- Metrics and health monitoring
-- Provider authentication flows
-- Session tracking and trajectory viewing
-- Terminal log viewer
+- **Real-time monitoring** - Live agent status, messages, and activity via WebSocket
+- **Fleet management** - Multi-project/workspace support with Bridge view
+- **Communication** - Channels, direct messages, broadcasts, @mentions
+- **Terminal logs** - Stream live PTY output from agents
+- **Decision queue** - Approve/reject agent decisions requiring human input
+- **Metrics** - System health, throughput, session lifecycle
+- **Theming** - Light/dark mode, compact display options
 
 ## License
 
