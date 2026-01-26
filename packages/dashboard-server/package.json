@@ -32,6 +32,15 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@agent-relay/bridge": "^2.0.19",
+    "@agent-relay/config": "^2.0.19",
+    "@agent-relay/daemon": "^2.0.19",
+    "@agent-relay/protocol": "^2.0.19",
+    "@agent-relay/resiliency": "^2.0.19",
+    "@agent-relay/sdk": "^2.0.19",
+    "@agent-relay/storage": "^2.0.19",
+    "@agent-relay/trajectory": "^2.0.19",
+    "@agent-relay/utils": "^2.0.19",
     "express": "^5.2.1",
     "http-proxy-middleware": "^3.0.0",
     "ws": "^8.18.3"
@@ -39,8 +48,10 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^22.19.3",
+    "@types/supertest": "^6.0.2",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^3.2.4",
+    "supertest": "^7.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"

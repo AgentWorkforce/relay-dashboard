@@ -1,0 +1,131 @@
+/**
+ * Dashboard Server Types
+ *
+ * Core interfaces and types for the dashboard server.
+ */
+
+import type { Express } from 'express';
+import type { Server } from 'http';
+import type { WebSocketServer } from 'ws';
+
+/**
+ * Options for starting the dashboard server
+ */
+export interface DashboardOptions {
+  /** Port to listen on */
+  port: number;
+  /** Data directory for storage */
+  dataDir: string;
+  /** Team directory for configuration */
+  teamDir: string;
+  /** Path to SQLite database (defaults to dataDir/dashboard.db) */
+  dbPath?: string;
+  /** Enable agent spawning API */
+  enableSpawner?: boolean;
+  /** Project root for spawner (defaults to dataDir) */
+  projectRoot?: string;
+  /** Tmux session name for workers */
+  tmuxSession?: string;
+  /**
+   * Callback to mark an agent as spawning (before HELLO completes).
+   * Messages sent to this agent will be queued for delivery after registration.
+   */
+  onMarkSpawning?: (agentName: string) => void;
+  /**
+   * Callback to clear the spawning flag for an agent.
+   * Called when spawn fails or is cancelled.
+   */
+  onClearSpawning?: (agentName: string) => void;
+}
+
+/**
+ * Options for the proxy/mock server (simpler mode)
+ */
+export interface ProxyServerOptions {
+  /** Port to listen on (default: 3888) */
+  port?: number;
+  /** Relay daemon URL to proxy to (default: http://localhost:3889) */
+  relayUrl?: string;
+  /** Path to static files directory (default: ../out) */
+  staticDir?: string;
+  /** Enable verbose logging */
+  verbose?: boolean;
+  /** Run in mock mode (no relay daemon required) */
+  mock?: boolean;
+  /** CORS allowed origins (comma-separated, or '*' for all) */
+  corsOrigins?: string;
+  /** Request timeout in milliseconds (default: 30000) */
+  requestTimeout?: number;
+}
+
+/**
+ * Dashboard server instance
+ */
+export interface DashboardServer {
+  app: Express;
+  server: Server;
+  wss: WebSocketServer;
+  close: () => Promise<void>;
+  mode: 'full' | 'proxy' | 'mock';
+}
+
+/**
+ * Agent state tracking
+ */
+export interface AgentState {
+  name: string;
+  status: 'idle' | 'working' | 'waiting' | 'error';
+  lastSeen: string;
+  lastUpdated: string;
+  currentTask?: string;
+  completedTasks?: string[];
+  context?: string;
+}
+
+/**
+ * Channel record for tracking channel state
+ */
+export interface ChannelRecord {
+  id: string;
+  visibility: 'public' | 'private';
+  status: 'active' | 'archived';
+  createdAt?: number;
+  createdBy?: string;
+  description?: string;
+  lastActivityAt: number;
+  lastMessage?: { content: string; from: string; timestamp: string };
+  members: Set<string>;
+  dmParticipants?: string[];
+}
+
+/**
+ * Thread metadata for conversation threading
+ */
+export interface ThreadMetadata {
+  threadId: string;
+  parentId?: string;
+  replyCount?: number;
+  lastReplyAt?: string;
+  participants?: string[];
+}
+
+/**
+ * Server context passed to route handlers
+ */
+export interface ServerContext {
+  /** Data directory */
+  dataDir: string;
+  /** Team directory */
+  teamDir: string;
+  /** Database path */
+  dbPath?: string;
+  /** Project root */
+  projectRoot?: string;
+  /** Default workspace ID */
+  defaultWorkspaceId?: string;
+  /** Enable spawner */
+  enableSpawner?: boolean;
+  /** Spawn callbacks */
+  onMarkSpawning?: (name: string) => void;
+  onClearSpawning?: (name: string) => void;
+}
