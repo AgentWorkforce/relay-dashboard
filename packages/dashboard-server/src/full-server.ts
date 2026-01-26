@@ -21,6 +21,7 @@ import { loadTeamsConfig } from '@agent-relay/config';
 import { getMemoryMonitor } from '@agent-relay/resiliency';
 import { detectWorkspacePath, getAgentOutboxTemplate } from '@agent-relay/config';
 import type { ThreadMetadata } from './types/threading.js';
+import type { DashboardOptions } from './types/index.js';
 import {
   startCLIAuth,
   getAuthSession,
@@ -381,29 +382,6 @@ interface AgentSummary {
   currentTask?: string;
   completedTasks?: string[];
   context?: string;
-}
-
-export interface DashboardOptions {
-  port: number;
-  dataDir: string;
-  teamDir: string;
-  dbPath?: string;
-  /** Enable agent spawning API */
-  enableSpawner?: boolean;
-  /** Project root for spawner (defaults to dataDir) */
-  projectRoot?: string;
-  /** Tmux session name for workers */
-  tmuxSession?: string;
-  /**
-   * Callback to mark an agent as spawning (before HELLO completes).
-   * Messages sent to this agent will be queued for delivery after registration.
-   */
-  onMarkSpawning?: (agentName: string) => void;
-  /**
-   * Callback to clear the spawning flag for an agent.
-   * Called when spawn fails or is cancelled.
-   */
-  onClearSpawning?: (agentName: string) => void;
 }
 
 export async function startDashboard(port: number, dataDir: string, teamDir: string, dbPath?: string): Promise<number>;
