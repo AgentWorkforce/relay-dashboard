@@ -21,27 +21,29 @@ npm run dev
 
 ## Architecture
 
-The dashboard supports two operation modes:
+The dashboard supports three operation modes:
 
-### Mock Mode (Standalone)
+### 1. Full Mode (CLI Integration)
+Used by `agent-relay up --dashboard`. Direct @agent-relay package integration.
 ```
 ┌─────────────────────────────────────────────────┐
-│               Dashboard                          │
+│               Dashboard (Full Mode)              │
 │  ┌──────────────────────────────────────────┐   │
 │  │           Next.js Frontend                │   │
 │  │   React Components • Hooks • API Client   │   │
 │  └────────────────┬─────────────────────────┘   │
 │                   │                              │
 │  ┌────────────────▼─────────────────────────┐   │
-│  │        Express Server (Mock Mode)         │   │
-│  │   Returns fixture data • No deps needed   │   │
+│  │        Full Server (startDashboard)       │   │
+│  │   @agent-relay/storage • sdk • bridge     │   │
+│  │   Direct DB access • Agent spawning       │   │
 │  └──────────────────────────────────────────┘   │
-│                                                  │
 │              Port 3888                           │
 └─────────────────────────────────────────────────┘
 ```
 
-### Proxy Mode (Production)
+### 2. Proxy Mode (Standalone)
+Forwards requests to a running relay daemon.
 ```
 ┌─────────────────────┐     ┌─────────────────────┐
 │   Dashboard         │     │   Relay Daemon      │
@@ -54,6 +56,24 @@ The dashboard supports two operation modes:
 │  └──────────────┘   │     │                     │
 │     Port 3888       │     │     Port 3889       │
 └─────────────────────┘     └─────────────────────┘
+```
+
+### 3. Mock Mode (Development)
+Returns fixture data. No external dependencies required.
+```
+┌─────────────────────────────────────────────────┐
+│               Dashboard (Mock Mode)              │
+│  ┌──────────────────────────────────────────┐   │
+│  │           Next.js Frontend                │   │
+│  │   React Components • Hooks • API Client   │   │
+│  └────────────────┬─────────────────────────┘   │
+│                   │                              │
+│  ┌────────────────▼─────────────────────────┐   │
+│  │        Express Server (Mock Mode)         │   │
+│  │   Returns fixture data • No deps needed   │   │
+│  └──────────────────────────────────────────┘   │
+│              Port 3888                           │
+└─────────────────────────────────────────────────┘
 ```
 
 ## Installation
@@ -159,22 +179,32 @@ This is a monorepo with two packages:
 ```
 relay-dashboard/
 ├── packages/
-│   ├── dashboard/              # @agent-relay/dashboard (Next.js frontend)
+│   ├── dashboard/              # @agent-relay/dashboard
 │   │   ├── src/
-│   │   │   ├── app/           # App Router pages
+│   │   │   ├── app/           # Next.js App Router pages
 │   │   │   ├── components/    # React components
-│   │   │   │   └── hooks/    # Custom React hooks
-│   │   │   ├── lib/          # API clients & utilities
-│   │   │   └── types/        # TypeScript definitions
-│   │   ├── public/           # Static assets
-│   │   └── out/              # Built static site
+│   │   │   │   └── hooks/     # Custom React hooks
+│   │   │   ├── lib/           # API clients & utilities
+│   │   │   └── types/         # TypeScript definitions
+│   │   ├── public/            # Static assets
+│   │   ├── out/               # Built static site
+│   │   └── index.ts           # Re-exports from dashboard-server
 │   │
-│   └── dashboard-server/       # @agent-relay/dashboard-server (Express backend)
-│       ├── server.ts          # Express + WebSocket server
-│       ├── start.ts           # CLI entry point
-│       └── mocks/             # Mock data for standalone mode
-│           ├── fixtures.ts    # Mock agents, messages, etc.
-│           └── routes.ts      # Mock API endpoints
+│   └── dashboard-server/       # @agent-relay/dashboard-server
+│       └── src/
+│           ├── full-server.ts # Full server with @agent-relay integrations (5,900+ lines)
+│           ├── server.ts      # Proxy/mock server for development
+│           ├── index.ts       # Package exports
+│           ├── start.ts       # CLI entry point
+│           ├── services/      # Business logic modules
+│           │   ├── metrics.ts
+│           │   ├── needs-attention.ts
+│           │   ├── user-bridge.ts
+│           │   └── health-worker-manager.ts
+│           ├── types/         # TypeScript type definitions
+│           └── mocks/         # Mock data for standalone mode
+│               ├── fixtures.ts
+│               └── routes.ts
 │
 ├── package.json               # Root workspace config
 └── README.md

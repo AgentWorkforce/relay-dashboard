@@ -13,26 +13,50 @@ Extract the dashboard from the relay monorepo into a standalone package (`@agent
 ## Target State
 
 - Dashboard is a standalone npm package: `@agent-relay/dashboard`
-- Zero `@agent-relay/*` dependencies
-- Proxies all requests to relay daemon via HTTP/WebSocket
+- Two server modes:
+  - **Full mode**: Direct `@agent-relay/*` integration for CLI usage (`startDashboard`)
+  - **Proxy mode**: Zero dependencies, proxies to relay daemon (`startServer`)
 - Can be installed globally or run via npx
-- Relay CLI provides convenience commands to launch dashboard
+- Relay CLI imports `startDashboard` from `@agent-relay/dashboard` for full integration
 
 ## Architecture
 
+### Full Mode (CLI Integration)
+Used by `agent-relay up --dashboard`. Dashboard has direct access to storage and agents.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        User Machine                          │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │              relay-dashboard (Full Mode)              │   │
+│  │                                                       │   │
+│  │  - Static UI (Next.js)                               │   │
+│  │  - Full server with @agent-relay/* integrations      │   │
+│  │  - Direct SQLite storage access                      │   │
+│  │  - Agent spawning, trajectory, metrics               │   │
+│  │  - All 60+ API routes implemented                    │   │
+│  │                                                       │   │
+│  │  Port 3888                                           │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Proxy Mode (Standalone)
+For development or when running separately from daemon.
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        User Machine                          │
 │                                                              │
 │  ┌──────────────────┐         ┌──────────────────────────┐  │
 │  │  relay-dashboard │   HTTP  │      relay daemon        │  │
-│  │                  │ ──────▶ │                          │  │
-│  │  - Static UI     │   WS    │  - Agent management      │  │
-│  │  - Proxy server  │ ◀────── │  - Message routing       │  │
-│  │                  │         │  - Storage               │  │
-│  │  Port 3888       │         │  - All business logic    │  │
-│  └──────────────────┘         │                          │  │
-│                               │  Port 3889               │  │
+│  │  (Proxy Mode)    │ ──────▶ │                          │  │
+│  │                  │   WS    │  - Agent management      │  │
+│  │  - Static UI     │ ◀────── │  - Message routing       │  │
+│  │  - Proxy server  │         │  - Storage               │  │
+│  │                  │         │  - All business logic    │  │
+│  │  Port 3888       │         │                          │  │
+│  └──────────────────┘         │  Port 3889               │  │
 │                               └──────────────────────────┘  │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
@@ -173,29 +197,27 @@ program
 
 ### Phase 1: Publish Standalone Dashboard (Done)
 - [x] Extract dashboard code to `relay-dashboard` repo
-- [x] Remove `@agent-relay/*` dependencies
-- [x] Create minimal proxy server
+- [x] Create proxy/mock server for standalone operation
 - [x] Set up npm publishing
 - [x] Set up deployment (Fly.io)
 
-### Phase 2: Add CLI Integration
-- [ ] Add `agent-relay dashboard` command
-- [ ] Add `--dashboard` flag to `agent-relay up`
-- [ ] Add `RELAY_DASHBOARD_AUTO` env var support
-- [ ] Update CLI help/docs
+### Phase 2: Add Full Server Mode (Done)
+- [x] Add `@agent-relay/*` dependencies to dashboard-server
+- [x] Migrate full server implementation (5,900+ lines) from relay
+- [x] Add `startDashboard` function for CLI integration
+- [x] Add supporting services (metrics, user-bridge, health-worker, etc.)
+- [x] Re-export `startDashboard` from `@agent-relay/dashboard`
 
-### Phase 3: Remove from Relay Monorepo
-- [ ] Delete `src/dashboard/`
-- [ ] Delete `packages/dashboard/`
-- [ ] Remove dashboard from build scripts
-- [ ] Remove dashboard-related dependencies
-- [ ] Update monorepo documentation
+### Phase 3: Remove from Relay Monorepo (In Progress)
+- [x] Delete `packages/dashboard/` from relay (PR #316)
+- [x] Delete `packages/dashboard-server/` from relay (PR #316)
+- [x] Remove dashboard from publish.yml matrix
+- [ ] Merge cleanup PR and verify relay CLI works with npm package
 
 ### Phase 4: Update Documentation
+- [x] Update relay-dashboard README
 - [ ] Update relay README
 - [ ] Update getting started guide
-- [ ] Add dashboard installation instructions
-- [ ] Update deployment docs
 
 ## Sync Strategy
 
