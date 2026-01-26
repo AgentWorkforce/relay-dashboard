@@ -59,14 +59,14 @@ export interface ProxyServerOptions {
 }
 
 /**
- * Dashboard server instance
+ * Dashboard server instance (returned by proxy server)
  */
 export interface DashboardServer {
   app: Express;
   server: Server;
   wss: WebSocketServer;
   close: () => Promise<void>;
-  mode: 'full' | 'proxy' | 'mock';
+  mode: 'proxy' | 'mock';
 }
 
 /**

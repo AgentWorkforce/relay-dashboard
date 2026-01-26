@@ -6,7 +6,7 @@
  * Supports both proxy mode (connects to relay daemon) and mock mode (standalone).
  */
 
-import { startServer } from './server.js';
+import { startServer } from './proxy-server.js';
 
 // Parse command line arguments
 const args = process.argv.slice(2);

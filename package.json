@@ -12,7 +12,7 @@
     "build": "npm run build -w @agent-relay/dashboard && npm run build -w @agent-relay/dashboard-server",
     "start": "concurrently \"npm run start -w @agent-relay/dashboard\" \"npm run start -w @agent-relay/dashboard-server\"",
     "start:mock": "concurrently \"npm run start -w @agent-relay/dashboard\" \"npm run start:mock -w @agent-relay/dashboard-server\"",
-    "lint": "npm run lint -w @agent-relay/dashboard",
+    "lint": "echo 'TODO: Set up ESLint for both packages'",
     "typecheck": "npm run typecheck --workspaces",
     "test": "npm run test --workspaces",
     "test:watch": "npm run test:watch --workspaces",

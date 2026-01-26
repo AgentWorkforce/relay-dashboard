@@ -1,11 +1,11 @@
 /**
- * Server Tests
+ * Proxy Server Tests
  *
- * Tests for the dashboard server in both proxy and mock modes.
+ * Tests for the proxy/mock server in both proxy and mock modes.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { createServer, type DashboardServer } from './server.js';
+import { createServer, type DashboardServer } from './proxy-server.js';
 
 describe('Dashboard Server', () => {
   describe('Mock Mode', () => {

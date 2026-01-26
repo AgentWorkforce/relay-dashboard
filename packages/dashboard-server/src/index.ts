@@ -3,14 +3,14 @@
  *
  * Dashboard server for Agent Relay with two operating modes:
  *
- * 1. Full mode (startDashboard): Complete integration with @agent-relay packages.
+ * 1. Server mode (startDashboard): Complete integration with @agent-relay packages.
  *    Used by the CLI when running `agent-relay up --dashboard`.
  *
- * 2. Proxy/Mock mode (startServer): Lightweight server that proxies to a daemon
+ * 2. Proxy/Mock mode (startProxyServer): Lightweight server that proxies to a daemon
  *    or serves mock data. Used for standalone testing and development.
  *
  * @example
- * // Full mode - for CLI integration
+ * // Server mode - for CLI integration
  * import { startDashboard } from '@agent-relay/dashboard-server';
  * const port = await startDashboard({
  *   port: 3888,
@@ -21,18 +21,21 @@
  *
  * @example
  * // Proxy mode - for standalone operation
- * import { startServer } from '@agent-relay/dashboard-server';
- * const server = await startServer({
+ * import { startProxyServer } from '@agent-relay/dashboard-server';
+ * const server = await startProxyServer({
  *   port: 3888,
  *   relayUrl: 'http://localhost:3889',
  * });
  */
 
-// Full server (with @agent-relay integrations)
-export { startDashboard } from './full-server.js';
+// Main server (with @agent-relay integrations)
+export { startDashboard } from './server.js';
 
-// Proxy/Mock server (standalone)
-export { startServer, createServer } from './server.js';
+// Proxy/Mock server (standalone, for development)
+export { startServer as startProxyServer, createServer as createProxyServer } from './proxy-server.js';
+
+// Backwards compatibility aliases
+export { startServer, createServer } from './proxy-server.js';
 
 // Types
 export type {
@@ -45,8 +48,8 @@ export type {
   ThreadMetadata,
 } from './types/index.js';
 
-// Re-export from existing proxy server for backwards compatibility
-export type { DashboardServerOptions } from './server.js';
+// Re-export from proxy server for backwards compatibility
+export type { DashboardServerOptions } from './proxy-server.js';
 
 // Re-export mock fixtures for testing
 export * from './mocks/fixtures.js';

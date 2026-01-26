@@ -192,17 +192,17 @@ relay-dashboard/
 │   │
 │   └── dashboard-server/       # @agent-relay/dashboard-server
 │       └── src/
-│           ├── full-server.ts # Full server with @agent-relay integrations (5,900+ lines)
-│           ├── server.ts      # Proxy/mock server for development
-│           ├── index.ts       # Package exports
-│           ├── start.ts       # CLI entry point
-│           ├── services/      # Business logic modules
+│           ├── server.ts       # Main server with @agent-relay integrations (5,900+ lines)
+│           ├── proxy-server.ts # Lightweight proxy/mock server for development
+│           ├── index.ts        # Package exports
+│           ├── start.ts        # CLI entry point
+│           ├── services/       # Business logic modules
 │           │   ├── metrics.ts
 │           │   ├── needs-attention.ts
 │           │   ├── user-bridge.ts
 │           │   └── health-worker-manager.ts
-│           ├── types/         # TypeScript type definitions
-│           └── mocks/         # Mock data for standalone mode
+│           ├── types/          # TypeScript type definitions
+│           └── mocks/          # Mock data for standalone mode
 │               ├── fixtures.ts
 │               └── routes.ts
 │
