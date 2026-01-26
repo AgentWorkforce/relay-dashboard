@@ -52,6 +52,9 @@ jobs:
       - name: Test
         run: npm run test
 
+      - name: Update npm for OIDC support
+        run: npm install -g npm@latest
+
       - name: Publish @agent-relay/dashboard
         if: github.event_name == 'release' || github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard'
         run: npm publish -w @agent-relay/dashboard --provenance --access public
