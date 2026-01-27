@@ -387,16 +387,25 @@ function ProjectSection({
 
         {/* Switch button - shown in bridge mode for non-current projects */}
         {isBridgeMode && !isCurrentProject && onProjectSelect && (
-          <button
-            className="ml-2 py-1 px-2 text-[10px] font-medium bg-accent-cyan/20 text-accent-cyan rounded border-none cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity hover:bg-accent-cyan/30"
+          <span
+            role="button"
+            tabIndex={0}
+            className="ml-2 py-1 px-2 text-[10px] font-medium bg-accent-cyan/20 text-accent-cyan rounded cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity hover:bg-accent-cyan/30"
             onClick={(e) => {
               e.stopPropagation();
               onProjectSelect();
             }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                onProjectSelect();
+              }
+            }}
             title="Switch to this project"
           >
             Switch
-          </button>
+          </span>
         )}
       </button>
 

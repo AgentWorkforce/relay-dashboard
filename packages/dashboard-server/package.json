@@ -19,8 +19,8 @@
     "README.md"
   ],
   "scripts": {
-    "dev": "tsx watch start.ts -p 3889",
-    "dev:mock": "tsx watch start.ts -p 3889 --mock --verbose",
+    "dev": "tsx watch src/start.ts -p 3889",
+    "dev:mock": "tsx watch src/start.ts -p 3889 --mock --verbose",
     "build": "tsc",
     "start": "node dist/start.js",
     "start:mock": "node dist/start.js --mock",

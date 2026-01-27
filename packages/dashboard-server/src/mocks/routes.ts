@@ -164,16 +164,48 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
 
   // ===== Channels =====
 
+  // Track archived channels in memory for mock mode
+  const archivedChannelsList: typeof mockChannels = [];
+
   app.get('/api/channels', (_req: Request, res: Response) => {
     log('GET /api/channels');
+    // Transform mock channels to match the Channel interface expected by frontend
+    const channels = mockChannels.map(ch => ({
+      id: ch.id.startsWith('#') ? ch.id : `#${ch.id}`,
+      name: ch.name,
+      description: ch.description || '',
+      visibility: ch.isPrivate ? 'private' : 'public',
+      status: 'active',
+      createdAt: ch.createdAt,
+      createdBy: 'system',
+      memberCount: ch.memberCount || 1,
+      unreadCount: 0,
+      hasMentions: false,
+      isDm: false,
+    }));
+    // Transform archived channels the same way
+    const archivedChannels = archivedChannelsList.map(ch => ({
+      id: ch.id.startsWith('#') ? ch.id : `#${ch.id}`,
+      name: ch.name,
+      description: ch.description || '',
+      visibility: ch.isPrivate ? 'private' : 'public',
+      status: 'archived',
+      createdAt: ch.createdAt,
+      createdBy: 'system',
+      memberCount: ch.memberCount || 1,
+      unreadCount: 0,
+      hasMentions: false,
+      isDm: false,
+    }));
     res.json({
       success: true,
-      channels: mockChannels,
+      channels,
+      archivedChannels,
     });
   });
 
   app.post('/api/channels', (req: Request, res: Response) => {
-    const { name, description } = req.body || {};
+    const { name, description, isPrivate } = req.body || {};
     log(`POST /api/channels - ${name}`);
 
     if (!name) {
@@ -181,16 +213,49 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
       return;
     }
 
+    const channelName = name.startsWith('#') ? name.slice(1) : name;
+    const channelId = channelName.toLowerCase().replace(/\s+/g, '-');
+    const createdAt = new Date().toISOString();
+
+    // Add to mockChannels so it persists in the mock session
+    const newChannel = {
+      id: channelId,
+      name: channelName,
+      description: description || '',
+      memberCount: 1,
+      isPrivate: isPrivate || false,
+      createdAt,
+    };
+    mockChannels.push(newChannel);
+
     res.json({
       success: true,
       channel: {
-        id: name.toLowerCase().replace(/\s+/g, '-'),
-        name,
-        description,
+        id: channelId,
+        name: channelName,
+        description: description || '',
+        visibility: isPrivate ? 'private' : 'public',
+        status: 'active',
+        createdAt,
+        createdBy: 'Dashboard',
         memberCount: 1,
-        isPrivate: false,
-        createdAt: new Date().toISOString(),
       },
+    });
+  });
+
+  app.get('/api/channels/available-members', (_req: Request, res: Response) => {
+    log('GET /api/channels/available-members');
+    // Return mock agents as available members for channel invites
+    const agents = mockAgents.map(a => ({
+      id: a.name,
+      displayName: a.name,
+      entityType: 'agent' as const,
+      status: a.status || 'online',
+    }));
+    res.json({
+      success: true,
+      members: [], // No human users in mock mode
+      agents,
     });
   });
 
@@ -237,10 +302,100 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
     res.json({ success: true });
   });
 
+  // Channel join with body params (used by frontend)
+  app.post('/api/channels/join', (req: Request, res: Response) => {
+    const { channel, username } = req.body || {};
+    log(`POST /api/channels/join - ${channel} by ${username}`);
+    res.json({ success: true });
+  });
+
   app.post('/api/channels/:channel/leave', (req: Request, res: Response) => {
     const { channel } = req.params;
     log(`POST /api/channels/${channel}/leave`);
     res.json({ success: true });
+  });
+
+  // Channel leave with body params (used by frontend)
+  app.post('/api/channels/leave', (req: Request, res: Response) => {
+    const { channel, username } = req.body || {};
+    log(`POST /api/channels/leave - ${channel} by ${username}`);
+    res.json({ success: true });
+  });
+
+  // Archive a channel
+  app.post('/api/channels/archive', (req: Request, res: Response) => {
+    const { channel: channelId } = req.body || {};
+    log(`POST /api/channels/archive - ${channelId}`);
+
+    if (!channelId) {
+      res.status(400).json({ success: false, error: 'Channel ID is required' });
+      return;
+    }
+
+    // Find the channel in mockChannels
+    const channelName = channelId.startsWith('#') ? channelId.slice(1) : channelId;
+    const channelIndex = mockChannels.findIndex(
+      ch => ch.id === channelName || ch.id === channelId || ch.name === channelName
+    );
+
+    if (channelIndex !== -1) {
+      // Move from active to archived
+      const [channel] = mockChannels.splice(channelIndex, 1);
+      archivedChannelsList.push(channel);
+    }
+
+    res.json({
+      success: true,
+      channel: {
+        id: channelId,
+        name: channelName,
+        visibility: 'public',
+        status: 'archived',
+        createdAt: new Date().toISOString(),
+        createdBy: 'system',
+        memberCount: 1,
+        unreadCount: 0,
+        hasMentions: false,
+      },
+    });
+  });
+
+  // Unarchive a channel
+  app.post('/api/channels/unarchive', (req: Request, res: Response) => {
+    const { channel: channelId } = req.body || {};
+    log(`POST /api/channels/unarchive - ${channelId}`);
+
+    if (!channelId) {
+      res.status(400).json({ success: false, error: 'Channel ID is required' });
+      return;
+    }
+
+    // Find the channel in archivedChannelsList
+    const channelName = channelId.startsWith('#') ? channelId.slice(1) : channelId;
+    const channelIndex = archivedChannelsList.findIndex(
+      ch => ch.id === channelName || ch.id === channelId || ch.name === channelName
+    );
+
+    if (channelIndex !== -1) {
+      // Move from archived back to active
+      const [channel] = archivedChannelsList.splice(channelIndex, 1);
+      mockChannels.push(channel);
+    }
+
+    res.json({
+      success: true,
+      channel: {
+        id: channelId,
+        name: channelName,
+        visibility: 'public',
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        createdBy: 'system',
+        memberCount: 1,
+        unreadCount: 0,
+        hasMentions: false,
+      },
+    });
   });
 
   // ===== Decisions =====
@@ -696,6 +851,40 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
     res.json({
       success: true,
       message: 'Subscription has been resumed',
+    });
+  });
+
+  // ===== Usage =====
+
+  app.get('/api/usage', (_req: Request, res: Response) => {
+    log('GET /api/usage');
+    res.json({
+      success: true,
+      usage: {
+        apiCalls: 1250,
+        tokens: 450000,
+        storage: 256000000,
+        period: {
+          start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+          end: new Date().toISOString(),
+        },
+      },
+    });
+  });
+
+  // ===== Workspaces =====
+
+  app.get('/api/workspaces/primary', (_req: Request, res: Response) => {
+    log('GET /api/workspaces/primary');
+    // Return the first mock workspace as the primary workspace
+    const primaryWorkspace = mockWorkspaces[0] || {
+      id: 'mock-workspace',
+      name: 'Mock Workspace',
+      status: 'running',
+    };
+    res.json({
+      success: true,
+      workspace: primaryWorkspace,
     });
   });
 

@@ -2872,6 +2872,53 @@ export async function startDashboard(
   });
 
   /**
+   * GET /api/channels/available-members - Get available users and agents for channel invites
+   */
+  app.get('/api/channels/available-members', async (_req, res) => {
+    try {
+      const availableAgents: Array<{ id: string; displayName: string; entityType: 'agent'; status: string }> = [];
+
+      // Get spawned agents from spawner
+      if (spawner) {
+        const activeWorkers = spawner.getActiveWorkers();
+        for (const worker of activeWorkers) {
+          availableAgents.push({
+            id: worker.name,
+            displayName: worker.name,
+            entityType: 'agent',
+            status: 'online',
+          });
+        }
+      }
+
+      // Get registered users from userBridge
+      if (userBridge) {
+        const registeredUsers = userBridge.getRegisteredUsers();
+        for (const username of registeredUsers) {
+          // Skip if already in agents list or if it's a system user
+          if (!availableAgents.some(a => a.id === username) && username !== 'Dashboard') {
+            availableAgents.push({
+              id: username,
+              displayName: username,
+              entityType: 'agent', // Treat as agent for now since they're connected to relay
+              status: 'online',
+            });
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        members: [], // Human users would come from cloud/workspace in cloud mode
+        agents: availableAgents,
+      });
+    } catch (err) {
+      console.error('[channels] Failed to get available members:', err);
+      res.status(500).json({ error: 'Failed to get available members' });
+    }
+  });
+
+  /**
    * POST /api/channels - Create a new channel
    */
   app.post('/api/channels', express.json(), async (req, res) => {
@@ -2933,12 +2980,16 @@ export async function startDashboard(
       }
 
       res.json({
+        success: true,
         channel: {
           id: channelId,
           name: name.startsWith('#') ? name.slice(1) : name,
           description,
-          isPrivate: isPrivate ?? false,
+          visibility: isPrivate ? 'private' : 'public',
+          status: 'active',
+          createdAt: new Date().toISOString(),
           createdBy: username,
+          memberCount: 1,
         },
       });
     } catch (err: any) {

@@ -1,0 +1,91 @@
+{
+  "version": "1.0.0",
+  "lockfileVersion": 1,
+  "packages": {
+    "@anthropic/frontend-design#claude": {
+      "version": "1.0.0",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40anthropic%2Ffrontend-design/1.0.0.tar.gz",
+      "integrity": "sha256-404d3d731beb8feaf0d7fff7fa967538686246cd930da612db753fa76e5fb057",
+      "format": "claude",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".claude/skills/frontend-design/SKILL.md"
+    },
+    "@prpm/creating-claude-rules-skill#claude": {
+      "version": "1.0.0",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40prpm%2Fcreating-claude-rules-skill/1.0.0.tar.gz",
+      "integrity": "sha256-5d348d29c6e9abe5b1f0328a3868094b47dddc60192fc6b8f0a364797ce62878",
+      "format": "claude",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".claude/skills/creating-claude-rules-skill/SKILL.md"
+    },
+    "@my-senior-dev/implementing-command-palettes#claude": {
+      "version": "1.0.0",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40my-senior-dev%2Fimplementing-command-palettes/1.0.0.tar.gz",
+      "integrity": "sha256-3f3a75beab22156810ca7a1d57311c71c79e5b5368f02032b43e84912c0e9d85",
+      "format": "claude",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".claude/skills/implementing-command-palettes/SKILL.md"
+    },
+    "@agent-relay/agent-relay-snippet#claude:AGENTS.md": {
+      "version": "1.1.2",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40agent-relay%2Fagent-relay-snippet/1.1.2.tar.gz",
+      "integrity": "sha256-1b575f52991910e379b7e1828ee4d593135e774e2a2cea139c76d683e831ad72",
+      "format": "claude",
+      "subtype": "snippet",
+      "sourceFormat": "generic",
+      "sourceSubtype": "snippet",
+      "installedPath": "AGENTS.md",
+      "snippetMetadata": {
+        "targetPath": "AGENTS.md",
+        "config": {
+          "target": "AGENTS.md",
+          "position": "append"
+        }
+      }
+    },
+    "@agent-workforce/trail-snippet#agents.md:AGENTS.md": {
+      "version": "1.0.1",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40agent-workforce%2Ftrail-snippet/1.0.1.tar.gz",
+      "integrity": "sha256-a7b8d388e19158b1dd4644f2786291e7c90e4b56411c41d4ede1a7d45e7568c9",
+      "format": "agents.md",
+      "subtype": "snippet",
+      "sourceFormat": "generic",
+      "sourceSubtype": "snippet",
+      "installedPath": "AGENTS.md",
+      "snippetMetadata": {
+        "targetPath": "AGENTS.md",
+        "config": {
+          "target": "AGENTS.md",
+          "position": "append"
+        }
+      }
+    },
+    "@my-senior-dev/browser-testing-with-screenshots#agents.md": {
+      "version": "1.0.0",
+      "resolved": "https://registry.prpm.dev/api/v1/packages/%40my-senior-dev%2Fbrowser-testing-with-screenshots/1.0.0.tar.gz",
+      "integrity": "sha256-d0443e43bc37284cbe81003649536ffa961bc672cb38c83696d6786c75d5a334",
+      "format": "agents.md",
+      "subtype": "skill",
+      "sourceFormat": "claude",
+      "sourceSubtype": "skill",
+      "installedPath": ".openskills/browser-testing-with-screenshots/SKILL.md",
+      "progressiveDisclosure": {
+        "mode": "progressive",
+        "resourceDir": ".openskills/browser-testing-with-screenshots",
+        "manifestPath": "AGENTS.md",
+        "resourceName": "browser-testing-with-screenshots",
+        "resourceType": "skill",
+        "skillsDir": ".openskills/browser-testing-with-screenshots",
+        "skillName": "browser-testing-with-screenshots",
+        "eager": false
+      }
+    }
+  },
+  "generated": "2026-01-27T09:29:43.957Z"
+}
