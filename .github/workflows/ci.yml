@@ -22,6 +22,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Build dashboard types first (dashboard-server imports from dashboard)
+      - name: Build dashboard types
+        run: npm run build:server -w @agent-relay/dashboard
+
       # TODO: Set up ESLint properly for both packages
       # - name: Lint
       #   run: npm run lint
