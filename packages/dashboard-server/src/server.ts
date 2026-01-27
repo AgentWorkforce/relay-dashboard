@@ -922,14 +922,34 @@ export async function startDashboard(
   const attachmentRegistry = new Map<string, Attachment>();
 
   // Serve dashboard static files at root (built with `next build` in packages/dashboard/ui)
-  // Find repo root by traversing up from __dirname until we find dist/dashboard/out or packages/dashboard/ui/out
+  // Find dashboard by checking:
+  // 1. node_modules/@agent-relay/dashboard/out (for npx usage)
+  // 2. dist/dashboard/out (for built monorepo)
+  // 3. packages/dashboard/ui/out (for dev)
   // This handles both direct paths and npm workspace symlinks
   const findDashboardDir = (): string | null => {
+    // First, try to find via require.resolve (works with npx and npm installs)
+    try {
+      // Try to resolve the dashboard package
+      const dashboardPkg = path.dirname(
+        // @ts-expect-error - import.meta.resolve is available in Node 20+
+        import.meta.resolve ? import.meta.resolve('@agent-relay/dashboard') :
+        require.resolve('@agent-relay/dashboard')
+      );
+      const nodeModulesPath = path.join(dashboardPkg, 'out');
+      if (fs.existsSync(nodeModulesPath)) return nodeModulesPath;
+    } catch {
+      // Dashboard package not installed, continue with directory search
+    }
+
     let current = __dirname;
     // Try up to 10 levels up
     for (let i = 0; i < 10; i++) {
+      // Check node_modules at this level
+      const nodeModulesPath = path.join(current, 'node_modules', '@agent-relay', 'dashboard', 'out');
       const distPath = path.join(current, 'dist', 'dashboard', 'out');
       const pkgPath = path.join(current, 'packages', 'dashboard', 'ui', 'out');
+      if (fs.existsSync(nodeModulesPath)) return nodeModulesPath;
       if (fs.existsSync(distPath)) return distPath;
       if (fs.existsSync(pkgPath)) return pkgPath;
       const parent = path.dirname(current);

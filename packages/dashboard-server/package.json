@@ -34,6 +34,7 @@
   "dependencies": {
     "@agent-relay/bridge": "^2.0.19",
     "@agent-relay/config": "^2.0.19",
+    "@agent-relay/dashboard": "^2.0.20",
     "@agent-relay/daemon": "^2.0.19",
     "@agent-relay/protocol": "^2.0.19",
     "@agent-relay/resiliency": "^2.0.19",
