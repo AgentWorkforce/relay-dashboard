@@ -23,8 +23,15 @@ import { detectWorkspacePath, getAgentOutboxTemplate } from '@agent-relay/config
 // Dynamically find the dashboard static files directory
 // We can't import from @agent-relay/dashboard directly due to circular dependency
 function findDashboardDir(): string | null {
+  // First, try the bundled 'out' folder adjacent to 'dist' (for npm global install / npx)
+  const currentFileDir = path.dirname(fileURLToPath(import.meta.url));
+  const bundledOutDir = path.join(currentFileDir, '..', 'out');
+  if (fs.existsSync(bundledOutDir)) {
+    return bundledOutDir;
+  }
+
   try {
-    // Try to resolve @agent-relay/dashboard package and find its 'out' directory
+    // Fallback: try to resolve @agent-relay/dashboard package and find its 'out' directory
     const dashboardPkg = require.resolve('@agent-relay/dashboard/package.json');
     const dashboardRoot = path.dirname(dashboardPkg);
     const outDir = path.join(dashboardRoot, 'out');
