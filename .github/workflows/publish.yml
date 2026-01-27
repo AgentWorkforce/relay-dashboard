@@ -127,6 +127,7 @@ jobs:
             package-lock.json
             packages/*/package.json
             packages/*/dist/
+            packages/*/out/
           retention-days: 1
 
   publish:
