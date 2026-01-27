@@ -350,7 +350,9 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   }, [cloudSession?.user, activeCloudWorkspaceId]);
 
   // Determine which workspaces to use (cloud mode or orchestrator)
-  const isCloudMode = Boolean(cloudSession?.user);
+  // Use hostname-based detection from CloudSessionProvider (immediate) instead of user presence (async)
+  // This prevents fetching with 'default' workspaceId before session loads
+  const isCloudMode = cloudSession?.isCloudMode ?? false;
   const effectiveWorkspaces = useMemo(() => {
     if (isCloudMode && cloudWorkspaces.length > 0) {
       // Convert cloud workspaces to the format expected by WorkspaceSelector
@@ -1477,6 +1479,8 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   // Load messages when a channel is selected (persisted + live)
   useEffect(() => {
     if (!selectedChannelId || viewMode !== 'channels') return;
+    // Don't fetch in cloud mode until we have a workspace ID
+    if (isCloudMode && !effectiveActiveWorkspaceId) return;
 
     // Check if we already have messages cached
     const existing = channelMessageMap[selectedChannelId] ?? [];
