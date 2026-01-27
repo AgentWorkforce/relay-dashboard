@@ -20,7 +20,22 @@ import { listTrajectorySteps, getTrajectoryStatus, getTrajectoryHistory } from '
 import { loadTeamsConfig } from '@agent-relay/config';
 import { getMemoryMonitor } from '@agent-relay/resiliency';
 import { detectWorkspacePath, getAgentOutboxTemplate } from '@agent-relay/config';
-import { dashboardDir as importedDashboardDir } from '@agent-relay/dashboard';
+// Dynamically find the dashboard static files directory
+// We can't import from @agent-relay/dashboard directly due to circular dependency
+function findDashboardDir(): string | null {
+  try {
+    // Try to resolve @agent-relay/dashboard package and find its 'out' directory
+    const dashboardPkg = require.resolve('@agent-relay/dashboard/package.json');
+    const dashboardRoot = path.dirname(dashboardPkg);
+    const outDir = path.join(dashboardRoot, 'out');
+    if (fs.existsSync(outDir)) {
+      return outDir;
+    }
+  } catch {
+    // Package not found, will use fallback
+  }
+  return null;
+}
 import type { ThreadMetadata } from './types/threading.js';
 import type { DashboardOptions } from './types/index.js';
 import {
@@ -924,7 +939,7 @@ export async function startDashboard(
 
   // Serve dashboard static files at root (built with `next build` in packages/dashboard/ui)
   // Use the path exported by @agent-relay/dashboard package
-  const dashboardDir = fs.existsSync(importedDashboardDir) ? importedDashboardDir : null;
+  const dashboardDir = findDashboardDir();
   if (dashboardDir) {
     console.log(`[dashboard] Serving from: ${dashboardDir}`);
     // Serve Next.js static export with .html extension handling
