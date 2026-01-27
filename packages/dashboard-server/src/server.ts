@@ -1047,8 +1047,13 @@ export async function startDashboard(
 
       client.onStateChange = (state: ClientState) => {
         console.log(`[dashboard] Relay client for ${senderName} state: ${state}`);
-        // Clean up disconnected clients
-        if (state === 'DISCONNECTED') {
+        // Handle state transitions
+        if (state === 'READY') {
+          // Re-add to map on successful reconnection
+          relayClients.set(senderName, client);
+        } else if (state === 'DISCONNECTED') {
+          // Only remove if max reconnect attempts exhausted (client gives up)
+          // The client will auto-reconnect if configured, so don't remove prematurely
           relayClients.delete(senderName);
         }
       };
@@ -3697,8 +3702,8 @@ export async function startDashboard(
     const memUsage = process.memoryUsage();
     const socketExists = fs.existsSync(socketPath);
 
-    // Check relay client connectivity (check if default Dashboard client is connected)
-    const defaultClient = relayClients.get('Dashboard');
+    // Check relay client connectivity (check if default _DashboardUI client is connected)
+    const defaultClient = relayClients.get('_DashboardUI');
     const relayConnected = defaultClient?.state === 'READY';
 
     // If socket doesn't exist, daemon may not be running properly
@@ -3727,7 +3732,7 @@ export async function startDashboard(
     const uptime = process.uptime();
     const memUsage = process.memoryUsage();
     const socketExists = fs.existsSync(socketPath);
-    const defaultClient = relayClients.get('Dashboard');
+    const defaultClient = relayClients.get('_DashboardUI');
     const relayConnected = defaultClient?.state === 'READY';
 
     if (!socketExists) {
