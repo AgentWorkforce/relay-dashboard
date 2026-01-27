@@ -21,6 +21,10 @@ on:
           - minor
           - major
         default: "patch"
+      custom_version:
+        description: "Custom version (optional, overrides version type)"
+        required: false
+        type: string
       dry_run:
         description: "Dry run (do not actually publish)"
         required: false
@@ -64,12 +68,18 @@ jobs:
       - name: Version all packages
         id: bump
         run: |
+          CUSTOM_VERSION="${{ github.event.inputs.custom_version }}"
           VERSION_TYPE="${{ github.event.inputs.version }}"
           CURRENT_VERSION=$(node -p "require('./package.json').version")
           echo "Current version: $CURRENT_VERSION"
 
-          echo "Bumping version: $VERSION_TYPE"
-          npm version "$VERSION_TYPE" --no-git-tag-version
+          if [ -n "$CUSTOM_VERSION" ]; then
+            echo "Setting version to custom value: $CUSTOM_VERSION"
+            npm version "$CUSTOM_VERSION" --no-git-tag-version --allow-same-version
+          else
+            echo "Bumping version: $VERSION_TYPE"
+            npm version "$VERSION_TYPE" --no-git-tag-version
+          fi
 
           NEW_VERSION=$(node -p "require('./package.json').version")
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
@@ -145,24 +155,24 @@ jobs:
       - name: Dry run - @agent-relay/dashboard
         if: github.event.inputs.dry_run == 'true' && (github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard')
         working-directory: packages/dashboard
-        run: npm publish --dry-run --access public
+        run: npm publish --dry-run --access public --ignore-scripts
 
       - name: Dry run - @agent-relay/dashboard-server
         if: github.event.inputs.dry_run == 'true' && (github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard-server')
         working-directory: packages/dashboard-server
-        run: npm publish --dry-run --access public
+        run: npm publish --dry-run --access public --ignore-scripts
 
       - name: Publish @agent-relay/dashboard
         if: github.event.inputs.dry_run != 'true' && (github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard')
         working-directory: packages/dashboard
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @agent-relay/dashboard-server
         if: github.event.inputs.dry_run != 'true' && (github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard-server')
         working-directory: packages/dashboard-server
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
