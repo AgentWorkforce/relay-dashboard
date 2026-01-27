@@ -1696,6 +1696,35 @@ export async function startDashboard(
     });
 
   const getMessages = async (agents: any[]): Promise<Message[]> => {
+    // Try to get messages from daemon via RelayClient (preferred - single source of truth)
+    // Uses queryMessages if available (SDK >= 2.0.26), otherwise falls back to storage
+    try {
+      const client = await getRelayClient('_DashboardUI');
+      // Check if queryMessages method exists (added in SDK 2.0.26)
+      const clientAny = client as any;
+      if (client && client.state === 'READY' && typeof clientAny.queryMessages === 'function') {
+        const messages = await clientAny.queryMessages({ limit: 100, order: 'desc' });
+        // Map daemon response to dashboard Message format
+        const mapped = messages.map((m: any) => ({
+          from: m.from,
+          to: m.to,
+          content: m.body,
+          timestamp: new Date(m.timestamp).toISOString(),
+          id: m.id,
+          thread: m.thread,
+          isBroadcast: m.isBroadcast,
+          replyCount: m.replyCount,
+          status: m.status,
+          channel: m.channel,
+        }));
+        // Dashboard expects oldest first
+        return mapped.reverse();
+      }
+    } catch (err) {
+      console.warn('[dashboard] Failed to get messages from daemon, falling back to storage:', (err as Error).message);
+    }
+
+    // Fallback to local storage (dashboard.db)
     if (storage) {
       const rows = await storage.getMessages({ limit: 100, order: 'desc' });
       const threadSummaries = buildThreadSummaryMap(rows);
