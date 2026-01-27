@@ -109,6 +109,10 @@ jobs:
           rm -rf node_modules packages/*/node_modules
           npm install
 
+      # Build dashboard types first (dashboard-server imports from dashboard)
+      - name: Build dashboard types
+        run: npm run build:server -w @agent-relay/dashboard
+
       - name: Typecheck
         run: npm run typecheck
 
