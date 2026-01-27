@@ -103,6 +103,14 @@ function mergeSettings(base: Settings, partial: Partial<Settings>): Settings {
     display: { ...base.display, ...partial.display },
     messages: { ...base.messages, ...partial.messages },
     connection: { ...base.connection, ...partial.connection },
+    agentDefaults: {
+      ...base.agentDefaults,
+      ...partial.agentDefaults,
+      defaultModels: {
+        ...base.agentDefaults?.defaultModels,
+        ...partial.agentDefaults?.defaultModels,
+      },
+    },
   };
 }
 
@@ -359,7 +367,9 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     return workspaces;
   }, [isCloudMode, cloudWorkspaces, workspaces]);
 
-  const effectiveActiveWorkspaceId = isCloudMode ? activeCloudWorkspaceId : activeWorkspaceId;
+  // In non-cloud mode, provide a fallback workspace ID for local/mock mode
+  // This ensures channels API calls work even without an orchestrator workspace
+  const effectiveActiveWorkspaceId = isCloudMode ? activeCloudWorkspaceId : (activeWorkspaceId ?? 'default');
   const effectiveIsLoading = isCloudMode ? isLoadingCloudWorkspaces : isOrchestratorLoading;
 
   // Sync the active workspace ID with the api module for cloud mode proxying
@@ -2798,6 +2808,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
         error={spawnError}
         isCloudMode={isCloudMode}
         workspaceId={effectiveActiveWorkspaceId ?? undefined}
+        agentDefaults={settings.agentDefaults}
       />
 
       {/* Add Workspace Modal */}
@@ -2820,6 +2831,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
         isLoading={isCreatingChannel}
         existingChannels={channelsList.map(c => c.name)}
         availableMembers={agents.map(a => a.name)}
+        workspaceId={effectiveActiveWorkspaceId ?? undefined}
       />
 
       {/* Invite to Channel Modal */}

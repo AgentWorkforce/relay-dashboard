@@ -15,7 +15,8 @@ import { cloudApi, getCsrfToken } from '../../lib/cloudApi';
 import { WorkspaceSettingsPanel } from './WorkspaceSettingsPanel';
 import { TeamSettingsPanel } from './TeamSettingsPanel';
 import { BillingSettingsPanel } from './BillingSettingsPanel';
-import type { Settings } from './types';
+import type { Settings, CliType } from './types';
+import { CLAUDE_MODEL_OPTIONS, CURSOR_MODEL_OPTIONS, CODEX_MODEL_OPTIONS, GEMINI_MODEL_OPTIONS } from '../SpawnModal';
 
 export interface SettingsPageProps {
   /** Current user ID for team membership checks */
@@ -292,6 +293,129 @@ export function SettingsPage({
                       />
                     </SettingRow>
                   </SettingsSection>
+
+                  {/* Agent Defaults */}
+                  <SettingsSection title="Agent Defaults" icon={<RocketIcon />}>
+                    <SettingRow
+                      label="Default Agent Type"
+                      description="Pre-select an agent type when spawning"
+                    >
+                      <select
+                        value={settings.agentDefaults?.defaultCliType ?? ''}
+                        onChange={(e) => updateSettings((prev) => ({
+                          ...prev,
+                          agentDefaults: {
+                            ...prev.agentDefaults,
+                            defaultCliType: e.target.value === '' ? null : e.target.value as CliType,
+                          },
+                        }))}
+                        className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
+                      >
+                        <option value="">None (show all templates)</option>
+                        <option value="claude">Claude</option>
+                        <option value="codex">Codex</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="cursor">Cursor</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                    </SettingRow>
+
+                    <SettingRow
+                      label="Default Claude Model"
+                      description="Default model when spawning Claude agents"
+                    >
+                      <select
+                        value={settings.agentDefaults?.defaultModels?.claude ?? 'sonnet'}
+                        onChange={(e) => updateSettings((prev) => ({
+                          ...prev,
+                          agentDefaults: {
+                            ...prev.agentDefaults,
+                            defaultModels: {
+                              ...prev.agentDefaults?.defaultModels,
+                              claude: e.target.value,
+                            },
+                          },
+                        }))}
+                        className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
+                      >
+                        {CLAUDE_MODEL_OPTIONS.map((model) => (
+                          <option key={model.value} value={model.value}>{model.label}</option>
+                        ))}
+                      </select>
+                    </SettingRow>
+
+                    <SettingRow
+                      label="Default Cursor Model"
+                      description="Default model when spawning Cursor agents"
+                    >
+                      <select
+                        value={settings.agentDefaults?.defaultModels?.cursor ?? 'opus-4.5-thinking'}
+                        onChange={(e) => updateSettings((prev) => ({
+                          ...prev,
+                          agentDefaults: {
+                            ...prev.agentDefaults,
+                            defaultModels: {
+                              ...prev.agentDefaults?.defaultModels,
+                              cursor: e.target.value,
+                            },
+                          },
+                        }))}
+                        className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
+                      >
+                        {CURSOR_MODEL_OPTIONS.map((model) => (
+                          <option key={model.value} value={model.value}>{model.label}</option>
+                        ))}
+                      </select>
+                    </SettingRow>
+
+                    <SettingRow
+                      label="Default Codex Model"
+                      description="Default model when spawning Codex agents"
+                    >
+                      <select
+                        value={settings.agentDefaults?.defaultModels?.codex ?? 'gpt-5.2-codex'}
+                        onChange={(e) => updateSettings((prev) => ({
+                          ...prev,
+                          agentDefaults: {
+                            ...prev.agentDefaults,
+                            defaultModels: {
+                              ...prev.agentDefaults?.defaultModels,
+                              codex: e.target.value,
+                            },
+                          },
+                        }))}
+                        className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
+                      >
+                        {CODEX_MODEL_OPTIONS.map((model) => (
+                          <option key={model.value} value={model.value}>{model.label}</option>
+                        ))}
+                      </select>
+                    </SettingRow>
+
+                    <SettingRow
+                      label="Default Gemini Model"
+                      description="Default model when spawning Gemini agents"
+                    >
+                      <select
+                        value={settings.agentDefaults?.defaultModels?.gemini ?? 'gemini-2.5-pro'}
+                        onChange={(e) => updateSettings((prev) => ({
+                          ...prev,
+                          agentDefaults: {
+                            ...prev.agentDefaults,
+                            defaultModels: {
+                              ...prev.agentDefaults?.defaultModels,
+                              gemini: e.target.value,
+                            },
+                          },
+                        }))}
+                        className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
+                      >
+                        {GEMINI_MODEL_OPTIONS.map((model) => (
+                          <option key={model.value} value={model.value}>{model.label}</option>
+                        ))}
+                      </select>
+                    </SettingRow>
+                  </SettingsSection>
                 </div>
               )}
 
@@ -539,6 +663,17 @@ function BellIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
+function RocketIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
+      <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
+      <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+      <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
     </svg>
   );
 }

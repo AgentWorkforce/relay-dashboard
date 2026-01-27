@@ -40,10 +40,20 @@ export interface SpawnModalProps {
   isCloudMode?: boolean;
   /** Active workspace ID for provider setup redirect */
   workspaceId?: string;
+  /** Agent defaults from settings */
+  agentDefaults?: {
+    defaultCliType: string | null;
+    defaultModels: {
+      claude: string;
+      cursor: string;
+      codex: string;
+      gemini: string;
+    };
+  };
 }
 
 /** Model options for Claude agents */
-const CLAUDE_MODEL_OPTIONS: { value: string; label: string }[] = [
+export const CLAUDE_MODEL_OPTIONS: { value: string; label: string }[] = [
   { value: 'sonnet', label: 'Sonnet' },
   { value: 'opus', label: 'Opus' },
   { value: 'haiku', label: 'Haiku' },
@@ -52,7 +62,7 @@ const CLAUDE_MODEL_OPTIONS: { value: string; label: string }[] = [
 type ClaudeModel = string;
 
 /** Model options for Cursor agents */
-const CURSOR_MODEL_OPTIONS: { value: string; label: string }[] = [
+export const CURSOR_MODEL_OPTIONS: { value: string; label: string }[] = [
   { value: 'opus-4.5-thinking', label: 'Claude 4.5 Opus (Thinking)' },
   { value: 'opus-4.5', label: 'Claude 4.5 Opus' },
   { value: 'sonnet-4.5', label: 'Claude 4.5 Sonnet' },
@@ -79,7 +89,7 @@ const CURSOR_MODEL_OPTIONS: { value: string; label: string }[] = [
 type CursorModel = string;
 
 /** Model options for Codex agents */
-const CODEX_MODEL_OPTIONS: { value: string; label: string }[] = [
+export const CODEX_MODEL_OPTIONS: { value: string; label: string }[] = [
   { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
   { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
   { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini' },
@@ -87,6 +97,16 @@ const CODEX_MODEL_OPTIONS: { value: string; label: string }[] = [
 ];
 
 type CodexModel = string;
+
+/** Model options for Gemini agents */
+export const GEMINI_MODEL_OPTIONS: { value: string; label: string }[] = [
+  { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
+];
+
+type GeminiModel = string;
 
 const AGENT_TEMPLATES = [
   {
@@ -114,6 +134,7 @@ const AGENT_TEMPLATES = [
     description: 'Google Gemini CLI agent',
     icon: '💎',
     providerId: 'google',
+    supportsModelSelection: true,
   },
   {
     id: 'opencode',
@@ -161,6 +182,7 @@ export function SpawnModal({
   error,
   isCloudMode = false,
   workspaceId,
+  agentDefaults,
 }: SpawnModalProps) {
   const [selectedTemplate, setSelectedTemplate] = useState(AGENT_TEMPLATES[0]);
   const [name, setName] = useState('');
@@ -168,6 +190,7 @@ export function SpawnModal({
   const [selectedModel, setSelectedModel] = useState<ClaudeModel>('sonnet');
   const [selectedCursorModel, setSelectedCursorModel] = useState<CursorModel>('opus-4.5-thinking');
   const [selectedCodexModel, setSelectedCodexModel] = useState<CodexModel>('gpt-5.2-codex');
+  const [selectedGeminiModel, setSelectedGeminiModel] = useState<GeminiModel>('gemini-2.5-pro');
   const [cwd, setCwd] = useState('');
   const [team, setTeam] = useState('');
   const [isShadow, setIsShadow] = useState(false);
@@ -194,8 +217,12 @@ export function SpawnModal({
     if (selectedTemplate.id === 'codex') {
       return `${selectedTemplate.command} --model ${selectedCodexModel}`;
     }
+    // For Gemini, always append model flag
+    if (selectedTemplate.id === 'gemini') {
+      return `${selectedTemplate.command} --model ${selectedGeminiModel}`;
+    }
     return selectedTemplate.command;
-  }, [selectedTemplate, customCommand, selectedModel, selectedCursorModel, selectedCodexModel]);
+  }, [selectedTemplate, customCommand, selectedModel, selectedCursorModel, selectedCodexModel, selectedGeminiModel]);
 
   const shadowMode = useMemo(() => deriveShadowMode(effectiveCommand), [effectiveCommand]);
 
@@ -281,12 +308,20 @@ export function SpawnModal({
 
   useEffect(() => {
     if (isOpen) {
-      setSelectedTemplate(AGENT_TEMPLATES[0]);
+      // Determine default template based on settings
+      const defaultTemplateId = agentDefaults?.defaultCliType;
+      const defaultTemplate = defaultTemplateId
+        ? AGENT_TEMPLATES.find(t => t.id === defaultTemplateId && !t.comingSoon) ?? AGENT_TEMPLATES[0]
+        : AGENT_TEMPLATES[0];
+
+      setSelectedTemplate(defaultTemplate);
       setName('');
       setCustomCommand('');
-      setSelectedModel('sonnet');
-      setSelectedCursorModel('opus-4.5-thinking');
-      setSelectedCodexModel('gpt-5.2-codex');
+      // Use settings-based model defaults with fallbacks
+      setSelectedModel(agentDefaults?.defaultModels?.claude ?? 'sonnet');
+      setSelectedCursorModel(agentDefaults?.defaultModels?.cursor ?? 'opus-4.5-thinking');
+      setSelectedCodexModel(agentDefaults?.defaultModels?.codex ?? 'gpt-5.2-codex');
+      setSelectedGeminiModel(agentDefaults?.defaultModels?.gemini ?? 'gemini-2.5-pro');
       setCwd('');
       setTeam('');
       setIsShadow(false);
@@ -296,7 +331,7 @@ export function SpawnModal({
       setLocalError(null);
       setTimeout(() => nameInputRef.current?.focus(), 100);
     }
-  }, [isOpen]);
+  }, [isOpen, agentDefaults]);
 
   const validateName = useCallback(
     (value: string): string | null => {
@@ -478,6 +513,28 @@ export function SpawnModal({
                 disabled={isSpawning}
               >
                 {CODEX_MODEL_OPTIONS.map((model) => (
+                  <option key={model.value} value={model.value}>
+                    {model.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Model Selection (Gemini only) */}
+          {selectedTemplate.id === 'gemini' && (
+            <div className="mb-5">
+              <label className="block text-sm font-semibold text-text-primary mb-2" htmlFor="gemini-model">
+                Model
+              </label>
+              <select
+                id="gemini-model"
+                className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
+                value={selectedGeminiModel}
+                onChange={(e) => setSelectedGeminiModel(e.target.value as GeminiModel)}
+                disabled={isSpawning}
+              >
+                {GEMINI_MODEL_OPTIONS.map((model) => (
                   <option key={model.value} value={model.value}>
                     {model.label}
                   </option>
