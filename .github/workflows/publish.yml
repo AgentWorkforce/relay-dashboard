@@ -1,47 +1,103 @@
 name: Publish to npm
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       package:
-        description: 'Package to publish'
+        description: "Package to publish"
         required: true
         type: choice
         options:
           - all
           - dashboard
           - dashboard-server
+        default: "all"
       version:
-        description: 'Version bump type (only for workflow_dispatch)'
-        required: false
+        description: "Version bump type"
+        required: true
         type: choice
         options:
-          - ''
           - patch
           - minor
           - major
+        default: "patch"
+      dry_run:
+        description: "Dry run (do not actually publish)"
+        required: false
+        type: boolean
+        default: false
+
+# Prevent concurrent publishes
+concurrency:
+  group: publish-package
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  NPM_CONFIG_FUND: false
 
 jobs:
-  publish:
+  build:
+    name: Build & Version
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "22"
+          cache: "npm"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Version all packages
+        id: bump
+        run: |
+          VERSION_TYPE="${{ github.event.inputs.version }}"
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "Current version: $CURRENT_VERSION"
+
+          echo "Bumping version: $VERSION_TYPE"
+          npm version "$VERSION_TYPE" --no-git-tag-version
+
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+          # Sync all package versions
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const version = '$NEW_VERSION';
+
+            // Update all sub-packages
+            const packagesDir = 'packages';
+            for (const dir of fs.readdirSync(packagesDir)) {
+              const pkgPath = path.join(packagesDir, dir, 'package.json');
+              if (fs.existsSync(pkgPath)) {
+                const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+                pkg.version = version;
+                console.log('@agent-relay/' + dir + ' -> v' + version);
+                fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+              }
+            }
+          "
+
+      - name: Clean reinstall after version bump
+        run: |
+          rm -rf node_modules packages/*/node_modules
+          npm install
 
       - name: Typecheck
         run: npm run typecheck
@@ -52,17 +108,130 @@ jobs:
       - name: Test
         run: npm run test
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            package.json
+            package-lock.json
+            packages/*/package.json
+            packages/*/dist/
+          retention-days: 1
+
+  publish:
+    name: Publish Packages
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: .
+
       - name: Update npm for OIDC support
         run: npm install -g npm@latest
 
+      - name: Dry run - @agent-relay/dashboard
+        if: github.event.inputs.dry_run == 'true' && (github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard')
+        working-directory: packages/dashboard
+        run: npm publish --dry-run --access public
+
+      - name: Dry run - @agent-relay/dashboard-server
+        if: github.event.inputs.dry_run == 'true' && (github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard-server')
+        working-directory: packages/dashboard-server
+        run: npm publish --dry-run --access public
+
       - name: Publish @agent-relay/dashboard
-        if: github.event_name == 'release' || github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard'
-        run: npm publish -w @agent-relay/dashboard --provenance --access public
+        if: github.event.inputs.dry_run != 'true' && (github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard')
+        working-directory: packages/dashboard
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @agent-relay/dashboard-server
-        if: github.event_name == 'release' || github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard-server'
-        run: npm publish -w @agent-relay/dashboard-server --provenance --access public
+        if: github.event.inputs.dry_run != 'true' && (github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard-server')
+        working-directory: packages/dashboard-server
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  create-release:
+    name: Create Release
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.dry_run != 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: .
+
+      - name: Commit and tag
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+          NEW_VERSION="${{ needs.build.outputs.new_version }}"
+
+          git add package.json package-lock.json packages/*/package.json
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(release): v${NEW_VERSION}"
+            git push origin HEAD:main
+          fi
+
+          git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
+          git push origin "v${NEW_VERSION}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.build.outputs.new_version }}
+          name: v${{ needs.build.outputs.new_version }}
+          body: |
+            ## @agent-relay/dashboard v${{ needs.build.outputs.new_version }}
+
+            ### Installation
+            ```bash
+            npm install @agent-relay/dashboard@${{ needs.build.outputs.new_version }}
+            npm install @agent-relay/dashboard-server@${{ needs.build.outputs.new_version }}
+            ```
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  summary:
+    name: Summary
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Summary
+        run: |
+          echo "## NPM Publish Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: \`${{ needs.build.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Package**: \`${{ github.event.inputs.package }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Dry Run**: \`${{ github.event.inputs.dry_run }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Build: ${{ needs.build.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Publish: ${{ needs.publish.result }}" >> $GITHUB_STEP_SUMMARY
