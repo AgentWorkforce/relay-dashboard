@@ -20,6 +20,7 @@ import { listTrajectorySteps, getTrajectoryStatus, getTrajectoryHistory } from '
 import { loadTeamsConfig } from '@agent-relay/config';
 import { getMemoryMonitor } from '@agent-relay/resiliency';
 import { detectWorkspacePath, getAgentOutboxTemplate } from '@agent-relay/config';
+import { dashboardDir as importedDashboardDir } from '@agent-relay/dashboard';
 import type { ThreadMetadata } from './types/threading.js';
 import type { DashboardOptions } from './types/index.js';
 import {
@@ -922,24 +923,8 @@ export async function startDashboard(
   const attachmentRegistry = new Map<string, Attachment>();
 
   // Serve dashboard static files at root (built with `next build` in packages/dashboard/ui)
-  // Find repo root by traversing up from __dirname until we find dist/dashboard/out or packages/dashboard/ui/out
-  // This handles both direct paths and npm workspace symlinks
-  const findDashboardDir = (): string | null => {
-    let current = __dirname;
-    // Try up to 10 levels up
-    for (let i = 0; i < 10; i++) {
-      const distPath = path.join(current, 'dist', 'dashboard', 'out');
-      const pkgPath = path.join(current, 'packages', 'dashboard', 'ui', 'out');
-      if (fs.existsSync(distPath)) return distPath;
-      if (fs.existsSync(pkgPath)) return pkgPath;
-      const parent = path.dirname(current);
-      if (parent === current) break; // reached root
-      current = parent;
-    }
-    return null;
-  };
-
-  const dashboardDir = findDashboardDir();
+  // Use the path exported by @agent-relay/dashboard package
+  const dashboardDir = fs.existsSync(importedDashboardDir) ? importedDashboardDir : null;
   if (dashboardDir) {
     console.log(`[dashboard] Serving from: ${dashboardDir}`);
     // Serve Next.js static export with .html extension handling
