@@ -2305,10 +2305,12 @@ export async function startDashboard(
       }
 
       // If agent is daemon-connected but not yet in spawner's activeWorkers,
-      // poll briefly to handle race condition between spawn API returning and
+      // poll to handle race condition between spawn API returning and
       // WebSocket connection. This is common for setup agents (__setup__*).
+      // Longer timeout for CLI auth flows (Cursor, etc.) which can take time to initialize.
       if (!isSpawned && isDaemon && spawner) {
-        const maxWaitMs = 3000; // Wait up to 3 seconds
+        const isSetupAgent = agentName.startsWith('__setup__');
+        const maxWaitMs = isSetupAgent ? 90000 : 5000; // 90s for setup agents (CLI auth can be slow), 5s otherwise
         const pollIntervalMs = 100;
         const startTime = Date.now();
 
