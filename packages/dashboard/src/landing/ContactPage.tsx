@@ -18,12 +18,12 @@ export function ContactPage() {
       <div className="value-card" style={{ marginTop: '32px', marginBottom: '32px' }}>
         <h3 style={{ marginBottom: '16px' }}>Email</h3>
         <p style={{ marginBottom: '24px' }}>
-          <a href="mailto:hello@agentrelay.dev" style={{ fontSize: '1.1em' }}>hello@agentrelay.dev</a>
+          <a href="mailto:hello@agent-relay.com" style={{ fontSize: '1.1em' }}>hello@agent-relay.com</a>
         </p>
 
         <h3 style={{ marginBottom: '16px' }}>Twitter / X</h3>
         <p style={{ marginBottom: 0 }}>
-          <a href="https://twitter.com/AgentRelayDev" target="_blank" rel="noopener noreferrer" style={{ fontSize: '1.1em' }}>@AgentRelayDev</a>
+          <a href="https://twitter.com/agent_relay" target="_blank" rel="noopener noreferrer" style={{ fontSize: '1.1em' }}>@agent_relay</a>
         </p>
       </div>
 
