@@ -50,21 +50,23 @@ import { HealthWorkerManager, getHealthPort } from './services/health-worker-man
 
 /**
  * Get the host to bind to.
- * In cloud environments (Fly.io, Docker), bind to 0.0.0.0 for load balancer access.
- * Locally, let Node.js use its default (:: for IPv6 dual-stack).
+ * In cloud environments, bind to '::' (IPv6 any) which also accepts IPv4 on dual-stack.
+ * This is required for Fly.io's internal IPv6 network (6PN) connectivity.
+ * Locally, let Node.js use its default behavior.
  */
 function getBindHost(): string | undefined {
   // Explicit override via env var
   if (process.env.BIND_HOST) {
     return process.env.BIND_HOST;
   }
-  // Cloud environment detection - must bind to 0.0.0.0 for external access
+  // Cloud environment detection - bind to :: for IPv6 + IPv4 dual-stack
+  // Fly.io internal network uses IPv6 (fdaa:...), so 0.0.0.0 won't work
   const isCloudEnvironment =
     process.env.FLY_APP_NAME ||           // Fly.io
     process.env.WORKSPACE_ID ||           // Agent Relay workspace
     process.env.RELAY_WORKSPACE_ID ||     // Alternative workspace ID
     process.env.RUNNING_IN_DOCKER === 'true';  // Docker container
-  return isCloudEnvironment ? '0.0.0.0' : undefined;
+  return isCloudEnvironment ? '::' : undefined;
 }
 
 /**
