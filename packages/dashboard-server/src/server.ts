@@ -33,6 +33,25 @@ import {
 import { HealthWorkerManager, getHealthPort } from './services/health-worker-manager.js';
 
 /**
+ * Get the host to bind to.
+ * In cloud environments (Fly.io, Docker), bind to 0.0.0.0 for load balancer access.
+ * Locally, let Node.js use its default (:: for IPv6 dual-stack).
+ */
+function getBindHost(): string | undefined {
+  // Explicit override via env var
+  if (process.env.BIND_HOST) {
+    return process.env.BIND_HOST;
+  }
+  // Cloud environment detection - must bind to 0.0.0.0 for external access
+  const isCloudEnvironment =
+    process.env.FLY_APP_NAME ||           // Fly.io
+    process.env.WORKSPACE_ID ||           // Agent Relay workspace
+    process.env.RELAY_WORKSPACE_ID ||     // Alternative workspace ID
+    process.env.RUNNING_IN_DOCKER === 'true';  // Docker container
+  return isCloudEnvironment ? '0.0.0.0' : undefined;
+}
+
+/**
  * Initialize cloud persistence for session tracking via API.
  *
  * Uses the cloud API endpoints instead of direct database access for better
@@ -5919,8 +5938,9 @@ Start by greeting the project leads and asking for status updates.`;
   }
 
   return new Promise((resolve, reject) => {
-    server.listen(availablePort, async () => {
-      console.log(`Dashboard running at http://localhost:${availablePort} (build: cloud-channels-v2)`);
+    const host = getBindHost();
+    const listenCallback = async () => {
+      console.log(`Dashboard running at http://${host || 'localhost'}:${availablePort} (build: cloud-channels-v2)`);
       console.log(`Monitoring: ${dataDir}`);
 
       // Set the dashboard port on spawner so spawned agents can use the API for nested spawns
@@ -5958,7 +5978,14 @@ Start by greeting the project leads and asking for status updates.`;
       }
 
       resolve(availablePort);
-    });
+    };
+
+    // Bind to specified host in cloud environments, or let Node.js default for local
+    if (host) {
+      server.listen(availablePort, host, listenCallback);
+    } else {
+      server.listen(availablePort, listenCallback);
+    }
 
     server.on('error', (err) => {
       console.error('Server error:', err);

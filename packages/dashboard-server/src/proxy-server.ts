@@ -24,6 +24,25 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/**
+ * Get the host to bind to.
+ * In cloud environments (Fly.io, Docker), bind to 0.0.0.0 for load balancer access.
+ * Locally, let Node.js use its default (:: for IPv6 dual-stack).
+ */
+function getBindHost(): string | undefined {
+  // Explicit override via env var
+  if (process.env.BIND_HOST) {
+    return process.env.BIND_HOST;
+  }
+  // Cloud environment detection - must bind to 0.0.0.0 for external access
+  const isCloudEnvironment =
+    process.env.FLY_APP_NAME ||           // Fly.io
+    process.env.WORKSPACE_ID ||           // Agent Relay workspace
+    process.env.RELAY_WORKSPACE_ID ||     // Alternative workspace ID
+    process.env.RUNNING_IN_DOCKER === 'true';  // Docker container
+  return isCloudEnvironment ? '0.0.0.0' : undefined;
+}
+
 export interface DashboardServerOptions {
   /** Port to listen on (default: 3888) */
   port?: number;
@@ -350,11 +369,19 @@ function tryListen(server: Server, port: number): Promise<number | null> {
       }
     };
 
+    const host = getBindHost();
     server.once('error', onError);
-    server.listen(port, () => {
-      server.removeListener('error', onError);
-      resolve(port);
-    });
+    if (host) {
+      server.listen(port, host, () => {
+        server.removeListener('error', onError);
+        resolve(port);
+      });
+    } else {
+      server.listen(port, () => {
+        server.removeListener('error', onError);
+        resolve(port);
+      });
+    }
   });
 }
 

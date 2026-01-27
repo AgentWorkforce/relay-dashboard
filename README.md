@@ -1,6 +1,6 @@
 # Agent Relay Dashboard
 
-Web dashboard for [Agent Relay](https://github.com/anthropics/agent-relay) - real-time agent monitoring, communication, and fleet management.
+Web dashboard for [Agent Relay](https://github.com/AgentWorkforce/relay) - real-time agent monitoring, communication, and fleet management.
 
 **Works out-of-the-box** - sensible defaults, no configuration required. Can also run standalone with mock data for testing and demos.
 
