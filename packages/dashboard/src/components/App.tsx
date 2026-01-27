@@ -768,6 +768,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     setChannelMessageMap({});
     setChannelMessages([]);
     setSelectedChannelId(undefined);
+    fetchedChannelsRef.current.clear(); // Clear fetch tracking to allow re-fetching with new workspace
   }, [effectiveActiveWorkspaceId]);
 
   // Coordinator panel state
