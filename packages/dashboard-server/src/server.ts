@@ -3384,12 +3384,15 @@ export async function startDashboard(
       }
       let messages = await storage.getMessages(query);
       // Only include channel messages for this workspace
+      // Be lenient: if message is to a channel (starts with #), treat as channel message
+      // even if _isChannelMessage flag isn't set (for backwards compatibility)
       messages = messages.filter((m) => {
         const data = m.data as any;
         if (workspaceId && data?._workspaceId && data._workspaceId !== workspaceId) {
           return false;
         }
-        return Boolean(data?._isChannelMessage);
+        // Accept message if it has _isChannelMessage flag OR if it's addressed to a channel
+        return Boolean(data?._isChannelMessage) || (m.to && m.to.startsWith('#'));
       });
 
       // Sort ascending for UI

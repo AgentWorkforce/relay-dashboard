@@ -122,6 +122,12 @@ export async function getMessages(
   channelId: string,
   options?: { before?: string; limit?: number; threadId?: string }
 ): Promise<GetMessagesResponse> {
+  // Activity feed is a virtual channel - don't fetch from API
+  // This is a safeguard in case the caller doesn't check
+  if (channelId === '__activity__') {
+    return { messages: [], hasMore: false, unread: { count: 0 } };
+  }
+
   // Ensure workspace ID is initialized for proper URL routing
   initializeWorkspaceId();
   const params = new URLSearchParams();
