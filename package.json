@@ -1,6 +1,6 @@
 {
   "name": "relay-dashboard-monorepo",
-  "version": "2.0.38",
+  "version": "2.0.39",
   "private": true,
   "description": "Monorepo for Agent Relay dashboard packages",
   "workspaces": [
