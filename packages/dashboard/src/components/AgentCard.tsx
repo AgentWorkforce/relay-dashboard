@@ -204,6 +204,11 @@ export function AgentCard({
               {agent.isLocal ? agent.daemonName || agent.machineId : getAgentBreadcrumb(agent.name)}
             </span>
           )}
+          {agent.profile?.model && (
+            <span className="text-[9px] text-accent-cyan font-mono opacity-80 mt-0.5" title={`Model: ${agent.profile.model}`}>
+              {agent.profile.model}
+            </span>
+          )}
 
           {/* Actions & Status */}
           <div className="mt-2 flex items-center flex-wrap gap-2">
@@ -385,8 +390,13 @@ export function AgentCard({
       )}
 
       <div className="mt-3 flex justify-between items-center">
-        <div className="flex gap-2 text-xs text-text-muted">
+        <div className="flex gap-2 text-xs text-text-muted flex-wrap">
           {agent.cli && <span className="bg-bg-hover py-0.5 px-1.5 rounded">{agent.cli}</span>}
+          {agent.profile?.model && (
+            <span className="bg-accent-cyan/10 text-accent-cyan py-0.5 px-1.5 rounded font-mono text-[10px]" title={`Model: ${agent.profile.model}`}>
+              {agent.profile.model}
+            </span>
+          )}
           {agent.messageCount !== undefined && agent.messageCount > 0 && (
             <span style={{ color: colors.primary }}>{agent.messageCount} msgs</span>
           )}
