@@ -1708,11 +1708,19 @@ export async function startDashboard(
     });
 
   const getMessages = async (agents: any[]): Promise<Message[]> => {
-    // Try to get messages from daemon via RelayClient (preferred - single source of truth)
-    // Uses queryMessages if available (SDK >= 2.0.26), otherwise falls back to storage
+    // For local mode: use storage (SQLite) first - faster and avoids daemon query timeouts
+    // Storage is only available in local/integrated mode, not cloud
+    if (storage) {
+      const rows = await storage.getMessages({ limit: 100, order: 'desc' });
+      const threadSummaries = buildThreadSummaryMap(rows);
+      // Dashboard expects oldest first
+      return mapStoredMessages(rows, threadSummaries).reverse();
+    }
+
+    // Fallback to daemon via RelayClient (for cases without local storage)
+    // Uses queryMessages if available (SDK >= 2.0.26)
     try {
       const client = await getRelayClient('_DashboardUI');
-      // Check if queryMessages method exists (added in SDK 2.0.26)
       const clientAny = client as any;
       if (client && client.state === 'READY' && typeof clientAny.queryMessages === 'function') {
         const messages = await clientAny.queryMessages({ limit: 100, order: 'desc' });
@@ -1733,18 +1741,10 @@ export async function startDashboard(
         return mapped.reverse();
       }
     } catch (err) {
-      console.warn('[dashboard] Failed to get messages from daemon, falling back to storage:', (err as Error).message);
+      console.warn('[dashboard] Failed to get messages from daemon:', (err as Error).message);
     }
 
-    // Fallback to local storage (dashboard.db)
-    if (storage) {
-      const rows = await storage.getMessages({ limit: 100, order: 'desc' });
-      const threadSummaries = buildThreadSummaryMap(rows);
-      // Dashboard expects oldest first
-      return mapStoredMessages(rows, threadSummaries).reverse();
-    }
-
-    // Fallback to file-based inbox parsing
+    // Final fallback to file-based inbox parsing
     let allMessages: Message[] = [];
     agents.forEach((a: any) => {
       const msgs = parseInbox(a.name);

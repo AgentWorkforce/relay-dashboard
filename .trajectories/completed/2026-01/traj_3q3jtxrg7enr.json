@@ -1,0 +1,49 @@
+{
+  "id": "traj_3q3jtxrg7enr",
+  "version": 1,
+  "task": {
+    "title": "Refactor channel system: remove legacy general broadcast, make Activity feed show events only, #general is real channel"
+  },
+  "status": "completed",
+  "startedAt": "2026-01-28T11:49:29.346Z",
+  "agents": [
+    {
+      "name": "default",
+      "role": "lead",
+      "joinedAt": "2026-01-28T11:50:49.074Z"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "chap_05q20wv1neiq",
+      "title": "Work",
+      "agentName": "default",
+      "startedAt": "2026-01-28T11:50:49.074Z",
+      "events": [
+        {
+          "ts": 1769601049075,
+          "type": "decision",
+          "content": "Unified channel system: Activity Feed shows activity events only, #general is a real channel, broadcasts (*) go to individual DMs: Unified channel system: Activity Feed shows activity events only, #general is a real channel, broadcasts (*) go to individual DMs",
+          "raw": {
+            "question": "Unified channel system: Activity Feed shows activity events only, #general is a real channel, broadcasts (*) go to individual DMs",
+            "chosen": "Unified channel system: Activity Feed shows activity events only, #general is a real channel, broadcasts (*) go to individual DMs",
+            "alternatives": [],
+            "reasoning": "Removes confusion between legacy 'general' broadcast behavior and actual #general channel. Activity Feed now shows agent spawns/releases/status changes. Broadcasts are delivered to individual DMs, not shown in any channel."
+          },
+          "significance": "high"
+        }
+      ],
+      "endedAt": "2026-01-28T11:50:55.365Z"
+    }
+  ],
+  "commits": [],
+  "filesChanged": [],
+  "projectId": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard",
+  "tags": [],
+  "completedAt": "2026-01-28T11:50:55.365Z",
+  "retrospective": {
+    "summary": "Refactored channel system: (1) Activity Feed now shows activity events (agent spawns, releases, status changes) instead of broadcast messages; (2) Removed legacy currentChannel='general'→broadcast behavior; (3) #general is now a proper channel; (4) Broadcasts to '*' are delivered to individual DMs, not shown in any channel view",
+    "approach": "Standard approach",
+    "confidence": 0.85
+  }
+}

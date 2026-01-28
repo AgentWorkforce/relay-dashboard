@@ -965,9 +965,10 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
 
     // Filter messages that belong to this channel
     const filtered = messages.filter(m => {
-      // Activity feed shows broadcasts (to='*')
+      // Activity feed shows activity events, not messages
+      // Broadcasts go to individual DMs, not shown in any channel
       if (selectedChannelId === ACTIVITY_FEED_ID) {
-        return m.to === '*' || m.isBroadcast;
+        return false;
       }
       // Check if message is explicitly for this channel (CHANNEL_MESSAGE format)
       if (m.to === selectedChannelId) return true;
@@ -1922,7 +1923,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
 
   const handleMainComposerSend = useCallback(
     async (content: string, attachmentIds?: string[]) => {
-      const recipient = currentChannel === 'general' ? '*' : currentChannel;
+      const recipient = currentChannel;
 
       if (currentHuman) {
         return handleDmSend(content, attachmentIds);
@@ -2006,19 +2007,13 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   const handleNewConversationSend = useCallback(async (to: string, content: string): Promise<boolean> => {
     const success = await sendMessage(to, content);
     if (success) {
-      // Switch to the channel we just messaged
-      if (to === '*') {
-        selectAgent(null);
-        setSelectedChannelId(ACTIVITY_FEED_ID);
-        setViewMode('channels');
+      // Switch to the channel/agent we just messaged
+      const targetAgent = agents.find((a) => a.name === to);
+      if (targetAgent) {
+        selectAgent(targetAgent.name);
+        setCurrentChannel(targetAgent.name);
       } else {
-        const targetAgent = agents.find((a) => a.name === to);
-        if (targetAgent) {
-          selectAgent(targetAgent.name);
-          setCurrentChannel(targetAgent.name);
-        } else {
-          setCurrentChannel(to);
-        }
+        setCurrentChannel(to);
       }
     }
     return success;
@@ -2356,9 +2351,6 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       (currentUser && message.from === currentUser.displayName);
 
     const isMessageInCurrentChannel = (message: Message) => {
-      if (currentChannel === 'general') {
-        return message.to === '*' || message.isBroadcast || message.channel === 'general';
-      }
       return message.from === currentChannel || message.to === currentChannel;
     };
 
@@ -2381,17 +2373,12 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
 
       if (settings.notifications.desktop && typeof window !== 'undefined' && 'Notification' in window) {
         if (Notification.permission === 'granted') {
-          const channelLabel = message.to === '*' ? 'Activity' : message.to;
+          const channelLabel = message.to;
           const body = message.content.split('\n')[0].slice(0, 160);
           const notification = new Notification(`${message.from} → ${channelLabel}`, { body });
           notification.onclick = () => {
             window.focus();
-            if (message.to === '*') {
-              setSelectedChannelId(ACTIVITY_FEED_ID);
-              setViewMode('channels');
-            } else {
-              setCurrentChannel(message.from);
-            }
+            setCurrentChannel(message.from);
             notification.close();
           };
         }
@@ -2851,7 +2838,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
               insertMention={pendingMention}
               onMentionInserted={() => setPendingMention(undefined)}
               enableFileAutocomplete
-              placeholder={`Message ${currentChannel === 'general' ? 'everyone' : '@' + currentChannel}...`}
+              placeholder={`Message @${currentChannel}...`}
             />
           </div>
         )}
@@ -2870,7 +2857,8 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
         onTaskCreate={handleTaskCreate}
         onGeneralClick={() => {
           selectAgent(null);
-          setCurrentChannel('general');
+          setSelectedChannelId('#general');
+          setViewMode('channels');
         }}
         customCommands={[...dmInviteCommands, ...channelCommands]}
       />
