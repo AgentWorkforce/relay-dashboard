@@ -3805,8 +3805,19 @@ export async function startDashboard(
       ? authHeader.substring(7)
       : null;
 
-    if (!token || token !== expectedToken) {
-      console.warn('[dashboard] Unauthorized CLI auth request - invalid or missing workspace token');
+    // Use timing-safe comparison to prevent timing attacks
+    if (!token) {
+      console.warn('[dashboard] Unauthorized CLI auth request - missing workspace token');
+      return res.status(401).json({ error: 'Unauthorized - invalid workspace token' });
+    }
+
+    const tokenBuffer = Buffer.from(token);
+    const expectedBuffer = Buffer.from(expectedToken);
+    const isValidToken = tokenBuffer.length === expectedBuffer.length &&
+      crypto.timingSafeEqual(tokenBuffer, expectedBuffer);
+
+    if (!isValidToken) {
+      console.warn('[dashboard] Unauthorized CLI auth request - invalid workspace token');
       return res.status(401).json({ error: 'Unauthorized - invalid workspace token' });
     }
 
