@@ -426,32 +426,36 @@ export function SpawnModal({
           <div className="mb-5">
             <label className="block text-sm font-semibold text-text-primary mb-2">Agent Type</label>
             <div className="grid grid-cols-3 gap-2">
-              {AGENT_TEMPLATES.map((template) => (
+              {AGENT_TEMPLATES.map((template) => {
+                // Only disable "coming soon" providers in cloud mode - locally they might be available
+                const isDisabled = template.comingSoon && isCloudMode;
+                return (
                 <button
                   key={template.id}
                   type="button"
-                  disabled={template.comingSoon}
+                  disabled={isDisabled}
                   className={`
                     flex flex-col items-center gap-1 py-3 px-2 border-2 rounded-lg font-sans transition-all duration-150 relative
-                    ${template.comingSoon
+                    ${isDisabled
                       ? 'opacity-50 cursor-not-allowed bg-bg-hover border-transparent'
                       : selectedTemplate.id === template.id
                         ? 'bg-accent/10 border-accent cursor-pointer'
                         : 'bg-bg-hover border-transparent hover:bg-bg-active cursor-pointer'
                     }
                   `}
-                  onClick={() => !template.comingSoon && setSelectedTemplate(template)}
+                  onClick={() => !isDisabled && setSelectedTemplate(template)}
                 >
-                  {template.comingSoon && (
+                  {isDisabled && (
                     <span className="absolute top-1 right-1 px-1.5 py-0.5 bg-amber-400/20 text-amber-400 text-[10px] font-medium rounded">
                       Soon
                     </span>
                   )}
-                  <span className={`text-2xl ${template.comingSoon ? 'grayscale' : ''}`}>{template.icon}</span>
+                  <span className={`text-2xl ${isDisabled ? 'grayscale' : ''}`}>{template.icon}</span>
                   <span className="text-sm font-semibold text-text-primary">{template.name}</span>
                   <span className="text-xs text-text-muted text-center">{template.description}</span>
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 
