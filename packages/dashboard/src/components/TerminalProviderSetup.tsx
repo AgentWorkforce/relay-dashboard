@@ -2,7 +2,8 @@
  * TerminalProviderSetup Component
  *
  * Reusable component for terminal-based provider authentication setup.
- * Handles agent spawning, interactive terminal, auth URL detection, and cleanup.
+ * Handles agent spawning, interactive terminal, and cleanup.
+ * Users copy and paste auth URLs from the terminal output.
  *
  * Used in:
  * - /providers/setup/[provider] page (full-page setup)
@@ -69,16 +70,6 @@ const TERMINAL_THEME = {
   brightWhite: '#ffffff',
 };
 
-// Auth URL patterns to detect
-const AUTH_URL_PATTERNS = [
-  /https:\/\/console\.anthropic\.com\/oauth/i,
-  /https:\/\/auth\.openai\.com/i,
-  /https:\/\/accounts\.google\.com/i,
-  /https:\/\/github\.com\/login\/oauth/i,
-  /https:\/\/[^\s]+\/oauth/i,
-  /https:\/\/[^\s]+\/auth/i,
-  /https:\/\/[^\s]+\/login/i,
-];
 
 export function TerminalProviderSetup({
   provider,
@@ -97,7 +88,6 @@ export function TerminalProviderSetup({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const shownAuthUrlsRef = useRef<Set<string>>(new Set());
   const hasShownConnectedRef = useRef(false); // Prevent duplicate "Connected" messages
   const onDataDisposableRef = useRef<{ dispose: () => void } | null>(null); // Track onData handler for cleanup
 
@@ -106,9 +96,6 @@ export function TerminalProviderSetup({
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [agentName, setAgentName] = useState<string | null>(null);
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authModalDismissed, setAuthModalDismissed] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [csrfToken, setCsrfToken] = useState<string | undefined>(initialCsrfToken);
 
@@ -227,35 +214,6 @@ export function TerminalProviderSetup({
     };
   }, []);
 
-  // Ref to hold authModalDismissed state for use in callbacks without causing re-renders
-  const authModalDismissedRef = useRef(authModalDismissed);
-  authModalDismissedRef.current = authModalDismissed;
-
-  // Detect auth URLs in output - uses ref to avoid dependency on authModalDismissed
-  const detectAuthUrl = useCallback((content: string) => {
-    // Don't show modal if user already dismissed it
-    if (authModalDismissedRef.current) return false;
-
-    for (const pattern of AUTH_URL_PATTERNS) {
-      const match = content.match(pattern);
-      if (match) {
-        // Extract full URL
-        const urlMatch = content.match(/https:\/\/[^\s\])"']+/i);
-        if (urlMatch) {
-          const url = urlMatch[0];
-          // Only show modal once per unique URL
-          if (!shownAuthUrlsRef.current.has(url)) {
-            shownAuthUrlsRef.current.add(url);
-            setAuthUrl(url);
-            setShowAuthModal(true);
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }, []); // No dependencies - uses ref for mutable state
-
   // Connect WebSocket when agent is spawned
   useEffect(() => {
     if (!agentName || !workspaceId) return;
@@ -302,19 +260,16 @@ export function TerminalProviderSetup({
           if (data.type === 'history' && Array.isArray(data.lines)) {
             data.lines.forEach((line: string) => {
               terminalRef.current?.writeln(line);
-              detectAuthUrl(line);
             });
           } else if (data.type === 'log' || data.type === 'output') {
             const content = data.content || data.data || data.message || '';
             if (content) {
               terminalRef.current?.write(content);
-              detectAuthUrl(content);
             }
           }
         } catch {
           if (typeof event.data === 'string') {
             terminalRef.current?.write(event.data);
-            detectAuthUrl(event.data);
           }
         }
       };
@@ -349,7 +304,7 @@ export function TerminalProviderSetup({
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [agentName, workspaceId, detectAuthUrl]);
+  }, [agentName, workspaceId]);
 
   // Auto-spawn on mount
   useEffect(() => {
@@ -364,13 +319,6 @@ export function TerminalProviderSetup({
       cleanupAgent();
     };
   }, [cleanupAgent]);
-
-  const handleOpenAuthUrl = useCallback(() => {
-    if (authUrl) {
-      window.open(authUrl, '_blank', 'width=600,height=700');
-      setShowAuthModal(false); // Close modal after opening URL
-    }
-  }, [authUrl]);
 
   const handleComplete = useCallback(async () => {
     // Mark provider as connected in the database
@@ -528,51 +476,6 @@ export function TerminalProviderSetup({
         </>
       )}
 
-      {/* Auth URL Modal */}
-      {showAuthModal && authUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-bg-primary border border-border-subtle rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div
-                className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold"
-                style={{ backgroundColor: provider.color }}
-              >
-                {provider.displayName[0]}
-              </div>
-              <div>
-                <h3 className="text-white font-medium">Login URL Detected</h3>
-                <p className="text-sm text-text-muted">We found a login link in the terminal</p>
-              </div>
-            </div>
-
-            <p className="text-sm text-text-muted mb-4">
-              {provider.displayName} is asking you to sign in. Click below to open the login page.
-            </p>
-
-            <div className="flex gap-3">
-              <button
-                onClick={handleOpenAuthUrl}
-                className="flex-1 py-2 px-4 bg-accent-cyan text-bg-deep font-semibold rounded-lg hover:bg-accent-cyan/90 transition-colors"
-              >
-                Open Login Page
-              </button>
-              <button
-                onClick={() => {
-                  setShowAuthModal(false);
-                  setAuthModalDismissed(true);
-                }}
-                className="px-4 py-2 bg-bg-hover text-text-secondary rounded-lg hover:bg-bg-tertiary transition-colors"
-              >
-                Dismiss
-              </button>
-            </div>
-
-            <p className="text-xs text-text-muted mt-3">
-              Or copy the URL from the terminal and open it manually.
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
