@@ -45,4 +45,3 @@ fly.toml.local
 # Local data
 *.db
 *.sqlite
-.trajectories/

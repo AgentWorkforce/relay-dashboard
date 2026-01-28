@@ -65,7 +65,22 @@ export function ThreadPanel({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Option/Alt+Enter: insert newline manually
+    if (e.key === 'Enter' && e.altKey) {
+      e.preventDefault();
+      const textarea = e.currentTarget;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newValue = replyContent.slice(0, start) + '\n' + replyContent.slice(end);
+      setReplyContent(newValue);
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + 1;
+      }, 0);
+      return;
+    }
+
+    // Enter without modifiers: send message
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
       e.preventDefault();
       handleSubmit(e);
     }

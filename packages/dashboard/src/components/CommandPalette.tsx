@@ -216,7 +216,7 @@ function CommandPaletteContent({
       {
         id: 'nav-general',
         label: 'Go to #general',
-        description: 'View all broadcast messages',
+        description: 'General discussion channel',
         category: 'navigation',
         icon: <HashIcon />,
         action: () => {

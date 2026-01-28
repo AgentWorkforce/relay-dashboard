@@ -161,12 +161,26 @@ export function MessageInput({
       }
     }
 
-    // Send on Enter (without Shift)
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Option/Alt+Enter: insert newline manually (browser doesn't do this by default)
+    if (e.key === 'Enter' && e.altKey) {
+      e.preventDefault();
+      const textarea = e.target as HTMLTextAreaElement;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newValue = value.slice(0, start) + '\n' + value.slice(end);
+      setValue(newValue);
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + 1;
+      }, 0);
+      return;
+    }
+
+    // Send on Enter (without Shift or Option/Alt)
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
       e.preventDefault();
       handleSend();
     }
-  }, [showMentions, filteredMentions, selectedMentionIndex, insertMention]);
+  }, [showMentions, filteredMentions, selectedMentionIndex, insertMention, value]);
 
   // Handle send
   const handleSend = useCallback(() => {
@@ -256,7 +270,7 @@ export function MessageInput({
         {/* Helper text */}
         <p className="mt-2 text-xs text-text-muted">
           <kbd className="px-1 py-0.5 bg-bg-tertiary rounded text-[10px]">Enter</kbd> to send,{' '}
-          <kbd className="px-1 py-0.5 bg-bg-tertiary rounded text-[10px]">Shift+Enter</kbd> for new line,{' '}
+          <kbd className="px-1 py-0.5 bg-bg-tertiary rounded text-[10px]">Shift/Option+Enter</kbd> for new line,{' '}
           <kbd className="px-1 py-0.5 bg-bg-tertiary rounded text-[10px]">@</kbd> to mention
         </p>
       </div>

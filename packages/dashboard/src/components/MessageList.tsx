@@ -11,7 +11,6 @@ import type { Message, Agent, Attachment } from '../types';
 import type { UserPresence } from './hooks/usePresence';
 import { MessageStatusIndicator } from './MessageStatusIndicator';
 import { ThinkingIndicator } from './ThinkingIndicator';
-import { deduplicateBroadcasts } from './hooks/useBroadcastDedup';
 import { MessageSenderName } from './MessageSenderName';
 import { formatMessageBody } from './utils/messageFormatting';
 
@@ -132,25 +131,19 @@ export function MessageList({
       return true;
     }
 
-    // Activity feed shows broadcasts
+    // Activity feed shows activity events (handled by ActivityFeed component), not messages
     if (currentChannel === ACTIVITY_FEED_ID) {
-      return msg.to === '*' || msg.isBroadcast;
+      return false;
     }
-    // #general channel shows only actual channel messages (not broadcasts)
-    if (currentChannel === 'general' || currentChannel === '#general') {
+    // #general channel - treat as normal channel
+    if (currentChannel === '#general') {
       return msg.channel === 'general' || msg.channel === '#general' ||
-             msg.to === '#general' || msg.to === 'general';
+             msg.to === '#general';
     }
     return msg.from === currentChannel || msg.to === currentChannel;
   });
 
-  // Deduplicate broadcast messages in Activity feed
-  // When a broadcast is sent to '*', the backend delivers it to each recipient separately,
-  // causing the same message to appear multiple times. Deduplication removes duplicates
-  // by grouping broadcasts with the same sender, content, and timestamp.
-  const filteredMessages = currentChannel === ACTIVITY_FEED_ID
-    ? deduplicateBroadcasts(channelFilteredMessages)
-    : channelFilteredMessages;
+  const filteredMessages = channelFilteredMessages;
 
   // Populate latestMessageToAgent with the latest message from current user to each agent
   // Iterate in order (oldest to newest) so the last one wins
@@ -255,9 +248,7 @@ export function MessageList({
         <EmptyIcon />
         <h3 className="m-0 mb-2 text-base font-display text-text-secondary">No messages yet</h3>
         <p className="m-0 text-sm">
-          {currentChannel === 'general'
-            ? 'Broadcast messages will appear here'
-            : `Messages with ${currentChannel} will appear here`}
+          {`Messages in ${currentChannel} will appear here`}
         </p>
       </div>
     );

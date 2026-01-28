@@ -169,7 +169,7 @@ describe('Dashboard Server', () => {
       const response = await fetch(`http://localhost:${port}/api/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: 'claude-1', content: 'Hello!' }),
+        body: JSON.stringify({ to: 'claude-1', message: 'Hello!' }),
       });
       const data = await response.json();
 

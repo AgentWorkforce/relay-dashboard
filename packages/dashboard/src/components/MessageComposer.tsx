@@ -241,7 +241,23 @@ export function MessageComposer({
       return;
     }
 
-    if (e.key === 'Enter' && !e.shiftKey && !showMentions && !showFiles) {
+    // Option/Alt+Enter: insert newline manually (browser doesn't do this by default)
+    if (e.key === 'Enter' && e.altKey && !showMentions && !showFiles) {
+      e.preventDefault();
+      const textarea = e.currentTarget;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newValue = message.slice(0, start) + '\n' + message.slice(end);
+      setMessage(newValue);
+      // Set cursor position after the newline
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + 1;
+      }, 0);
+      return;
+    }
+
+    // Enter without modifiers: send message
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !showMentions && !showFiles) {
       e.preventDefault();
       if ((message.trim() || attachments.length > 0) && !isSending && !disabled) {
         handleSubmit(e as unknown as React.FormEvent);
@@ -445,7 +461,7 @@ export function MessageComposer({
       {/* Helper text */}
       <p className="text-xs text-text-muted px-1">
         <kbd className="px-1 py-0.5 bg-bg-tertiary rounded text-[10px]">Enter</kbd> to send,{' '}
-        <kbd className="px-1 py-0.5 bg-bg-tertiary rounded text-[10px]">Shift+Enter</kbd> for new line
+        <kbd className="px-1 py-0.5 bg-bg-tertiary rounded text-[10px]">Shift/Option+Enter</kbd> for new line
         {(agents.length > 0 || humanUsers.length > 0) && (
           <>, <kbd className="px-1 py-0.5 bg-bg-tertiary rounded text-[10px]">@</kbd> to mention</>
         )}
