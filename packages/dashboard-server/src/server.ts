@@ -4079,9 +4079,13 @@ export async function startDashboard(
         }));
       }
 
-      // Get messages for throughput calculation
-      const team = getTeamData();
-      const messages = team ? await getMessages(team.agents) : [];
+      // Get messages for throughput calculation - use storage directly for metrics
+      // (avoids daemon query timeouts that occur when daemon is busy)
+      let messages: Array<{ timestamp: string }> = [];
+      if (storage) {
+        const rows = await storage.getMessages({ limit: 100, order: 'desc' });
+        messages = rows.map(r => ({ timestamp: new Date(r.ts).toISOString() }));
+      }
 
       // Get session data for lifecycle metrics
       const sessions = storage?.getSessions
@@ -4122,9 +4126,13 @@ export async function startDashboard(
         }));
       }
 
-      // Get messages for throughput calculation
-      const team = getTeamData();
-      const messages = team ? await getMessages(team.agents) : [];
+      // Get messages for throughput calculation - use storage directly for metrics
+      // (avoids daemon query timeouts that occur when daemon is busy)
+      let messages: Array<{ timestamp: string }> = [];
+      if (storage) {
+        const rows = await storage.getMessages({ limit: 100, order: 'desc' });
+        messages = rows.map(r => ({ timestamp: new Date(r.ts).toISOString() }));
+      }
 
       // Get session data for lifecycle metrics
       const sessions = storage?.getSessions
