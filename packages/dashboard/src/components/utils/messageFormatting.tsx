@@ -330,47 +330,227 @@ export function formatMessageBody(content: string, options: FormatMessageOptions
 }
 
 /**
- * Format a single line, detecting URLs, inline code, and mentions
+ * Check if a line is a heading and return the level (1-6) or 0 if not
  */
-function formatLine(line: string, mentions?: string[]): React.ReactNode {
-  // Combined regex to match URLs and inline code (backticks)
-  // Order matters: check for backticks first to avoid URL detection inside code
-  const combinedRegex = /(`[^`]+`|https?:\/\/[^\s]+)/g;
-  const parts = line.split(combinedRegex);
+function getHeadingLevel(line: string): number {
+  const match = line.match(/^(#{1,6})\s+/);
+  return match ? match[1].length : 0;
+}
 
-  return parts.map((part, i) => {
-    if (!part) return null;
+/**
+ * Check if a line is a list item (bullet or numbered)
+ */
+function getListInfo(line: string): { type: 'bullet' | 'numbered' | null; content: string; indent: number } {
+  const bulletMatch = line.match(/^(\s*)([-*])\s+(.*)$/);
+  if (bulletMatch) {
+    return { type: 'bullet', content: bulletMatch[3], indent: bulletMatch[1].length };
+  }
+  const numberedMatch = line.match(/^(\s*)(\d+\.)\s+(.*)$/);
+  if (numberedMatch) {
+    return { type: 'numbered', content: numberedMatch[3], indent: numberedMatch[1].length };
+  }
+  return { type: null, content: line, indent: 0 };
+}
 
-    // Check for inline code (backticks)
-    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
-      const code = part.slice(1, -1);
-      return (
+/**
+ * Format inline markdown elements (bold, italic, strikethrough, links, code, URLs)
+ * Processes patterns sequentially to avoid regex complexity issues
+ */
+function formatInlineMarkdown(text: string, mentions?: string[], keyPrefix: string = ''): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  let remaining = text;
+  let partIndex = 0;
+
+  // Define patterns in order of precedence (most specific first)
+  const patterns: Array<{
+    regex: RegExp;
+    render: (match: RegExpMatchArray, key: string) => React.ReactNode;
+  }> = [
+    // Inline code `code` - process first to protect content
+    {
+      regex: /`([^`]+)`/,
+      render: (match, key) => (
         <code
-          key={`code-${i}`}
+          key={key}
           className="px-1.5 py-0.5 mx-0.5 rounded bg-bg-elevated/80 text-accent-cyan font-mono text-[0.85em] border border-border-subtle/50"
         >
-          {code}
+          {match[1]}
         </code>
-      );
-    }
-
-    // Check for URLs
-    if (/^https?:\/\//.test(part)) {
-      return (
+      ),
+    },
+    // Markdown link [text](url)
+    {
+      regex: /\[([^\]]+)\]\(([^)]+)\)/,
+      render: (match, key) => (
         <a
-          key={`url-${i}`}
-          href={part}
+          key={key}
+          href={match[2]}
           target="_blank"
           rel="noopener noreferrer"
           className="text-accent-cyan no-underline hover:underline"
         >
-          {part}
+          {match[1]}
         </a>
-      );
+      ),
+    },
+    // Bold **text** (must come before italic *)
+    {
+      regex: /\*\*([^*]+)\*\*/,
+      render: (match, key) => (
+        <strong key={key} className="font-semibold text-text-primary">
+          {formatInlineMarkdown(match[1], mentions, `${key}-inner`)}
+        </strong>
+      ),
+    },
+    // Bold __text__
+    {
+      regex: /__([^_]+)__/,
+      render: (match, key) => (
+        <strong key={key} className="font-semibold text-text-primary">
+          {formatInlineMarkdown(match[1], mentions, `${key}-inner`)}
+        </strong>
+      ),
+    },
+    // Italic _text_ (using underscore to avoid conflict with bold **)
+    {
+      regex: /_([^_]+)_/,
+      render: (match, key) => (
+        <em key={key} className="italic">
+          {formatInlineMarkdown(match[1], mentions, `${key}-inner`)}
+        </em>
+      ),
+    },
+    // Italic *text* (single asterisk - bold ** is matched first due to ordering)
+    {
+      regex: /\*([^*]+)\*/,
+      render: (match, key) => (
+        <em key={key} className="italic">
+          {formatInlineMarkdown(match[1], mentions, `${key}-inner`)}
+        </em>
+      ),
+    },
+    // Strikethrough ~~text~~
+    {
+      regex: /~~([^~]+)~~/,
+      render: (match, key) => (
+        <del key={key} className="line-through text-text-muted">
+          {match[1]}
+        </del>
+      ),
+    },
+    // URL
+    {
+      regex: /https?:\/\/[^\s]+/,
+      render: (match, key) => (
+        <a
+          key={key}
+          href={match[0]}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-accent-cyan no-underline hover:underline"
+        >
+          {match[0]}
+        </a>
+      ),
+    },
+  ];
+
+  while (remaining.length > 0) {
+    // Find the earliest match among all patterns
+    let earliestMatch: { pattern: typeof patterns[0]; match: RegExpMatchArray; index: number } | null = null;
+
+    for (const pattern of patterns) {
+      const match = remaining.match(pattern.regex);
+      if (match && match.index !== undefined) {
+        if (!earliestMatch || match.index < earliestMatch.index) {
+          earliestMatch = { pattern, match, index: match.index };
+        }
+      }
     }
 
-    return highlightMentions(part, mentions, `text-${i}`);
-  });
+    if (!earliestMatch) {
+      // No more matches, add remaining text
+      parts.push(highlightMentions(remaining, mentions, `${keyPrefix}-text-${partIndex}`));
+      break;
+    }
+
+    // Add text before the match
+    if (earliestMatch.index > 0) {
+      const textBefore = remaining.slice(0, earliestMatch.index);
+      parts.push(highlightMentions(textBefore, mentions, `${keyPrefix}-pre-${partIndex}`));
+      partIndex++;
+    }
+
+    // Render the matched element
+    parts.push(earliestMatch.pattern.render(earliestMatch.match, `${keyPrefix}-el-${partIndex}`));
+    partIndex++;
+
+    // Move past the match
+    remaining = remaining.slice(earliestMatch.index + earliestMatch.match[0].length);
+  }
+
+  return parts.length === 1 ? parts[0] : parts;
+}
+
+/**
+ * Format a single line, detecting headings, lists, and inline markdown
+ */
+function formatLine(line: string, mentions?: string[]): React.ReactNode {
+  // Check for headings
+  const headingLevel = getHeadingLevel(line);
+  if (headingLevel > 0) {
+    const content = line.replace(/^#{1,6}\s+/, '');
+    // Use inline styles for font-size to override parent's text-sm
+    const headingStyles: Record<number, { className: string; style: React.CSSProperties }> = {
+      1: {
+        className: 'font-bold text-text-primary mt-4 mb-2 pb-1 border-b border-border-subtle',
+        style: { fontSize: '1.5rem', lineHeight: '2rem' }, // 24px
+      },
+      2: {
+        className: 'font-bold text-text-primary mt-3 mb-2',
+        style: { fontSize: '1.25rem', lineHeight: '1.75rem' }, // 20px
+      },
+      3: {
+        className: 'font-semibold text-text-primary mt-2.5 mb-1.5',
+        style: { fontSize: '1.125rem', lineHeight: '1.5rem' }, // 18px
+      },
+      4: {
+        className: 'font-semibold text-text-primary mt-2 mb-1',
+        style: { fontSize: '1rem', lineHeight: '1.5rem' }, // 16px
+      },
+      5: {
+        className: 'font-medium text-text-secondary mt-1.5 mb-1',
+        style: { fontSize: '0.875rem', lineHeight: '1.25rem' }, // 14px
+      },
+      6: {
+        className: 'font-medium text-text-muted mt-1 mb-0.5 uppercase tracking-wide',
+        style: { fontSize: '0.75rem', lineHeight: '1rem' }, // 12px
+      },
+    };
+    const { className, style } = headingStyles[headingLevel] || headingStyles[3];
+    return (
+      <div className={className} style={style}>
+        {formatInlineMarkdown(content, mentions, 'heading')}
+      </div>
+    );
+  }
+
+  // Check for list items
+  const listInfo = getListInfo(line);
+  if (listInfo.type) {
+    const indentStyle = { marginLeft: `${listInfo.indent * 0.5 + 0.5}rem` };
+    return (
+      <div className="flex items-start gap-2 my-0.5" style={indentStyle}>
+        <span className="text-accent-cyan flex-shrink-0 w-4 text-center">
+          {listInfo.type === 'bullet' ? '•' : line.match(/^\s*(\d+\.)/)?.[1]}
+        </span>
+        <span>{formatInlineMarkdown(listInfo.content, mentions, 'list')}</span>
+      </div>
+    );
+  }
+
+  // Regular line with inline formatting
+  return formatInlineMarkdown(line, mentions, 'line');
 }
 
 function escapeRegExp(value: string): string {
