@@ -1,6 +1,6 @@
 {
   "name": "@agent-relay/dashboard",
-  "version": "2.0.42",
+  "version": "2.0.43",
   "description": "Web dashboard UI for Agent Relay - visual agent coordination and management",
   "type": "module",
   "main": "dist/index.js",
