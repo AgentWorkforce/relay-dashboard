@@ -257,8 +257,11 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   useEffect(() => {
     if (!cloudSession?.user) return;
 
-    const fetchCloudWorkspaces = async () => {
-      setIsLoadingCloudWorkspaces(true);
+    const fetchCloudWorkspaces = async (isInitialLoad: boolean) => {
+      // Only show loading indicator on initial load, not on background refreshes
+      if (isInitialLoad) {
+        setIsLoadingCloudWorkspaces(true);
+      }
       try {
         const result = await cloudApi.getAccessibleWorkspaces();
         if (result.success && result.data.workspaces) {
@@ -286,13 +289,16 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       } catch (err) {
         console.error('Failed to fetch cloud workspaces:', err);
       } finally {
-        setIsLoadingCloudWorkspaces(false);
+        if (isInitialLoad) {
+          setIsLoadingCloudWorkspaces(false);
+        }
       }
     };
 
-    fetchCloudWorkspaces();
-    // Poll for updates every 30 seconds
-    const interval = setInterval(fetchCloudWorkspaces, 30000);
+    // Initial fetch with loading indicator
+    fetchCloudWorkspaces(true);
+    // Poll for updates every 30 seconds without loading indicator
+    const interval = setInterval(() => fetchCloudWorkspaces(false), 30000);
     return () => clearInterval(interval);
   }, [cloudSession?.user, activeCloudWorkspaceId]);
 
@@ -818,6 +824,70 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       localAgents,
     });
   }, [data?.agents, data?.users, localAgents]);
+
+  // Track previous agents to detect spawns/releases for activity feed
+  const prevAgentsRef = useRef<Map<string, Agent>>(new Map());
+
+  // Detect agent changes and generate activity events
+  useEffect(() => {
+    if (!combinedAgents || combinedAgents.length === 0) return;
+
+    const currentAgentMap = new Map(combinedAgents.map(a => [a.name, a]));
+    const prevAgentMap = prevAgentsRef.current;
+
+    // Skip on first load (no previous state to compare)
+    if (prevAgentMap.size > 0) {
+      // Detect new agents (spawned)
+      for (const [name, agent] of currentAgentMap) {
+        if (!prevAgentMap.has(name)) {
+          addActivityEvent({
+            type: 'agent_spawned',
+            actor: name,
+            actorType: 'agent',
+            title: 'came online',
+            description: agent.currentTask,
+            metadata: { cli: agent.cli, task: agent.currentTask },
+          });
+        } else {
+          // Detect status changes (online/offline)
+          const prevAgent = prevAgentMap.get(name)!;
+          if (prevAgent.status !== agent.status) {
+            if (agent.status === 'online' || agent.status === 'busy') {
+              addActivityEvent({
+                type: 'agent_online',
+                actor: name,
+                actorType: 'agent',
+                title: 'came online',
+                metadata: { cli: agent.cli },
+              });
+            } else if (agent.status === 'offline') {
+              addActivityEvent({
+                type: 'agent_offline',
+                actor: name,
+                actorType: 'agent',
+                title: 'went offline',
+              });
+            }
+          }
+        }
+      }
+
+      // Detect removed agents (released)
+      for (const [name] of prevAgentMap) {
+        if (!currentAgentMap.has(name)) {
+          addActivityEvent({
+            type: 'agent_released',
+            actor: name,
+            actorType: 'agent',
+            title: 'went offline',
+          });
+        }
+      }
+    }
+
+    // Update ref with current agents
+    prevAgentsRef.current = currentAgentMap;
+  }, [combinedAgents, addActivityEvent]);
 
   // Mark a DM conversation as seen (used for unread badges)
   const markDmSeen = useCallback((username: string) => {
@@ -1479,6 +1549,8 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   // Load messages when a channel is selected (persisted + live)
   useEffect(() => {
     if (!selectedChannelId || viewMode !== 'channels') return;
+    // Activity feed is a virtual channel - don't fetch from API
+    if (selectedChannelId === ACTIVITY_FEED_ID) return;
     // Don't fetch in cloud mode until we have a workspace ID
     if (isCloudMode && !effectiveActiveWorkspaceId) return;
 

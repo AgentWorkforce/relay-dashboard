@@ -127,17 +127,32 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
   // ===== Messaging =====
 
   app.post('/api/send', (req: Request, res: Response) => {
-    const { to, content } = req.body || {};
-    log(`POST /api/send - to: ${to}`);
+    const { to, message, from, thread, attachments } = req.body || {};
+    log(`POST /api/send - to: ${to}, from: ${from || 'user'}`);
 
-    if (!to || !content) {
-      res.status(400).json({ success: false, error: 'Missing to or content' });
+    if (!to || !message) {
+      res.status(400).json({ success: false, error: 'Missing to or message' });
       return;
     }
 
+    // Create a new message and add it to mockMessages for persistence
+    const newMessage = {
+      id: `mock-msg-${Date.now()}`,
+      from: from || 'user',
+      to,
+      content: message,
+      timestamp: new Date().toISOString(),
+      thread,
+      attachments,
+      isBroadcast: to === '*',
+    };
+
+    // Add to the beginning of mockMessages so it appears in the UI
+    mockMessages.unshift(newMessage);
+
     res.json({
       success: true,
-      messageId: `mock-msg-${Date.now()}`,
+      messageId: newMessage.id,
     });
   });
 

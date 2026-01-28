@@ -137,8 +137,29 @@ function isTableSeparator(line: string): boolean {
   return /^[\s|:-]+$/.test(line) && line.includes('-') && line.includes('|');
 }
 
+/**
+ * Check if a line is a blockquote (starts with >)
+ */
+function isQuoteLine(line: string): boolean {
+  return line.trimStart().startsWith('>');
+}
+
+/**
+ * Extract the content from a quote line (remove the leading > and space)
+ */
+function getQuoteContent(line: string): string {
+  const trimmed = line.trimStart();
+  if (trimmed.startsWith('> ')) {
+    return trimmed.slice(2);
+  }
+  if (trimmed.startsWith('>')) {
+    return trimmed.slice(1);
+  }
+  return line;
+}
+
 interface ContentSection {
-  type: 'text' | 'table' | 'code';
+  type: 'text' | 'table' | 'code' | 'quote';
   content: string;
   language?: string;
 }
@@ -190,7 +211,7 @@ function splitContentSections(content: string): ContentSection[] {
 }
 
 /**
- * Split content into text and table sections (helper for non-code content)
+ * Split content into text, table, and quote sections (helper for non-code content)
  */
 function splitTextAndTableSections(content: string): ContentSection[] {
   const lines = content.split('\n');
@@ -198,16 +219,25 @@ function splitTextAndTableSections(content: string): ContentSection[] {
   let currentSection: ContentSection | null = null;
 
   for (const line of lines) {
-    const lineIsTable = isTableLine(line) || isTableSeparator(line);
-    const sectionType = lineIsTable ? 'table' : 'text';
+    let sectionType: 'text' | 'table' | 'quote';
+    let lineContent = line;
+
+    if (isQuoteLine(line)) {
+      sectionType = 'quote';
+      lineContent = getQuoteContent(line);
+    } else if (isTableLine(line) || isTableSeparator(line)) {
+      sectionType = 'table';
+    } else {
+      sectionType = 'text';
+    }
 
     if (!currentSection || currentSection.type !== sectionType) {
       if (currentSection) {
         sections.push(currentSection);
       }
-      currentSection = { type: sectionType, content: line };
+      currentSection = { type: sectionType, content: lineContent };
     } else {
-      currentSection.content += '\n' + line;
+      currentSection.content += '\n' + lineContent;
     }
   }
 
@@ -244,7 +274,7 @@ export function formatMessageBody(content: string, options: FormatMessageOptions
     ));
   }
 
-  // Render mixed content with tables and code blocks
+  // Render mixed content with tables, code blocks, and quotes
   return sections.map((section, sectionIndex) => {
     if (section.type === 'code') {
       return (
@@ -264,6 +294,23 @@ export function formatMessageBody(content: string, options: FormatMessageOptions
         >
           {section.content}
         </pre>
+      );
+    }
+
+    if (section.type === 'quote') {
+      const lines = section.content.split('\n');
+      return (
+        <blockquote
+          key={sectionIndex}
+          className="my-2 pl-3 py-1 border-l-2 border-accent-cyan/50 bg-bg-tertiary/30 rounded-r text-text-secondary italic"
+        >
+          {lines.map((line, i) => (
+            <React.Fragment key={i}>
+              {i > 0 && <br />}
+              {formatLine(line, options.mentions)}
+            </React.Fragment>
+          ))}
+        </blockquote>
       );
     }
 
