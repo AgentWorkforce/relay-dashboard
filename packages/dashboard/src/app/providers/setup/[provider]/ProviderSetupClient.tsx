@@ -124,7 +124,7 @@ export function ProviderSetupClient({ provider }: ProviderSetupClientProps) {
           <h3 className="text-white font-medium mb-2">How this works:</h3>
           <ol className="text-sm text-text-muted space-y-1 list-decimal list-inside">
             <li>The terminal above is interactive - respond to any prompts by typing directly</li>
-            <li>When a login URL appears, we&apos;ll detect it and show a popup to help you open it</li>
+            <li>When a login URL appears, copy and paste it into your browser</li>
             <li>Complete the login in your browser, then return here</li>
             <li>Answer any remaining prompts (skills, permissions, etc.) in the terminal</li>
             <li>Once connected, click &quot;Done - Continue&quot; to go to the dashboard</li>
