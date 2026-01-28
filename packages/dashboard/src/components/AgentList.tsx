@@ -5,7 +5,7 @@
  * collapsible groups and color coding.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Agent } from '../types';
 import { AgentCard } from './AgentCard';
 import { groupAgents, getGroupStats, filterAgents, getAgentDisplayName, type AgentGroup } from '../lib/hierarchy';
@@ -80,10 +80,14 @@ export function AgentList({
     [unpinnedAgents]
   );
 
-  // Initialize all groups as expanded
-  useMemo(() => {
-    if (expandedGroups.size === 0 && groups.length > 0) {
+  // Track if we've done initial expansion
+  const hasInitialized = useRef(false);
+
+  // Initialize all groups as expanded on first render
+  useEffect(() => {
+    if (!hasInitialized.current && groups.length > 0) {
       setExpandedGroups(new Set(groups.map((g) => g.prefix)));
+      hasInitialized.current = true;
     }
   }, [groups]);
 
