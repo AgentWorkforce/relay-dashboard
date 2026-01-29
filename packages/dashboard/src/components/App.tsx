@@ -206,8 +206,17 @@ export interface AppProps {
 }
 
 export function App({ wsUrl, orchestratorUrl }: AppProps) {
+  // Ref to hold event handler - needed because handlePresenceEvent is defined later
+  // but we need to pass it to useWebSocket which is called first
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wsEventHandlerRef = useRef<((event: any) => void) | undefined>(undefined);
+
   // WebSocket connection for real-time data (per-project daemon)
-  const { data, isConnected, error: wsError } = useWebSocket({ url: wsUrl });
+  // Pass event handler for direct_message/channel_message events in local mode
+  const { data, isConnected, error: wsError } = useWebSocket({
+    url: wsUrl,
+    onEvent: (event) => wsEventHandlerRef.current?.(event),
+  });
 
   // Orchestrator for multi-workspace management
   const {
@@ -573,10 +582,10 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       };
       appendChannelMessage(channelId, msg, { incrementUnread: selectedChannelId !== channelId });
     } else if (event?.type === 'direct_message') {
-      // Handle direct messages sent to the user's GitHub username
+      // Handle direct messages sent to the user
+      // In local mode without auth, use targetUser from event or fallback to 'Dashboard'
       const sender = event.from || 'unknown';
-      const recipient = currentUser?.displayName;
-      if (!recipient) return;
+      const recipient = currentUser?.displayName || event.targetUser || 'Dashboard';
 
       // Create DM channel ID with sorted participants for consistency
       const participants = [sender, recipient].sort();
@@ -598,6 +607,10 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       appendChannelMessage(dmChannelId, msg, { incrementUnread: selectedChannelId !== dmChannelId });
     }
   }, [addActivityEvent, appendChannelMessage, currentUser?.displayName, selectedChannelId]);
+
+  // Keep the ref in sync with the callback for useWebSocket's onEvent
+  // This enables direct_message handling in local mode (where usePresence may not connect)
+  wsEventHandlerRef.current = handlePresenceEvent;
 
   const { onlineUsers: allOnlineUsers, typingUsers, sendTyping, isConnected: isPresenceConnected } = usePresence({
     currentUser: presenceUser,

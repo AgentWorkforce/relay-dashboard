@@ -89,10 +89,10 @@ export function ProjectList({
     () => new Set(projects.map((p) => p.id))
   );
 
-  // Filter out system agents (setup agents and _DashboardUI)
+  // Filter out system agents (setup agents and Dashboard)
   // These should not appear in the sidebar but can still send/receive messages
   const filterSystemAgents = (agents: Agent[]) =>
-    agents.filter(a => !a.name.startsWith('__setup__') && a.name !== '_DashboardUI');
+    agents.filter(a => !a.name.startsWith('__setup__') && a.name !== 'Dashboard');
 
   // Filter projects and agents based on search query
   const filteredData = useMemo(() => {

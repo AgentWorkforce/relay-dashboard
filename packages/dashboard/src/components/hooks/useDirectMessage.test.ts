@@ -836,7 +836,7 @@ describe('useDirectMessage', () => {
     });
   });
 
-  describe('GitHub username vs _DashboardUI routing', () => {
+  describe('GitHub username vs Dashboard routing', () => {
     /**
      * BUG FIX TEST: Messages to GitHub username should be visible
      *
@@ -868,17 +868,17 @@ describe('useDirectMessage', () => {
     });
 
     /**
-     * _DashboardUI messages should NOT appear in DM view
+     * Dashboard messages should NOT appear in DM view
      *
-     * _DashboardUI is a system client, not a real participant.
-     * Messages addressed to _DashboardUI should not be shown.
+     * Dashboard is a system client, not a real participant.
+     * Messages addressed to Dashboard should not be shown.
      */
-    it('should NOT show messages sent TO _DashboardUI', () => {
+    it('should NOT show messages sent TO Dashboard', () => {
       const ctx: DirectMessageTestContext = {
         currentHuman: createAgent('khaliqgant', true),
         currentUserName: 'khaliqgant',
         messages: [
-          createMessage('Lead', '_DashboardUI', 'Message to system client'),
+          createMessage('Lead', 'Dashboard', 'Message to system client'),
         ],
         agents: [createAgent('Lead')],
         selectedDmAgents: ['Lead'],
@@ -887,23 +887,23 @@ describe('useDirectMessage', () => {
 
       const visible = filterVisibleMessages(ctx);
 
-      // Message to _DashboardUI should NOT be visible (it's not a participant)
+      // Message to Dashboard should NOT be visible (it's not a participant)
       expect(visible).toHaveLength(0);
     });
 
     /**
-     * Both GitHub username AND _DashboardUI messages in same conversation
+     * Both GitHub username AND Dashboard messages in same conversation
      *
      * When an agent sends to both targets, only the GitHub username
      * message should be visible.
      */
-    it('should show GitHub username messages but not _DashboardUI messages', () => {
+    it('should show GitHub username messages but not Dashboard messages', () => {
       const ctx: DirectMessageTestContext = {
         currentHuman: createAgent('khaliqgant', true),
         currentUserName: 'khaliqgant',
         messages: [
           createMessage('Lead', 'khaliqgant', 'Direct to user'),
-          createMessage('Lead', '_DashboardUI', 'To system client'),
+          createMessage('Lead', 'Dashboard', 'To system client'),
           createMessage('khaliqgant', 'Lead', 'Reply from user'),
         ],
         agents: [createAgent('Lead')],
@@ -914,9 +914,9 @@ describe('useDirectMessage', () => {
       const visible = filterVisibleMessages(ctx);
 
       // Only 2 messages visible (Lead->khaliqgant and khaliqgant->Lead)
-      // Lead->_DashboardUI should be filtered out
+      // Lead->Dashboard should be filtered out
       expect(visible).toHaveLength(2);
-      expect(visible.map(m => m.to)).not.toContain('_DashboardUI');
+      expect(visible.map(m => m.to)).not.toContain('Dashboard');
     });
 
     /**

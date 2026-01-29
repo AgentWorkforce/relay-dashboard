@@ -1039,6 +1039,8 @@ export async function startDashboard(
         cli: 'dashboard',
         reconnect: true,
         maxReconnectAttempts: 5,
+        // Dashboard is a reserved name, so we need to mark it as a system component
+        _isSystemComponent: senderName === 'Dashboard',
       });
 
       client.onError = (err: Error) => {
@@ -1085,6 +1087,57 @@ export async function startDashboard(
         });
       };
 
+      // Set up direct message handler to forward messages to presence WebSocket
+      // This enables agents to send replies that appear in the dashboard UI
+      client.onMessage = (from: string, payload: unknown, messageId: string) => {
+        const body = typeof payload === 'object' && payload !== null && 'body' in payload
+          ? (payload as { body: string }).body
+          : String(payload);
+        console.log(`[dashboard] *** DIRECT MESSAGE RECEIVED *** for ${senderName}: ${from} -> ${senderName}: ${body.substring(0, 50)}...`);
+
+        // Look up sender's info from presence (if they're an online user)
+        const senderPresence = onlineUsers.get(from);
+        const fromAvatarUrl = senderPresence?.info.avatarUrl;
+        // Determine entity type: user if they have presence state, agent otherwise
+        const fromEntityType: 'user' | 'agent' = senderPresence ? 'user' : 'agent';
+
+        const timestamp = new Date().toISOString();
+
+        // Persist the message to storage so it survives page refresh
+        if (storage) {
+          storage.saveMessage({
+            id: messageId || `dm-${crypto.randomUUID()}`,
+            ts: Date.now(),
+            from,
+            to: senderName,
+            topic: undefined,
+            kind: 'message',
+            body,
+            data: {
+              fromAvatarUrl,
+              fromEntityType,
+            },
+            status: 'unread',
+            is_urgent: false,
+            is_broadcast: false,
+          }).catch((err) => {
+            console.error('[dashboard] Failed to persist direct message', err);
+          });
+        }
+
+        // Broadcast to presence WebSocket clients so cloud/dashboard can display the message
+        broadcastDirectMessage({
+          type: 'direct_message',
+          targetUser: senderName,
+          from,
+          fromAvatarUrl,
+          fromEntityType,
+          body,
+          messageId,
+          timestamp,
+        });
+      };
+
       try {
         await client.connect();
         relayClients.set(senderName, client);
@@ -1105,8 +1158,8 @@ export async function startDashboard(
   };
 
   // Start default relay client connection (non-blocking)
-  // Use '_DashboardUI' to avoid conflicts with agents named 'Dashboard'
-  getRelayClient('_DashboardUI').catch(() => {});
+  // Use 'Dashboard' to avoid conflicts with agents named 'Dashboard'
+  getRelayClient('Dashboard').catch(() => {});
 
   // User bridge for human-to-human and human-to-agent messaging
   userBridge = new UserBridge({
@@ -1347,10 +1400,10 @@ export async function startDashboard(
       targets = [to];
     }
 
-    // Always use '_DashboardUI' client to avoid name conflicts with user agents
+    // Always use 'Dashboard' client to avoid name conflicts with user agents
     // (underscore prefix indicates system client, prevents collision if user names an agent "Dashboard")
     // The sender name is preserved in message history/logs but not used for the relay connection
-    const relayClient = await getRelayClient('_DashboardUI');
+    const relayClient = await getRelayClient('Dashboard');
     if (!relayClient || relayClient.state !== 'READY') {
       return res.status(503).json({ error: 'Relay daemon not connected' });
     }
@@ -1370,7 +1423,7 @@ export async function startDashboard(
 
       // Include attachments, channel context, and sender info in the message data field
       // For broadcasts (to='*'), include channel: 'general' so replies can be routed back
-      // For dashboard messages, include senderName so frontend can display actual user instead of '_DashboardUI'
+      // For dashboard messages, include senderName so frontend can display actual user instead of 'Dashboard'
       const isBroadcast = targets.length === 1 && targets[0] === '*';
       const messageData: Record<string, unknown> = {};
 
@@ -1382,7 +1435,7 @@ export async function startDashboard(
         messageData.channel = 'general';
       }
 
-      // Include actual sender name for dashboard messages (relay client uses '_DashboardUI' but
+      // Include actual sender name for dashboard messages (relay client uses 'Dashboard' but
       // we want the real user's name displayed in message history)
       if (senderName) {
         messageData.senderName = senderName;
@@ -1397,6 +1450,24 @@ export async function startDashboard(
         if (!sent) {
           allSent = false;
           console.error(`[dashboard] Failed to send message to ${target}`);
+        } else if (storage) {
+          // Persist outgoing message to storage so it survives page refresh
+          const messageId = `out-${crypto.randomUUID()}`;
+          storage.saveMessage({
+            id: messageId,
+            ts: Date.now(),
+            from: senderName || 'Dashboard',
+            to: target,
+            topic: thread,
+            kind: 'message',
+            body: message,
+            data: hasMessageData ? messageData : undefined,
+            status: 'read', // Outgoing messages are already "read" by sender
+            is_urgent: false,
+            is_broadcast: isBroadcast,
+          }).catch((err) => {
+            console.error('[dashboard] Failed to persist outgoing message', err);
+          });
         }
       }
 
@@ -1684,9 +1755,9 @@ export async function startDashboard(
         if ('channel' in row.data) {
           channel = (row.data as { channel: string }).channel;
         }
-        // For dashboard messages sent via _DashboardUI, use the actual sender name
+        // For dashboard messages sent via Dashboard, use the actual sender name
         // This provides proper attribution in message history
-        if ('senderName' in row.data && row.from === '_DashboardUI') {
+        if ('senderName' in row.data && row.from === 'Dashboard') {
           effectiveFrom = (row.data as { senderName: string }).senderName;
         }
       }
@@ -1720,7 +1791,7 @@ export async function startDashboard(
     // Fallback to daemon via RelayClient (for cases without local storage)
     // Uses queryMessages if available (SDK >= 2.0.26)
     try {
-      const client = await getRelayClient('_DashboardUI');
+      const client = await getRelayClient('Dashboard');
       const clientAny = client as any;
       if (client && client.state === 'READY' && typeof clientAny.queryMessages === 'function') {
         const messages = await clientAny.queryMessages({ limit: 100, order: 'desc' });
@@ -2000,8 +2071,8 @@ export async function startDashboard(
         // Exclude agents starting with __ (internal/system agents)
         if (agent.name.startsWith('__')) return false;
 
-        // Exclude _DashboardUI (system client for sending dashboard messages)
-        if (agent.name === '_DashboardUI') return false;
+        // Exclude Dashboard (system client for sending dashboard messages)
+        if (agent.name === 'Dashboard') return false;
 
         // Exclude agents without a proper CLI (improperly registered or stale)
         if (!agent.cli || agent.cli === 'Unknown') return false;
@@ -2543,6 +2614,42 @@ export async function startDashboard(
         client.send(payload);
       }
     });
+  };
+
+  // Helper to broadcast direct messages to all connected clients
+  // This enables agent replies to appear in the dashboard UI
+  // Broadcasts to both main wss (local mode) and wssPresence (cloud mode)
+  const broadcastDirectMessage = (message: {
+    type: 'direct_message';
+    targetUser: string;
+    from: string;
+    fromAvatarUrl?: string;
+    fromEntityType?: 'user' | 'agent';
+    body: string;
+    messageId: string;
+    timestamp: string;
+  }) => {
+    const payload = JSON.stringify(message);
+
+    // Broadcast to main WebSocket clients (local mode)
+    const mainClients = Array.from(wss.clients).filter(c => c.readyState === WebSocket.OPEN);
+    console.log(`[dashboard] Broadcasting direct_message to ${mainClients.length} main clients`);
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(payload);
+      }
+    });
+
+    // Also broadcast to presence WebSocket clients (cloud mode)
+    const presenceClients = Array.from(wssPresence.clients).filter(c => c.readyState === WebSocket.OPEN);
+    if (presenceClients.length > 0) {
+      console.log(`[dashboard] Broadcasting direct_message to ${presenceClients.length} presence clients`);
+      wssPresence.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(payload);
+        }
+      });
+    }
   };
 
   // Helper to get online users list (without ws references)
@@ -3707,8 +3814,8 @@ export async function startDashboard(
     const memUsage = process.memoryUsage();
     const socketExists = fs.existsSync(socketPath);
 
-    // Check relay client connectivity (check if default _DashboardUI client is connected)
-    const defaultClient = relayClients.get('_DashboardUI');
+    // Check relay client connectivity (check if default Dashboard client is connected)
+    const defaultClient = relayClients.get('Dashboard');
     const relayConnected = defaultClient?.state === 'READY';
 
     // If socket doesn't exist, daemon may not be running properly
@@ -3737,7 +3844,7 @@ export async function startDashboard(
     const uptime = process.uptime();
     const memUsage = process.memoryUsage();
     const socketExists = fs.existsSync(socketPath);
-    const defaultClient = relayClients.get('_DashboardUI');
+    const defaultClient = relayClients.get('Dashboard');
     const relayConnected = defaultClient?.state === 'READY';
 
     if (!socketExists) {
@@ -5507,7 +5614,7 @@ Start by greeting the project leads and asking for status updates.`;
 
     // Try to send message to agent
     try {
-      const client = await getRelayClient('_DashboardUI');
+      const client = await getRelayClient('Dashboard');
       if (client) {
         await client.sendMessage(agentName, responseMessage, 'message');
       }
@@ -5542,7 +5649,7 @@ Start by greeting the project leads and asking for status updates.`;
     }
 
     try {
-      const client = await getRelayClient('_DashboardUI');
+      const client = await getRelayClient('Dashboard');
       if (client) {
         await client.sendMessage(agentName, responseMessage, 'message');
       }
@@ -5783,7 +5890,7 @@ Start by greeting the project leads and asking for status updates.`;
 
     // Send task to agent via relay
     try {
-      const client = await getRelayClient('_DashboardUI');
+      const client = await getRelayClient('Dashboard');
       if (client) {
         const taskMessage = `TASK ASSIGNED [${priority.toUpperCase()}]: ${title}\n\n${description || 'No additional details.'}`;
         await client.sendMessage(agentName, taskMessage, 'message');
@@ -5840,7 +5947,7 @@ Start by greeting the project leads and asking for status updates.`;
     // Notify agent of cancellation if task is still active
     if (task.status === 'pending' || task.status === 'assigned' || task.status === 'in_progress') {
       try {
-        const client = await getRelayClient('_DashboardUI');
+        const client = await getRelayClient('Dashboard');
         if (client) {
           await client.sendMessage(task.agentName, `TASK CANCELLED: ${task.title}`, 'message');
         }
@@ -5927,7 +6034,7 @@ Start by greeting the project leads and asking for status updates.`;
     }
 
     try {
-      const client = await getRelayClient('_DashboardUI');
+      const client = await getRelayClient('Dashboard');
       if (!client) {
         return res.status(503).json({
           success: false,
