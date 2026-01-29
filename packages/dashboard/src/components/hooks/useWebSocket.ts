@@ -24,6 +24,14 @@ export interface UseWebSocketOptions {
   reconnect?: boolean;
   maxReconnectAttempts?: number;
   reconnectDelay?: number;
+  /** Callback for non-data events like direct_message, channel_message */
+  onEvent?: (event: WebSocketEvent) => void;
+}
+
+/** Event types received on the WebSocket (non-data messages) */
+export interface WebSocketEvent {
+  type: 'direct_message' | 'channel_message' | 'presence_update' | 'typing' | string;
+  [key: string]: unknown;
 }
 
 export interface UseWebSocketReturn {
@@ -34,12 +42,13 @@ export interface UseWebSocketReturn {
   disconnect: () => void;
 }
 
-const DEFAULT_OPTIONS: Required<UseWebSocketOptions> = {
+const DEFAULT_OPTIONS: Omit<Required<UseWebSocketOptions>, 'onEvent'> & { onEvent?: (event: WebSocketEvent) => void } = {
   url: '',
   autoConnect: true,
   reconnect: true,
   maxReconnectAttempts: 10,
   reconnectDelay: 1000,
+  onEvent: undefined,
 };
 
 /**
@@ -60,6 +69,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const onEventRef = useRef(opts.onEvent);
+  onEventRef.current = opts.onEvent; // Keep ref in sync with callback prop
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -103,8 +114,17 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
       ws.onmessage = (event) => {
         try {
-          const parsed = JSON.parse(event.data) as DashboardData;
-          setData(parsed);
+          const parsed = JSON.parse(event.data);
+
+          // Check if this is an event message (has a 'type' field like direct_message, channel_message)
+          // vs dashboard data (has agents array)
+          if (parsed && typeof parsed === 'object' && 'type' in parsed && typeof parsed.type === 'string') {
+            // This is an event message - route to callback
+            onEventRef.current?.(parsed as WebSocketEvent);
+          } else {
+            // This is dashboard data - update state
+            setData(parsed as DashboardData);
+          }
         } catch (e) {
           console.error('[useWebSocket] Failed to parse message:', e);
         }
