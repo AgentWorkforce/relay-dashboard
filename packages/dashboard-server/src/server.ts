@@ -4266,26 +4266,9 @@ export async function startDashboard(
         }
       }
 
-      // Also check agents.json for registered agents that may not be spawned
-      const agentsPath = path.join(teamDir, 'agents.json');
-      if (fs.existsSync(agentsPath)) {
-        const data = JSON.parse(fs.readFileSync(agentsPath, 'utf-8'));
-        const registeredAgents = data.agents || [];
-        for (const agent of registeredAgents) {
-          if (!agents.find(a => a.name === agent.name)) {
-            // Check if recently active (within 30 seconds)
-            const lastSeen = agent.lastSeen ? new Date(agent.lastSeen).getTime() : 0;
-            const isActive = Date.now() - lastSeen < 30000;
-            if (isActive) {
-              agents.push({
-                name: agent.name,
-                status: 'active',
-                alertLevel: 'normal',
-              });
-            }
-          }
-        }
-      }
+      // Note: We only show spawned agents with actual PIDs in memory metrics.
+      // Human users and non-process entries from agents.json are excluded since
+      // they don't have memory usage to track.
 
       res.json({
         agents,

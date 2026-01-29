@@ -377,7 +377,10 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
 
   // In non-cloud mode, provide a fallback workspace ID for local/mock mode
   // This ensures channels API calls work even without an orchestrator workspace
-  const effectiveActiveWorkspaceId = isCloudMode ? activeCloudWorkspaceId : (activeWorkspaceId ?? 'default');
+  // In cloud mode, never use 'default' - it's not a valid UUID and will cause DB errors
+  const effectiveActiveWorkspaceId = isCloudMode
+    ? activeCloudWorkspaceId  // null if no workspace selected in cloud mode
+    : (activeWorkspaceId ?? 'default');
   const effectiveIsLoading = isCloudMode ? isLoadingCloudWorkspaces : isOrchestratorLoading;
 
   // Sync the active workspace ID with the api module for cloud mode proxying
@@ -2486,7 +2489,17 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
             workspaces={effectiveWorkspaces}
             activeWorkspaceId={effectiveActiveWorkspaceId ?? undefined}
             onSelect={handleEffectiveWorkspaceSelect}
-            onAddWorkspace={() => setIsAddWorkspaceOpen(true)}
+            onAddWorkspace={() => {
+              if (isCloudMode) {
+                // In cloud mode, redirect to app homepage for workspace management
+                // Clear the saved workspace ID and add query param to force showing picker
+                localStorage.removeItem('agentrelay_workspace_id');
+                window.location.href = '/app?select=true';
+              } else {
+                // In local mode, show the add workspace modal
+                setIsAddWorkspaceOpen(true);
+              }
+            }}
             onWorkspaceSettings={handleWorkspaceSettingsClick}
             isLoading={effectiveIsLoading}
           />

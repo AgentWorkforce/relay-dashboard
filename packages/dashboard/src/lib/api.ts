@@ -11,12 +11,29 @@ import type {
   Session,
   AgentSummary,
   FleetData,
+  Project,
   SendMessageRequest,
   SpawnAgentRequest,
   SpawnAgentResponse,
   ApiResponse,
   Attachment,
 } from '../types';
+
+/**
+ * Bridge data returned by /api/bridge endpoint
+ * Contains workspace repos as projects with their agents
+ */
+export interface BridgeData {
+  projects: Project[];
+  bridgeAgents?: Agent[];
+  messages: Message[];
+  connected: boolean;
+  workspace?: {
+    id: string;
+    name: string;
+    status: string;
+  };
+}
 import { getWebSocketUrl, getApiBaseUrl } from './config';
 
 // API base URL - uses centralized config
@@ -130,6 +147,7 @@ const CLOUD_NATIVE_PATHS = [
   '/api/project-groups/', // Coordinators
   '/api/github-app/',   // GitHub App
   '/api/channels',      // Channel proxy handled by dashboard server
+  '/api/bridge',        // Bridge data (multi-repo view)
 ];
 
 /**
@@ -555,11 +573,18 @@ export const api = {
 
   /**
    * Get bridge data for multi-project view
+   * @param workspaceId - Optional workspace ID to get repos/projects for
    */
-  async getBridgeData(): Promise<ApiResponse<FleetData>> {
+  async getBridgeData(workspaceId?: string): Promise<ApiResponse<BridgeData>> {
     try {
-      const response = await apiFetch(getApiUrl('/api/bridge'));
-      const data = await response.json() as FleetData;
+      // Use provided workspaceId or fall back to active workspace
+      const wsId = workspaceId || activeWorkspaceId;
+      const url = wsId
+        ? `${API_BASE}/api/bridge?workspaceId=${encodeURIComponent(wsId)}`
+        : `${API_BASE}/api/bridge`;
+
+      const response = await apiFetch(url);
+      const data = await response.json() as BridgeData;
 
       if (response.ok) {
         return { success: true, data };

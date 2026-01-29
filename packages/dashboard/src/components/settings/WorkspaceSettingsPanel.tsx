@@ -11,7 +11,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { cloudApi } from '../../lib/cloudApi';
 import { ProviderAuthFlow } from '../ProviderAuthFlow';
 import { TerminalProviderSetup } from '../TerminalProviderSetup';
-import { RepoAccessPanel } from '../RepoAccessPanel';
+import { RepositoriesPanel } from '../RepositoriesPanel';
 
 export interface WorkspaceSettingsPanelProps {
   workspaceId: string;
@@ -180,6 +180,12 @@ export function WorkspaceSettingsPanel({
 
   // Load workspace details
   useEffect(() => {
+    // Skip loading if workspaceId is invalid (not a UUID)
+    if (!workspaceId || workspaceId === 'default' || !/^[0-9a-f-]{36}$/i.test(workspaceId)) {
+      setIsLoading(false);
+      return;
+    }
+
     async function loadWorkspace() {
       setIsLoading(true);
       setError(null);
@@ -501,7 +507,6 @@ export function WorkspaceSettingsPanel({
     { id: 'general', label: 'General', icon: <SettingsGearIcon /> },
     { id: 'providers', label: 'AI Providers', icon: <ProviderIcon /> },
     { id: 'repos', label: 'Repositories', icon: <RepoIcon /> },
-    { id: 'github-access', label: 'GitHub Access', icon: <GitHubIcon /> },
     { id: 'domain', label: 'Domain', icon: <GlobeIcon /> },
     { id: 'danger', label: 'Danger', icon: <AlertIcon /> },
   ];
@@ -873,131 +878,21 @@ export function WorkspaceSettingsPanel({
 
         {/* Repositories Section */}
         {activeSection === 'repos' && (
-          <div className="space-y-8">
-            <SectionHeader
-              title="Connected Repositories"
-              subtitle="Repositories linked to this workspace"
-            />
-
-            <div className="space-y-3">
-              {workspace.repositories.length > 0 ? (
-                workspace.repositories.map((repo) => (
-                  <div
-                    key={repo.id}
-                    className="flex items-center justify-between p-4 bg-bg-tertiary rounded-lg border border-border-subtle"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-bg-card flex items-center justify-center">
-                        <RepoIcon />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-text-primary">{repo.fullName}</p>
-                        <p className="text-xs text-text-muted">
-                          {repo.lastSyncedAt
-                            ? `Synced ${new Date(repo.lastSyncedAt).toLocaleDateString()}`
-                            : 'Not synced'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => handleSyncRepo(repo.id)}
-                        disabled={syncingRepoId === repo.id || workspace.status !== 'running'}
-                        className="px-3 py-1.5 bg-accent-cyan/10 border border-accent-cyan/30 text-accent-cyan rounded-lg text-xs font-semibold hover:bg-accent-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
-                        title={workspace.status !== 'running' ? 'Workspace must be running to sync' : 'Sync repository'}
-                      >
-                        {syncingRepoId === repo.id ? (
-                          <>
-                            <SyncIcon spinning />
-                            Syncing...
-                          </>
-                        ) : (
-                          <>
-                            <SyncIcon />
-                            Sync
-                          </>
-                        )}
-                      </button>
-                      <StatusBadge status={repo.syncStatus} />
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="p-6 bg-bg-tertiary rounded-lg border border-border-subtle border-dashed text-center">
-                  <RepoIcon className="w-8 h-8 mx-auto mb-3 text-text-muted" />
-                  <p className="text-sm text-text-muted">No repositories connected</p>
-                </div>
-              )}
-            </div>
-
-            {unassignedRepos.length > 0 && (
-              <>
-                <SectionHeader
-                  title="Available Repositories"
-                  subtitle="Add more repositories to this workspace"
-                />
-                <div className="space-y-3">
-                  {unassignedRepos.map((repo) => (
-                    <div
-                      key={repo.id}
-                      className="flex items-center justify-between p-4 bg-bg-tertiary rounded-lg border border-border-subtle hover:border-accent-cyan/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-bg-card flex items-center justify-center">
-                          <RepoIcon />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-text-primary">{repo.fullName}</p>
-                          <p className="text-xs text-text-muted">
-                            {repo.isPrivate ? 'Private' : 'Public'}
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleAddRepo(repo.id)}
-                        className="px-4 py-2 bg-accent-cyan/10 border border-accent-cyan/30 text-accent-cyan rounded-lg text-xs font-semibold hover:bg-accent-cyan/20 transition-colors"
-                      >
-                        Add to Workspace
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* GitHub Access Section */}
-        {activeSection === 'github-access' && (
           <div className="space-y-6">
             <SectionHeader
-              title="GitHub Repository Access"
-              subtitle="Repositories you have access to via your GitHub account"
+              title="Repositories"
+              subtitle="Manage repositories for this workspace"
             />
-            <RepoAccessPanel
-              workspaces={
-                workspace && workspace.repositories?.length > 0
-                  ? [{
-                      id: workspace.id,
-                      name: workspace.name,
-                      repositoryFullName: workspace.repositories[0].fullName,
-                      status: workspace.status as 'provisioning' | 'running' | 'stopped' | 'error',
-                    }]
-                  : []
-              }
-              onWorkspaceCreated={(workspaceId, repoFullName) => {
-                // Refresh workspace data after creating
+            <RepositoriesPanel
+              workspaceId={workspaceId}
+              workspaceRepos={workspace.repositories}
+              onRepoAdded={(repoFullName) => {
+                // Refresh workspace data after adding a repo
                 cloudApi.getWorkspaceDetails(workspaceId).then(result => {
                   if (result.success) {
                     setWorkspace(result.data);
                   }
                 });
-              }}
-              onOpenWorkspace={(workspaceId) => {
-                // Navigate to workspace or close settings
-                if (onClose) {
-                  onClose();
-                }
               }}
               csrfToken={csrfToken}
               className="bg-bg-tertiary rounded-xl border border-border-subtle overflow-hidden"
