@@ -727,6 +727,10 @@ export async function startDashboard(
   // Track log subscriptions: agentName -> Set of WebSocket clients
   const logSubscriptions = new Map<string, Set<WebSocket>>();
 
+  // Track file watchers for externally-spawned worker logs (module scope to avoid duplicates)
+  const fileWatchers = new Map<string, fs.FSWatcher>();
+  const fileLastSize = new Map<string, number>();
+
   // Track alive status for ping/pong keepalive on main dashboard connections
   // This prevents TCP/proxy timeouts from killing idle workspace connections
   const mainClientAlive = new WeakMap<WebSocket, boolean>();
@@ -2044,7 +2048,6 @@ export async function startDashboard(
           const agent = agentsMap.get(worker.name);
           if (agent && !agent.isSpawned && worker.logFile && fs.existsSync(worker.logFile)) {
             agent.isSpawned = true; // Mark as spawned so log button appears
-            console.log(`[dashboard] Marking external worker as spawned: ${worker.name}`);
           }
         }
       } catch (err) {
@@ -2389,19 +2392,12 @@ export async function startDashboard(
 
     const getExternalWorkerInfo = (agentName: string): WorkerMeta | null => {
       const workersPath = path.join(teamDir, 'workers.json');
-      console.log(`[dashboard] Looking for external worker ${agentName} in ${workersPath}`);
-      if (!fs.existsSync(workersPath)) {
-        console.log(`[dashboard] workers.json not found at ${workersPath}`);
-        return null;
-      }
+      if (!fs.existsSync(workersPath)) return null;
       try {
         const data = JSON.parse(fs.readFileSync(workersPath, 'utf-8'));
-        const workerNames = data.workers?.map((w: WorkerMeta) => w.name) || [];
-        console.log(`[dashboard] Workers in file: ${workerNames.join(', ')}`);
         const worker = data.workers?.find((w: WorkerMeta) => w.name === agentName);
         return worker ?? null;
-      } catch (err) {
-        console.log(`[dashboard] Error reading workers.json: ${err}`);
+      } catch {
         return null;
       }
     };
@@ -2418,10 +2414,6 @@ export async function startDashboard(
         return [];
       }
     };
-
-    // Track file watchers for externally-spawned worker logs
-    const fileWatchers = new Map<string, fs.FSWatcher>();
-    const fileLastSize = new Map<string, number>();
 
     // Helper to start watching a log file for live updates
     const watchLogFile = (agentName: string, logFile: string) => {
@@ -2480,7 +2472,6 @@ export async function startDashboard(
         });
 
         fileWatchers.set(agentName, watcher);
-        console.log(`[dashboard] Started watching log file for external worker: ${agentName}`);
       } catch (err) {
         console.error(`[dashboard] Failed to watch log file for ${agentName}:`, err);
       }
@@ -2547,7 +2538,6 @@ export async function startDashboard(
       } else {
         // Check if this is an externally-spawned worker with a log file
         const externalWorker = getExternalWorkerInfo(agentName);
-        console.log(`[dashboard] Checking external worker for ${agentName}: found=${!!externalWorker}, logFile=${externalWorker?.logFile}, exists=${externalWorker?.logFile ? fs.existsSync(externalWorker.logFile) : false}`);
         if (externalWorker?.logFile && fs.existsSync(externalWorker.logFile)) {
           // Read logs from the external worker's log file
           const lines = readLogsFromFile(externalWorker.logFile, 5000);
@@ -2558,7 +2548,6 @@ export async function startDashboard(
           }));
           // Start watching the log file for live updates
           watchLogFile(agentName, externalWorker.logFile);
-          console.log(`[dashboard] Serving logs from external worker file: ${externalWorker.logFile}`);
         } else {
           // For daemon-connected agents without log files, explain that PTY output isn't available
           ws.send(JSON.stringify({
@@ -2603,6 +2592,17 @@ export async function startDashboard(
           const agentName = msg.unsubscribe;
           clientSubscriptions.delete(agentName);
           logSubscriptions.get(agentName)?.delete(ws);
+
+          // Clean up file watcher if no more subscribers
+          const remainingClients = logSubscriptions.get(agentName);
+          if (!remainingClients || remainingClients.size === 0) {
+            const watcher = fileWatchers.get(agentName);
+            if (watcher) {
+              watcher.close();
+              fileWatchers.delete(agentName);
+              fileLastSize.delete(agentName);
+            }
+          }
 
           console.log(`[dashboard] Client unsubscribed from logs for: ${agentName}`);
 
