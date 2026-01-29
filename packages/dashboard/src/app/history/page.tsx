@@ -143,8 +143,8 @@ export default function HistoryPage() {
             </div>
           </div>
 
-          {/* Stats */}
-          {stats && (
+          {/* Stats - only show when we have real numbers (not 'unknown' from JSONL fallback) */}
+          {stats && typeof stats.messageCount === 'number' && (
             <div className="hidden md:flex items-center gap-4 text-sm">
               <StatBadge label="Messages" value={stats.messageCount} />
               <StatBadge label="Sessions" value={stats.sessionCount} />
