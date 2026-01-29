@@ -7,8 +7,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
-import { SqliteStorageAdapter } from '@agent-relay/storage/sqlite-adapter';
-import type { StorageAdapter, StoredMessage } from '@agent-relay/storage/adapter';
+import { createStorageAdapter, type StorageAdapter, type StoredMessage } from '@agent-relay/storage/adapter';
 import { RelayClient, type ClientState, type Envelope, type ChannelMessagePayload } from '@agent-relay/sdk';
 import { UserBridge } from './services/user-bridge.js';
 import { computeNeedsAttention } from './services/needs-attention.js';
@@ -446,11 +445,12 @@ export async function startDashboard(
   console.log('Starting dashboard...');
 
   const disableStorage = process.env.RELAY_DISABLE_STORAGE === 'true';
+  // Use createStorageAdapter to match daemon's storage type (JSONL by default)
+  // This ensures dashboard reads from the same storage as daemon writes to
+  const storagePath = dbPath ?? path.join(dataDir, 'messages.sqlite');
   const storage: StorageAdapter | undefined = disableStorage
     ? undefined
-    : new SqliteStorageAdapter({
-        dbPath: dbPath ?? path.join(dataDir, 'dashboard.db'),
-      });
+    : await createStorageAdapter(storagePath);
 
   const defaultWorkspaceId = process.env.RELAY_WORKSPACE_ID ?? process.env.AGENT_RELAY_WORKSPACE_ID;
 
@@ -1765,7 +1765,7 @@ export async function startDashboard(
   };
 
   const getRecentSessions = async (): Promise<SessionInfo[]> => {
-    if (storage && storage instanceof SqliteStorageAdapter) {
+    if (storage && typeof storage.getRecentSessions === 'function') {
       const sessions = await storage.getRecentSessions(20);
       return sessions.map(s => ({
         id: s.id,
@@ -1784,7 +1784,7 @@ export async function startDashboard(
   };
 
   const getAgentSummaries = async (): Promise<AgentSummary[]> => {
-    if (storage && storage instanceof SqliteStorageAdapter) {
+    if (storage && typeof storage.getAllAgentSummaries === 'function') {
       const summaries = await storage.getAllAgentSummaries();
       return summaries.map(s => ({
         agentName: s.agentName,
@@ -4711,9 +4711,10 @@ export async function startDashboard(
     }
 
     try {
-      // Get stats from SQLite adapter if available
-      if (storage instanceof SqliteStorageAdapter) {
-        const stats = await storage.getStats();
+      // Get stats from adapter if available (SQLite-specific getStats method)
+      const storageWithStats = storage as { getStats?: () => Promise<{ messageCount: number; sessionCount: number; oldestMessageTs?: number }> };
+      if (typeof storageWithStats.getStats === 'function' && typeof storage.getSessions === 'function') {
+        const stats = await storageWithStats.getStats();
         const sessions = await storage.getSessions({ limit: 1000 });
 
         // Calculate additional stats
