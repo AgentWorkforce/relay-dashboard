@@ -1,5 +1,5 @@
 /**
- * Dashboard V2 - Main App Page
+ * Dashboard V2 - Main App Page (Client Component)
  *
  * In cloud mode: Shows workspace selection and connects to selected workspace's dashboard.
  * In local mode: Connects to local daemon WebSocket.
@@ -8,12 +8,12 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { App } from '../../components/App';
-import { CloudSessionProvider } from '../../components/CloudSessionProvider';
-import { LogoIcon } from '../../components/Logo';
-import { setActiveWorkspaceId } from '../../lib/api';
-import { ProvisioningProgress } from '../../components/ProvisioningProgress';
-import { ProviderConnectionList, type ProviderInfo } from '../../components/ProviderConnectionList';
+import { App } from '../../../components/App';
+import { CloudSessionProvider } from '../../../components/CloudSessionProvider';
+import { LogoIcon } from '../../../components/Logo';
+import { setActiveWorkspaceId } from '../../../lib/api';
+import { ProvisioningProgress } from '../../../components/ProvisioningProgress';
+import { ProviderConnectionList, type ProviderInfo } from '../../../components/ProviderConnectionList';
 
 interface Workspace {
   id: string;
@@ -56,7 +56,7 @@ const AI_PROVIDERS: ProviderInfo[] = [
 // Force cloud mode via env var - prevents silent fallback to local mode
 const FORCE_CLOUD_MODE = process.env.NEXT_PUBLIC_FORCE_CLOUD_MODE === 'true';
 
-export default function DashboardPage() {
+export default function DashboardPageClient() {
   const [state, setState] = useState<PageState>('loading');
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [repos, setRepos] = useState<Repository[]>([]);

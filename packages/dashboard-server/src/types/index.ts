@@ -18,7 +18,7 @@ export interface DashboardOptions {
   dataDir: string;
   /** Team directory for configuration */
   teamDir: string;
-  /** Path to SQLite database (defaults to dataDir/dashboard.db) */
+  /** Path to SQLite database (defaults to dataDir/messages.sqlite - same as daemon) */
   dbPath?: string;
   /** Enable agent spawning API */
   enableSpawner?: boolean;
