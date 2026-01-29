@@ -141,7 +141,7 @@ export function ConversationHistory({ isOpen, onClose }: ConversationHistoryProp
         <div className="flex items-center justify-between p-4 border-b border-border">
           <div className="flex items-center gap-4">
             <h2 className="text-lg font-semibold text-text-primary">Conversation History</h2>
-            {stats && (
+            {stats && typeof stats.messageCount === 'number' && (
               <div className="flex gap-4 text-sm text-text-muted">
                 <span>{stats.messageCount} messages</span>
                 <span>{stats.sessionCount} sessions</span>
