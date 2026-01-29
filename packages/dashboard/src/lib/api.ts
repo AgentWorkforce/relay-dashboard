@@ -555,10 +555,15 @@ export const api = {
 
   /**
    * Get dashboard data (fallback for REST polling)
+   * @param workspaceId - Optional workspace ID to get data for
    */
-  async getData(): Promise<ApiResponse<DashboardData>> {
+  async getData(workspaceId?: string): Promise<ApiResponse<DashboardData>> {
     try {
-      const response = await apiFetch(getApiUrl('/api/data'));
+      const wsId = workspaceId || activeWorkspaceId;
+      const url = wsId
+        ? getApiUrl(`/api/data?workspaceId=${encodeURIComponent(wsId)}`)
+        : getApiUrl('/api/data');
+      const response = await apiFetch(url);
       const data = await response.json() as DashboardData;
 
       if (response.ok) {
