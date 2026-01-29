@@ -727,6 +727,10 @@ export async function startDashboard(
   // Track log subscriptions: agentName -> Set of WebSocket clients
   const logSubscriptions = new Map<string, Set<WebSocket>>();
 
+  // Track file watchers for externally-spawned worker logs (module scope to avoid duplicates)
+  const fileWatchers = new Map<string, fs.FSWatcher>();
+  const fileLastSize = new Map<string, number>();
+
   // Track alive status for ping/pong keepalive on main dashboard connections
   // This prevents TCP/proxy timeouts from killing idle workspace connections
   const mainClientAlive = new WeakMap<WebSocket, boolean>();
@@ -2034,6 +2038,23 @@ export async function startDashboard(
       }
     }
 
+    // Also check workers.json for externally-spawned workers (e.g., from agentswarm)
+    // These workers have log files but weren't spawned by the dashboard's spawner
+    const workersJsonPath = path.join(teamDir, 'workers.json');
+    if (fs.existsSync(workersJsonPath)) {
+      try {
+        const workersData = JSON.parse(fs.readFileSync(workersJsonPath, 'utf-8'));
+        for (const worker of workersData.workers || []) {
+          const agent = agentsMap.get(worker.name);
+          if (agent && !agent.isSpawned && worker.logFile && fs.existsSync(worker.logFile)) {
+            agent.isSpawned = true; // Mark as spawned so log button appears
+          }
+        }
+      } catch (err) {
+        // Ignore errors reading workers.json
+      }
+    }
+
     // Set team from teams.json for agents that don't have a team yet
     // This ensures agents defined in teams.json are associated with their team
     // even if they weren't spawned via auto-spawn
@@ -2359,6 +2380,103 @@ export async function startDashboard(
       }
     };
 
+    // Helper to get worker info from workers.json (for externally-spawned workers)
+    interface WorkerMeta {
+      name: string;
+      cli: string;
+      task: string;
+      spawnedAt: number;
+      pid?: number;
+      logFile?: string;
+    }
+
+    const getExternalWorkerInfo = (agentName: string): WorkerMeta | null => {
+      const workersPath = path.join(teamDir, 'workers.json');
+      if (!fs.existsSync(workersPath)) return null;
+      try {
+        const data = JSON.parse(fs.readFileSync(workersPath, 'utf-8'));
+        const worker = data.workers?.find((w: WorkerMeta) => w.name === agentName);
+        return worker ?? null;
+      } catch {
+        return null;
+      }
+    };
+
+    // Helper to read logs from a log file (for externally-spawned workers)
+    const readLogsFromFile = (logFile: string, limit: number = 5000): string[] => {
+      if (!fs.existsSync(logFile)) return [];
+      try {
+        const content = fs.readFileSync(logFile, 'utf-8');
+        const lines = content.split('\n');
+        // Return last `limit` lines
+        return lines.slice(-limit);
+      } catch {
+        return [];
+      }
+    };
+
+    // Helper to start watching a log file for live updates
+    const watchLogFile = (agentName: string, logFile: string) => {
+      if (fileWatchers.has(agentName)) return; // Already watching
+
+      if (!fs.existsSync(logFile)) return;
+
+      try {
+        // Track current file size for incremental reads
+        const stats = fs.statSync(logFile);
+        fileLastSize.set(agentName, stats.size);
+
+        const watcher = fs.watch(logFile, (eventType) => {
+          if (eventType !== 'change') return;
+
+          const clients = logSubscriptions.get(agentName);
+          if (!clients || clients.size === 0) {
+            // No subscribers, stop watching
+            watcher.close();
+            fileWatchers.delete(agentName);
+            fileLastSize.delete(agentName);
+            return;
+          }
+
+          try {
+            const newStats = fs.statSync(logFile);
+            const lastSize = fileLastSize.get(agentName) || 0;
+
+            if (newStats.size > lastSize) {
+              // Read only the new content
+              const fd = fs.openSync(logFile, 'r');
+              const buffer = Buffer.alloc(newStats.size - lastSize);
+              fs.readSync(fd, buffer, 0, buffer.length, lastSize);
+              fs.closeSync(fd);
+
+              const newContent = buffer.toString('utf-8');
+              fileLastSize.set(agentName, newStats.size);
+
+              // Broadcast to subscribed clients
+              const payload = JSON.stringify({
+                type: 'output',
+                agent: agentName,
+                data: newContent,
+                timestamp: new Date().toISOString(),
+              });
+
+              for (const client of clients) {
+                if (client.readyState === WebSocket.OPEN) {
+                  client.send(payload);
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`[dashboard] Error reading log file updates for ${agentName}:`, err);
+          }
+        });
+
+        fileWatchers.set(agentName, watcher);
+      } catch (err) {
+        console.error(`[dashboard] Failed to watch log file for ${agentName}:`, err);
+      }
+    };
+
     // Helper to subscribe to an agent (async to handle spawn timing)
     const subscribeToAgent = async (agentName: string) => {
       let isSpawned = spawner?.hasWorker(agentName) ?? false;
@@ -2418,12 +2536,26 @@ export async function startDashboard(
           lines: lines || [],
         }));
       } else {
-        // For daemon-connected agents, explain that PTY output isn't available
-        ws.send(JSON.stringify({
-          type: 'history',
-          agent: agentName,
-          lines: [`[${agentName} is a daemon-connected agent - PTY output not available. Showing relay messages only.]`],
-        }));
+        // Check if this is an externally-spawned worker with a log file
+        const externalWorker = getExternalWorkerInfo(agentName);
+        if (externalWorker?.logFile && fs.existsSync(externalWorker.logFile)) {
+          // Read logs from the external worker's log file
+          const lines = readLogsFromFile(externalWorker.logFile, 5000);
+          ws.send(JSON.stringify({
+            type: 'history',
+            agent: agentName,
+            lines,
+          }));
+          // Start watching the log file for live updates
+          watchLogFile(agentName, externalWorker.logFile);
+        } else {
+          // For daemon-connected agents without log files, explain that PTY output isn't available
+          ws.send(JSON.stringify({
+            type: 'history',
+            agent: agentName,
+            lines: [`[${agentName} is a daemon-connected agent - PTY output not available. Showing relay messages only.]`],
+          }));
+        }
       }
 
       ws.send(JSON.stringify({
@@ -2460,6 +2592,17 @@ export async function startDashboard(
           const agentName = msg.unsubscribe;
           clientSubscriptions.delete(agentName);
           logSubscriptions.get(agentName)?.delete(ws);
+
+          // Clean up file watcher if no more subscribers
+          const remainingClients = logSubscriptions.get(agentName);
+          if (!remainingClients || remainingClients.size === 0) {
+            const watcher = fileWatchers.get(agentName);
+            if (watcher) {
+              watcher.close();
+              fileWatchers.delete(agentName);
+              fileLastSize.delete(agentName);
+            }
+          }
 
           console.log(`[dashboard] Client unsubscribed from logs for: ${agentName}`);
 
@@ -2510,6 +2653,17 @@ export async function startDashboard(
       // Clean up subscriptions on disconnect
       for (const agentName of clientSubscriptions) {
         logSubscriptions.get(agentName)?.delete(ws);
+        // Clean up file watchers if no more subscribers
+        const remainingClients = logSubscriptions.get(agentName);
+        if (!remainingClients || remainingClients.size === 0) {
+          const watcher = fileWatchers.get(agentName);
+          if (watcher) {
+            watcher.close();
+            fileWatchers.delete(agentName);
+            fileLastSize.delete(agentName);
+            console.log(`[dashboard] Stopped watching log file for: ${agentName}`);
+          }
+        }
       }
       const reasonStr = reason?.toString() || 'no reason';
       console.log(`[dashboard] Logs WebSocket client disconnected (code: ${code}, reason: ${reasonStr})`);

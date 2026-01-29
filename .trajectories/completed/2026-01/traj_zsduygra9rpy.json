@@ -1,0 +1,65 @@
+{
+  "id": "traj_zsduygra9rpy",
+  "version": 1,
+  "task": {
+    "title": "Fix external worker logs visibility in dashboard",
+    "source": {
+      "system": "plain",
+      "id": "external-worker-logs"
+    }
+  },
+  "status": "completed",
+  "startedAt": "2026-01-29T21:31:14.998Z",
+  "agents": [
+    {
+      "name": "khaliqgant",
+      "role": "lead",
+      "joinedAt": "2026-01-29T21:31:14.999Z"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "chap_2en9c2md03sj",
+      "title": "Work",
+      "agentName": "default",
+      "startedAt": "2026-01-29T21:31:22.210Z",
+      "events": [
+        {
+          "ts": 1769722282211,
+          "type": "decision",
+          "content": "Check workers.json for external workers to set isSpawned flag: Check workers.json for external workers to set isSpawned flag",
+          "raw": {
+            "question": "Check workers.json for external workers to set isSpawned flag",
+            "chosen": "Check workers.json for external workers to set isSpawned flag",
+            "alternatives": [],
+            "reasoning": "Dashboard spawner only tracks workers it spawned. External spawners (agentswarm, SDK) write to workers.json with logFile paths. By checking workers.json, we can identify these and show the log button."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1769722289417,
+          "type": "decision",
+          "content": "Read logs from external worker log files with file watching: Read logs from external worker log files with file watching",
+          "raw": {
+            "question": "Read logs from external worker log files with file watching",
+            "chosen": "Read logs from external worker log files with file watching",
+            "alternatives": [],
+            "reasoning": "External workers have log files in worker-logs/ directory. Instead of saying PTY output not available, read from these files and watch for changes to stream live updates."
+          },
+          "significance": "high"
+        }
+      ],
+      "endedAt": "2026-01-29T21:32:33.124Z"
+    }
+  ],
+  "commits": [],
+  "filesChanged": [],
+  "projectId": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard",
+  "tags": [],
+  "completedAt": "2026-01-29T21:32:33.124Z",
+  "retrospective": {
+    "summary": "Fixed external worker logs visibility: 1) Dashboard now checks workers.json to detect externally-spawned workers and sets isSpawned=true so log button appears, 2) Added fallback to read logs from worker log files when agent not in dashboard spawner, 3) Added file watching for live log streaming, 4) Added 12 unit tests covering detection, reading, and flag logic",
+    "approach": "Standard approach",
+    "confidence": 0.85
+  }
+}
