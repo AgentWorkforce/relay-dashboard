@@ -447,10 +447,11 @@ export async function startDashboard(
   const disableStorage = process.env.RELAY_DISABLE_STORAGE === 'true';
   // Use createStorageAdapter to match daemon's storage type (JSONL by default)
   // This ensures dashboard reads from the same storage as daemon writes to
+  // Enable watchForChanges so JSONL adapter auto-reloads when daemon writes new messages
   const storagePath = dbPath ?? path.join(dataDir, 'messages.sqlite');
   const storage: StorageAdapter | undefined = disableStorage
     ? undefined
-    : await createStorageAdapter(storagePath);
+    : await createStorageAdapter(storagePath, { watchForChanges: true });
 
   const defaultWorkspaceId = process.env.RELAY_WORKSPACE_ID ?? process.env.AGENT_RELAY_WORKSPACE_ID;
 
