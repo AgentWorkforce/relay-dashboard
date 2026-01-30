@@ -1449,30 +1449,15 @@ export async function startDashboard(
       const hasMessageData = Object.keys(messageData).length > 0;
 
       // Send to all targets (single agent, team members, or broadcast)
+      // Note: We do NOT persist outgoing messages here because the relay daemon
+      // already persists them when delivered (in router.persistDeliverEnvelope).
+      // Persisting here would cause duplicate messages in storage.
       let allSent = true;
       for (const target of targets) {
         const sent = relayClient.sendMessage(target, message, 'message', hasMessageData ? messageData : undefined, thread);
         if (!sent) {
           allSent = false;
           console.error(`[dashboard] Failed to send message to ${target}`);
-        } else if (storage) {
-          // Persist outgoing message to storage so it survives page refresh
-          const messageId = `out-${crypto.randomUUID()}`;
-          storage.saveMessage({
-            id: messageId,
-            ts: Date.now(),
-            from: senderName || 'Dashboard',
-            to: target,
-            topic: thread,
-            kind: 'message',
-            body: message,
-            data: hasMessageData ? messageData : undefined,
-            status: 'read', // Outgoing messages are already "read" by sender
-            is_urgent: false,
-            is_broadcast: isBroadcast,
-          }).catch((err) => {
-            console.error('[dashboard] Failed to persist outgoing message', err);
-          });
         }
       }
 
