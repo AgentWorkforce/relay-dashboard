@@ -1,0 +1,38 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="glow1" cx="25%" cy="25%" r="50%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="75%" cy="75%" r="50%">
+      <stop offset="0%" stop-color="#16213e"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#0a0a0f"/>
+  <rect width="1200" height="630" fill="url(#glow1)"/>
+  <rect width="1200" height="630" fill="url(#glow2)"/>
+
+  <!-- Logo - AR monogram -->
+  <g transform="translate(490, 100)">
+    <!-- A shape - cyan -->
+    <path d="M18 48 L 30 12 L 42 48" stroke="#00d9ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
+    <line x1="24" y1="30" x2="36" y2="30" stroke="#00d9ff" stroke-width="3" stroke-linecap="round"/>
+    <!-- R overlay - teal -->
+    <path d="M30 12 L 30 48" stroke="#00ffc8" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+    <path d="M30 12 C 48 12 48 30 30 30 L 48 48" stroke="#00ffc8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.8"/>
+    <text x="66" y="38" font-family="system-ui, -apple-system, sans-serif" font-size="32" font-weight="600" fill="white">Agent Relay</text>
+  </g>
+
+  <!-- Title -->
+  <text x="600" y="280" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="56" font-weight="700" fill="white">Go to Bed, Wake Up to</text>
+  <text x="600" y="350" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="56" font-weight="700" fill="white">a Finished Product</text>
+
+  <!-- Subtitle -->
+  <text x="600" y="420" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="24" fill="#a1a1aa">How agent-to-agent communication is changing autonomous development</text>
+
+  <!-- Author -->
+  <text x="600" y="520" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="20" fill="#71717a">By Khaliq Gant  •  February 1, 2026</text>
+</svg>

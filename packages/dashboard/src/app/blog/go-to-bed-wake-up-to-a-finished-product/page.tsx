@@ -7,6 +7,8 @@ import '../../../landing/styles.css';
 
 const POST_ID = 'go-to-bed-wake-up-to-a-finished-product';
 
+const OG_IMAGE = 'https://agent-relay.com/blog/go-to-bed-wake-up-to-a-finished-product.svg';
+
 export const metadata: Metadata = {
   title: 'Go to Bed, Wake Up to a Finished Product | Agent Relay Blog',
   description: 'Agent-to-agent communication is weird, fascinating, and potentially revolutionary. Here\'s how I built a system where agents work autonomously while I sleep.',
@@ -14,13 +16,24 @@ export const metadata: Metadata = {
     title: 'Go to Bed, Wake Up to a Finished Product',
     description: 'How agent-to-agent communication is changing autonomous development',
     type: 'article',
+    siteName: 'Agent Relay',
+    url: 'https://agent-relay.com/blog/go-to-bed-wake-up-to-a-finished-product',
     authors: ['Khaliq Gant'],
     publishedTime: '2026-02-01',
+    images: [
+      {
+        url: OG_IMAGE,
+        width: 1200,
+        height: 630,
+        alt: 'Go to Bed, Wake Up to a Finished Product - Agent Relay',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Go to Bed, Wake Up to a Finished Product',
     description: 'How agent-to-agent communication is changing autonomous development',
+    images: [OG_IMAGE],
   },
 };
 
@@ -38,6 +51,17 @@ export default function BlogPostPage() {
       subtitle="News, tutorials, and insights from the Agent Relay team."
     >
       <article className="blog-post">
+        <img
+          src="/blog/go-to-bed-wake-up-to-a-finished-product.svg"
+          alt={post.title}
+          style={{
+            width: '100%',
+            height: 'auto',
+            borderRadius: '12px',
+            marginBottom: '32px',
+          }}
+        />
+
         <div className="blog-post-header">
           <div className="blog-meta">
             <span className="blog-category">{post.category}</span>
