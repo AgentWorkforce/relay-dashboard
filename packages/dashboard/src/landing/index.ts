@@ -13,4 +13,6 @@ export { ContactPage } from './ContactPage';
 export { DocsPage } from './DocsPage';
 export { ChangelogPage } from './ChangelogPage';
 export { BlogPage } from './BlogPage';
+export { blogPosts, getBlogPost, type BlogPost } from './blogData';
+export { renderBlogContent } from './BlogContent';
 export { CareersPage } from './CareersPage';
