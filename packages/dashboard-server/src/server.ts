@@ -2523,16 +2523,27 @@ export async function startDashboard(
       } else {
         // Check if this is an externally-spawned worker with a log file
         const externalWorker = getExternalWorkerInfo(agentName);
-        if (externalWorker?.logFile && fs.existsSync(externalWorker.logFile)) {
+        let logFile = externalWorker?.logFile;
+
+        // If no explicit logFile in workers.json, try conventional path
+        // This handles agents spawned via `agent-relay create-agent` CLI
+        if (!logFile) {
+          const conventionalPath = path.join(teamDir, 'worker-logs', `${agentName}.log`);
+          if (fs.existsSync(conventionalPath)) {
+            logFile = conventionalPath;
+          }
+        }
+
+        if (logFile && fs.existsSync(logFile)) {
           // Read logs from the external worker's log file
-          const lines = readLogsFromFile(externalWorker.logFile, 5000);
+          const lines = readLogsFromFile(logFile, 5000);
           ws.send(JSON.stringify({
             type: 'history',
             agent: agentName,
             lines,
           }));
           // Start watching the log file for live updates
-          watchLogFile(agentName, externalWorker.logFile);
+          watchLogFile(agentName, logFile);
         } else {
           // For daemon-connected agents without log files, explain that PTY output isn't available
           ws.send(JSON.stringify({
