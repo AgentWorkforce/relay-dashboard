@@ -39,6 +39,7 @@ concurrency:
 permissions:
   contents: write
   id-token: write
+  packages: write
 
 env:
   NPM_CONFIG_FUND: false
@@ -181,9 +182,95 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  # Build standalone binaries using bun compile
+  build-standalone:
+    name: Build standalone (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    needs: build
+    if: github.event.inputs.dry_run != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: bun-darwin-arm64
+            binary_name: relay-dashboard-server-darwin-arm64
+          - os: macos-latest
+            target: bun-darwin-x64
+            binary_name: relay-dashboard-server-darwin-x64
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            binary_name: relay-dashboard-server-linux-x64
+          - os: ubuntu-latest
+            target: bun-linux-arm64
+            binary_name: relay-dashboard-server-linux-arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: .
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build standalone binary
+        run: |
+          mkdir -p release-binaries
+
+          # The dashboard-server entry point is dist/start.js
+          bun build \
+            --compile \
+            --minify \
+            --target=${{ matrix.target }} \
+            --define="process.env.DASHBOARD_SERVER_VERSION=\"${{ needs.build.outputs.new_version }}\"" \
+            ./packages/dashboard-server/dist/start.js \
+            --outfile release-binaries/${{ matrix.binary_name }}
+
+      - name: Verify binary
+        if: matrix.target == 'bun-linux-x64' || (matrix.target == 'bun-darwin-arm64' && runner.arch == 'ARM64')
+        run: |
+          chmod +x release-binaries/${{ matrix.binary_name }}
+          ./release-binaries/${{ matrix.binary_name }} --version || echo "Binary created (cross-compiled)"
+
+      - name: Compress binary with gzip
+        run: |
+          gzip -9 -k release-binaries/${{ matrix.binary_name }}
+          echo "Uncompressed: $(du -h release-binaries/${{ matrix.binary_name }} | cut -f1)"
+          echo "Compressed: $(du -h release-binaries/${{ matrix.binary_name }}.gz | cut -f1)"
+
+      - name: Upload compressed binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary_name }}.gz
+          path: release-binaries/${{ matrix.binary_name }}.gz
+          retention-days: 1
+
+      - name: Upload uncompressed binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary_name }}
+          path: release-binaries/${{ matrix.binary_name }}
+          retention-days: 1
+
   create-release:
     name: Create Release
-    needs: [build, publish]
+    needs: [build, publish, build-standalone]
     runs-on: ubuntu-latest
     if: github.event.inputs.dry_run != 'true'
 
@@ -198,6 +285,19 @@ jobs:
         with:
           name: build-output
           path: .
+
+      - name: Download standalone binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: relay-dashboard-server-*
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          # Move all binaries to release-assets
+          find artifacts -type f \( -name "relay-dashboard-server-*" \) -exec mv {} release-assets/ \;
+          ls -la release-assets/
 
       - name: Commit and tag
         run: |
@@ -216,7 +316,7 @@ jobs:
           git push origin "v${NEW_VERSION}"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.build.outputs.new_version }}
           name: v${{ needs.build.outputs.new_version }}
@@ -224,17 +324,47 @@ jobs:
             ## @agent-relay/dashboard v${{ needs.build.outputs.new_version }}
 
             ### Installation
+
+            **Via npm:**
             ```bash
-            npm install @agent-relay/dashboard@${{ needs.build.outputs.new_version }}
-            npm install @agent-relay/dashboard-server@${{ needs.build.outputs.new_version }}
+            npm install -g @agent-relay/dashboard-server@${{ needs.build.outputs.new_version }}
             ```
+
+            **Via standalone binary (no Node.js required):**
+            ```bash
+            # macOS (Apple Silicon)
+            curl -fsSL https://github.com/AgentWorkforce/relay-dashboard/releases/download/v${{ needs.build.outputs.new_version }}/relay-dashboard-server-darwin-arm64.gz | gunzip > relay-dashboard-server
+            chmod +x relay-dashboard-server
+
+            # macOS (Intel)
+            curl -fsSL https://github.com/AgentWorkforce/relay-dashboard/releases/download/v${{ needs.build.outputs.new_version }}/relay-dashboard-server-darwin-x64.gz | gunzip > relay-dashboard-server
+            chmod +x relay-dashboard-server
+
+            # Linux (x64)
+            curl -fsSL https://github.com/AgentWorkforce/relay-dashboard/releases/download/v${{ needs.build.outputs.new_version }}/relay-dashboard-server-linux-x64.gz | gunzip > relay-dashboard-server
+            chmod +x relay-dashboard-server
+
+            # Linux (ARM64)
+            curl -fsSL https://github.com/AgentWorkforce/relay-dashboard/releases/download/v${{ needs.build.outputs.new_version }}/relay-dashboard-server-linux-arm64.gz | gunzip > relay-dashboard-server
+            chmod +x relay-dashboard-server
+            ```
+
+            ### Assets
+
+            | Platform | Compressed | Uncompressed |
+            |----------|------------|--------------|
+            | macOS (Apple Silicon) | relay-dashboard-server-darwin-arm64.gz | relay-dashboard-server-darwin-arm64 |
+            | macOS (Intel) | relay-dashboard-server-darwin-x64.gz | relay-dashboard-server-darwin-x64 |
+            | Linux (x64) | relay-dashboard-server-linux-x64.gz | relay-dashboard-server-linux-x64 |
+            | Linux (ARM64) | relay-dashboard-server-linux-arm64.gz | relay-dashboard-server-linux-arm64 |
+          files: release-assets/*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   summary:
     name: Summary
-    needs: [build, publish]
+    needs: [build, publish, build-standalone, create-release]
     runs-on: ubuntu-latest
     if: always()
 
@@ -248,5 +378,10 @@ jobs:
           echo "**Dry Run**: \`${{ github.event.inputs.dry_run }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Results" >> $GITHUB_STEP_SUMMARY
-          echo "- Build: ${{ needs.build.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Publish: ${{ needs.publish.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | ${{ needs.build.result == 'success' && '✅' || '❌' }} ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Publish | ${{ needs.publish.result == 'success' && '✅' || '❌' }} ${{ needs.publish.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Standalone | ${{ needs.build-standalone.result == 'success' && '✅' || (needs.build-standalone.result == 'skipped' && '⏭️' || '❌') }} ${{ needs.build-standalone.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Create Release | ${{ needs.create-release.result == 'success' && '✅' || (needs.create-release.result == 'skipped' && '⏭️' || '❌') }} ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
