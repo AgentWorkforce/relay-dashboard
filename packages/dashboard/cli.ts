@@ -9,26 +9,36 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-// Read version from package.json
+// Read version - prefer build-time define for compiled binaries, fall back to package.json
 function getVersion(): string {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = dirname(__filename);
+  // Check for build-time defined version (set via bun build --define)
+  if (process.env.DASHBOARD_VERSION) {
+    return process.env.DASHBOARD_VERSION;
+  }
 
-  // Walk up to find package.json
-  let dir = __dirname;
-  for (let i = 0; i < 5; i++) {
-    const pkgPath = join(dir, 'package.json');
-    if (existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-        if (pkg.name === '@agent-relay/dashboard') {
-          return pkg.version || 'unknown';
+  // Fall back to reading from package.json (for development/npm installs)
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+
+    // Walk up to find package.json
+    let dir = __dirname;
+    for (let i = 0; i < 5; i++) {
+      const pkgPath = join(dir, 'package.json');
+      if (existsSync(pkgPath)) {
+        try {
+          const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+          if (pkg.name === '@agent-relay/dashboard') {
+            return pkg.version || 'unknown';
+          }
+        } catch {
+          // Continue searching
         }
-      } catch {
-        // Continue searching
       }
+      dir = dirname(dir);
     }
-    dir = dirname(dir);
+  } catch {
+    // Filesystem access failed (e.g., in compiled binary with virtual fs)
   }
   return 'unknown';
 }
