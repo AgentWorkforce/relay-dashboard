@@ -986,16 +986,24 @@ export async function startDashboard(
 
     // Fallback for Next.js pages (e.g., /metrics -> /metrics.html)
     // These are needed when a route exists as both a directory and .html file
+    const sendFileWithFallback = (res: express.Response, filePath: string) => {
+      res.sendFile(filePath, (err) => {
+        if (err) {
+          res.status(404).send('Dashboard UI file not found. Please reinstall using: curl -fsSL https://raw.githubusercontent.com/AgentWorkforce/relay/main/install.sh | bash');
+        }
+      });
+    };
+
     app.get('/metrics', (req, res) => {
-      res.sendFile(path.join(dashboardDir, 'metrics.html'));
+      sendFileWithFallback(res, path.join(dashboardDir, 'metrics.html'));
     });
     app.get('/app', (req, res) => {
-      res.sendFile(path.join(dashboardDir, 'app.html'));
+      sendFileWithFallback(res, path.join(dashboardDir, 'app.html'));
     });
     // Catch-all for /app/* routes - serve app.html and let client-side routing handle it
     // Express 5 requires named parameter for wildcards
     app.get('/app/{*path}', (req, res) => {
-      res.sendFile(path.join(dashboardDir, 'app.html'));
+      sendFileWithFallback(res, path.join(dashboardDir, 'app.html'));
     });
   } else {
     // Serve a fallback page when dashboard UI files aren't available
