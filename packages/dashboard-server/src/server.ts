@@ -22,11 +22,25 @@ import { detectWorkspacePath, getAgentOutboxTemplate } from '@agent-relay/config
 // Dynamically find the dashboard static files directory
 // We can't import from @agent-relay/dashboard directly due to circular dependency
 function findDashboardDir(): string | null {
-  // First, try the bundled 'out' folder adjacent to 'dist' (for npm global install / npx)
   const currentFileDir = path.dirname(fileURLToPath(import.meta.url));
-  const bundledOutDir = path.join(currentFileDir, '..', 'out');
-  if (fs.existsSync(bundledOutDir)) {
-    return bundledOutDir;
+
+  // Detect if running from a Bun bundled binary (virtual filesystem)
+  const isBundled = currentFileDir.startsWith('/$bunfs/');
+
+  // First, try the bundled 'out' folder adjacent to 'dist' (for npm global install / npx)
+  // Skip this check in bundled mode as the virtual filesystem won't have real files
+  if (!isBundled) {
+    const bundledOutDir = path.join(currentFileDir, '..', 'out');
+    if (fs.existsSync(bundledOutDir)) {
+      return bundledOutDir;
+    }
+  }
+
+  // For bundled binaries or as fallback, check ~/.relay/dashboard/out
+  // This allows caching dashboard files separately from the binary
+  const cachedDashboardDir = path.join(os.homedir(), '.relay', 'dashboard', 'out');
+  if (fs.existsSync(cachedDashboardDir)) {
+    return cachedDashboardDir;
   }
 
   try {
@@ -40,8 +54,13 @@ function findDashboardDir(): string | null {
   } catch {
     // Package not found, will use fallback
   }
+
+  // Return null with flag indicating bundled mode (for quieter error handling)
   return null;
 }
+
+// Check if running in bundled binary mode
+const IS_BUNDLED_BINARY = path.dirname(fileURLToPath(import.meta.url)).startsWith('/$bunfs/');
 import type { ThreadMetadata } from './types/threading.js';
 import type { DashboardOptions } from './types/index.js';
 import {
@@ -967,7 +986,8 @@ export async function startDashboard(
     app.get('/app', (req, res) => {
       res.sendFile(path.join(dashboardDir, 'app.html'));
     });
-  } else {
+  } else if (!IS_BUNDLED_BINARY) {
+    // Only show error for non-bundled mode - bundled binaries are expected to not have embedded UI
     console.error('[dashboard] Dashboard not found - searched from:', __dirname);
   }
 
