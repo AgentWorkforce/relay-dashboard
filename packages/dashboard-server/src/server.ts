@@ -993,7 +993,8 @@ export async function startDashboard(
       res.sendFile(path.join(dashboardDir, 'app.html'));
     });
     // Catch-all for /app/* routes - serve app.html and let client-side routing handle it
-    app.get('/app/*', (req, res) => {
+    // Express 5 requires named parameter for wildcards
+    app.get('/app/{*path}', (req, res) => {
       res.sendFile(path.join(dashboardDir, 'app.html'));
     });
   } else {
