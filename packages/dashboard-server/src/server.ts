@@ -988,7 +988,7 @@ export async function startDashboard(
     // These are needed when a route exists as both a directory and .html file
     const sendFileWithFallback = (res: express.Response, filePath: string) => {
       res.sendFile(filePath, (err) => {
-        if (err) {
+        if (err && !res.headersSent) {
           res.status(404).send('Dashboard UI file not found. Please reinstall using: curl -fsSL https://raw.githubusercontent.com/AgentWorkforce/relay/main/install.sh | bash');
         }
       });
