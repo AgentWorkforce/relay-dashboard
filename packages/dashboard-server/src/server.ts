@@ -457,9 +457,17 @@ export async function startDashboard(
     ? { port: portOrOptions, dataDir: dataDirArg!, teamDir: teamDirArg!, dbPath: dbPathArg }
     : portOrOptions;
 
-  const { port, dataDir, teamDir, dbPath, enableSpawner, projectRoot, tmuxSession, onMarkSpawning, onClearSpawning } = options;
+  const { port, dataDir, teamDir, dbPath, enableSpawner, projectRoot, tmuxSession, onMarkSpawning, onClearSpawning, verbose } = options;
 
-  console.log('Starting dashboard...');
+  // Debug logging helper - only logs when verbose is true or VERBOSE env var is set
+  const isVerbose = verbose || process.env.VERBOSE === 'true';
+  const debug = (message: string) => {
+    if (isVerbose) {
+      console.log(message);
+    }
+  };
+
+  console.log('[dashboard] Starting dashboard...');
 
   const disableStorage = process.env.RELAY_DISABLE_STORAGE === 'true';
   // Use createStorageAdapter to match daemon's storage type (JSONL by default)
@@ -762,7 +770,7 @@ export async function startDashboard(
     wss.clients.forEach((ws) => {
       if (mainClientAlive.get(ws) === false) {
         // Client didn't respond to last ping - close gracefully
-        console.log('[dashboard] Main WebSocket client unresponsive, closing gracefully');
+        debug('[dashboard] Main WebSocket client unresponsive, closing gracefully');
         ws.close(1000, 'unresponsive');
         return;
       }
@@ -777,7 +785,7 @@ export async function startDashboard(
   const bridgePingInterval = setInterval(() => {
     wssBridge.clients.forEach((ws) => {
       if (bridgeClientAlive.get(ws) === false) {
-        console.log('[dashboard] Bridge WebSocket client unresponsive, closing gracefully');
+        debug('[dashboard] Bridge WebSocket client unresponsive, closing gracefully');
         ws.close(1000, 'unresponsive');
         return;
       }
@@ -982,6 +990,10 @@ export async function startDashboard(
       res.sendFile(path.join(dashboardDir, 'metrics.html'));
     });
     app.get('/app', (req, res) => {
+      res.sendFile(path.join(dashboardDir, 'app.html'));
+    });
+    // Catch-all for /app/* routes - serve app.html and let client-side routing handle it
+    app.get('/app/*', (req, res) => {
       res.sendFile(path.join(dashboardDir, 'app.html'));
     });
   } else {
@@ -2282,7 +2294,7 @@ export async function startDashboard(
 
   // Handle new WebSocket connections - send initial data immediately
   wss.on('connection', async (ws, req) => {
-    console.log('[dashboard] WebSocket client connected from:', req.socket.remoteAddress);
+    debug(`[dashboard] WebSocket client connected from: ${req.socket.remoteAddress}`);
 
     // Mark client as alive initially for ping/pong keepalive
     mainClientAlive.set(ws, true);
@@ -2306,9 +2318,9 @@ export async function startDashboard(
       }
 
       if (ws.readyState === WebSocket.OPEN) {
-        console.log('[dashboard] Sending initial data, size:', payload.length, 'first 200 chars:', payload.substring(0, 200));
+        debug(`[dashboard] Sending initial data, size: ${payload.length}, first 200 chars: ${payload.substring(0, 200)}`);
         ws.send(payload);
-        console.log('[dashboard] Initial data sent successfully');
+        debug('[dashboard] Initial data sent successfully');
       } else {
         console.warn('[dashboard] WebSocket not open, state:', ws.readyState);
       }
@@ -2324,13 +2336,13 @@ export async function startDashboard(
     });
 
     ws.on('close', (code, reason) => {
-      console.log('[dashboard] WebSocket client disconnected, code:', code, 'reason:', reason?.toString() || 'none');
+      debug(`[dashboard] WebSocket client disconnected, code: ${code}, reason: ${reason?.toString() || 'none'}`);
     });
   });
 
   // Handle bridge WebSocket connections
   wssBridge.on('connection', async (ws) => {
-    console.log('[dashboard] Bridge WebSocket client connected');
+    debug('[dashboard] Bridge WebSocket client connected');
 
     // Mark client as alive initially for ping/pong keepalive
     bridgeClientAlive.set(ws, true);
@@ -2355,7 +2367,7 @@ export async function startDashboard(
     });
 
     ws.on('close', (code, reason) => {
-      console.log('[dashboard] Bridge WebSocket client disconnected, code:', code, 'reason:', reason?.toString() || 'none');
+      debug(`[dashboard] Bridge WebSocket client disconnected, code: ${code}, reason: ${reason?.toString() || 'none'}`);
     });
   });
 
@@ -2369,7 +2381,7 @@ export async function startDashboard(
     wssLogs.clients.forEach((ws) => {
       if (logClientAlive.get(ws) === false) {
         // Client didn't respond to last ping - close gracefully
-        console.log('[dashboard] Logs WebSocket client unresponsive, closing gracefully');
+        debug('[dashboard] Logs WebSocket client unresponsive, closing gracefully');
         ws.close(1000, 'unresponsive');
         return;
       }
@@ -2386,7 +2398,7 @@ export async function startDashboard(
 
   // Handle logs WebSocket connections for live log streaming
   wssLogs.on('connection', (ws, req) => {
-    console.log('[dashboard] Logs WebSocket client connected');
+    debug('[dashboard] Logs WebSocket client connected');
     const clientSubscriptions = new Set<string>();
 
     // Mark client as alive initially
@@ -2554,7 +2566,7 @@ export async function startDashboard(
       }
       logSubscriptions.get(agentName)!.add(ws);
 
-      console.log(`[dashboard] Client subscribed to logs for: ${agentName} (spawned: ${isSpawned}, daemon: ${isDaemon})`);
+      debug(`[dashboard] Client subscribed to logs for: ${agentName} (spawned: ${isSpawned}, daemon: ${isDaemon})`);
 
       if (isSpawned && spawner) {
         // Send initial log history for spawned agents (5000 lines to match xterm scrollback capacity)
@@ -2644,7 +2656,7 @@ export async function startDashboard(
             }
           }
 
-          console.log(`[dashboard] Client unsubscribed from logs for: ${agentName}`);
+          debug(`[dashboard] Client unsubscribed from logs for: ${agentName}`);
 
           ws.send(JSON.stringify({
             type: 'unsubscribed',
@@ -2828,7 +2840,7 @@ export async function startDashboard(
 
     // Broadcast to main WebSocket clients (local mode)
     const mainClients = Array.from(wss.clients).filter(c => c.readyState === WebSocket.OPEN);
-    console.log(`[dashboard] Broadcasting direct_message to ${mainClients.length} main clients`);
+    debug(`[dashboard] Broadcasting direct_message to ${mainClients.length} main clients`);
     wss.clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(payload);
@@ -2838,7 +2850,7 @@ export async function startDashboard(
     // Also broadcast to presence WebSocket clients (cloud mode)
     const presenceClients = Array.from(wssPresence.clients).filter(c => c.readyState === WebSocket.OPEN);
     if (presenceClients.length > 0) {
-      console.log(`[dashboard] Broadcasting direct_message to ${presenceClients.length} presence clients`);
+      debug(`[dashboard] Broadcasting direct_message to ${presenceClients.length} presence clients`);
       wssPresence.clients.forEach((client) => {
         if (client.readyState === WebSocket.OPEN) {
           client.send(payload);

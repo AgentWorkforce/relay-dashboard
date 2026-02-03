@@ -128,6 +128,7 @@ async function main() {
       teamDir: options.teamDir as string,
       projectRoot: options.projectRoot as string,
       enableSpawner: true,
+      verbose: options.verbose as boolean | undefined,
     });
   } else {
     // Proxy or mock mode
