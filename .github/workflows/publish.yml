@@ -300,6 +300,17 @@ jobs:
           mkdir -p release-assets
           # Move all binaries to release-assets
           find artifacts -type f \( -name "relay-dashboard-server-*" \) -exec mv {} release-assets/ \;
+
+          # Create tarball of dashboard UI files for standalone binary users
+          # The 'out' directory contains the Next.js static export
+          if [ -d "packages/dashboard/out" ]; then
+            echo "Creating dashboard UI tarball..."
+            tar -czf release-assets/dashboard-ui.tar.gz -C packages/dashboard out
+            echo "Dashboard UI tarball created: $(du -h release-assets/dashboard-ui.tar.gz | cut -f1)"
+          else
+            echo "Warning: packages/dashboard/out not found, skipping UI tarball"
+          fi
+
           ls -la release-assets/
 
       - name: Commit and tag
@@ -360,6 +371,7 @@ jobs:
             | macOS (Intel) | relay-dashboard-server-darwin-x64.gz | relay-dashboard-server-darwin-x64 |
             | Linux (x64) | relay-dashboard-server-linux-x64.gz | relay-dashboard-server-linux-x64 |
             | Linux (ARM64) | relay-dashboard-server-linux-arm64.gz | relay-dashboard-server-linux-arm64 |
+            | Dashboard UI | dashboard-ui.tar.gz | - |
           files: release-assets/*
           generate_release_notes: true
         env:

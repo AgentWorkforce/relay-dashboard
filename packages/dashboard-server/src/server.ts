@@ -59,8 +59,6 @@ function findDashboardDir(): string | null {
   return null;
 }
 
-// Check if running in bundled binary mode
-const IS_BUNDLED_BINARY = path.dirname(fileURLToPath(import.meta.url)).startsWith('/$bunfs/');
 import type { ThreadMetadata } from './types/threading.js';
 import type { DashboardOptions } from './types/index.js';
 import {
@@ -986,9 +984,35 @@ export async function startDashboard(
     app.get('/app', (req, res) => {
       res.sendFile(path.join(dashboardDir, 'app.html'));
     });
-  } else if (!IS_BUNDLED_BINARY) {
-    // Only show error for non-bundled mode - bundled binaries are expected to not have embedded UI
-    console.error('[dashboard] Dashboard not found - searched from:', __dirname);
+  } else {
+    // Serve a fallback page when dashboard UI files aren't available
+    const fallbackHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <title>Agent Relay Dashboard</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 100px auto; padding: 20px; }
+    h1 { color: #333; }
+    code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 12px; border-radius: 5px; overflow-x: auto; }
+    .api-status { margin-top: 30px; padding: 15px; background: #e8f5e9; border-radius: 5px; }
+  </style>
+</head>
+<body>
+  <h1>Agent Relay Dashboard</h1>
+  <p>The dashboard API is running, but the UI files are not available.</p>
+  <p>To get the full dashboard UI, reinstall using the official installer:</p>
+  <pre><code>curl -fsSL https://raw.githubusercontent.com/AgentWorkforce/relay/main/install.sh | bash</code></pre>
+  <div class="api-status">
+    <strong>API Status:</strong> Running<br>
+    <a href="/api/agents">View connected agents</a> |
+    <a href="/api/messages">View messages</a>
+  </div>
+</body>
+</html>`;
+    app.get('/', (req, res) => {
+      res.type('html').send(fallbackHtml);
+    });
   }
 
   // Relay clients for sending messages from dashboard
