@@ -38,3 +38,6 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: E2E Test
+        run: ./scripts/e2e-test.sh
