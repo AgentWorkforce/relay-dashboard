@@ -6329,7 +6329,11 @@ Start by greeting the project leads and asking for status updates.`;
         await healthWorker.start();
         console.log(`Health check worker running at http://localhost:${healthPort}/health`);
       } catch (err) {
-        console.warn('[dashboard] Failed to start health worker, using main thread health check:', err);
+        // Worker threads don't work in bundled binaries - this is expected
+        const isBundledError = err instanceof Error && err.message.includes('bundled binary');
+        if (!isBundledError) {
+          console.warn('[dashboard] Failed to start health worker, using main thread health check:', err);
+        }
       }
 
       resolve(availablePort);

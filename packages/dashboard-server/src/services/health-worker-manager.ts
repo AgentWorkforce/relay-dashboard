@@ -12,6 +12,9 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Detect if running from a Bun bundled binary (virtual filesystem)
+const IS_BUNDLED = __dirname.startsWith('/$bunfs/');
+
 export interface HealthWorkerConfig {
   /** Port for health check server (default: main port + 1) */
   port: number;
@@ -46,6 +49,12 @@ export class HealthWorkerManager {
    * Start the health worker thread
    */
   async start(): Promise<void> {
+    // Worker threads don't work in Bun bundled binaries - the worker file
+    // isn't accessible from the virtual filesystem. Fall back to main thread.
+    if (IS_BUNDLED) {
+      throw new Error('Worker threads not supported in bundled binary');
+    }
+
     if (this.worker) {
       console.warn('[health-manager] Worker already running');
       return;
