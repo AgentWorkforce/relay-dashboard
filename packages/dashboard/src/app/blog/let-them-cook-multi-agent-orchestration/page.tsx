@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import Script from 'next/script';
 import { StaticPage } from '../../../landing/StaticPage';
 import { getBlogPost } from '../../../landing/blogData';
 import { renderBlogContent } from '../../../landing/BlogContent';
@@ -83,6 +84,10 @@ export default function BlogPostPage() {
       <p>
         Follow us on <a href="https://twitter.com/agent_relay" target="_blank" rel="noopener noreferrer">Twitter</a> for the latest updates and more content.
       </p>
+      <Script
+        src="https://platform.twitter.com/widgets.js"
+        strategy="lazyOnload"
+      />
     </StaticPage>
   );
 }

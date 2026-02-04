@@ -1382,7 +1382,7 @@ section {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-top: auto;
+  margin-top: 24px;
 }
 
 /* ============================================

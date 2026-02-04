@@ -10,6 +10,8 @@ function parseInlineMarkdown(text: string): string {
   text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   // Bold: **text**
   text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Italic: *text* (single asterisks, but not inside words)
+  text = text.replace(/(?<!\w)\*([^*]+)\*(?!\w)/g, '<em>$1</em>');
   // Inline code: `text`
   text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
   return text;
@@ -87,6 +89,34 @@ export function renderBlogContent(content: string): React.ReactNode[] {
         <ul key={key++}>
           <li dangerouslySetInnerHTML={{ __html: parseInlineMarkdown(line.trim().slice(2)) }} />
         </ul>
+      );
+      continue;
+    }
+
+    // Images: ![alt](src)
+    const imageMatch = line.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (imageMatch) {
+      flushParagraph();
+      elements.push(
+        <figure key={key++} className="blog-image" style={{ margin: '32px 0' }}>
+          <img src={imageMatch[2]} alt={imageMatch[1]} style={{ width: '100%', borderRadius: '8px' }} />
+          {imageMatch[1] && <figcaption style={{ textAlign: 'center', color: 'var(--text-secondary)', marginTop: '12px', fontSize: '14px', fontStyle: 'italic' }}>{imageMatch[1]}</figcaption>}
+        </figure>
+      );
+      continue;
+    }
+
+    // Twitter embed: {{tweet:TWEET_URL}}
+    const tweetMatch = line.trim().match(/^\{\{tweet:(.+)\}\}$/);
+    if (tweetMatch) {
+      flushParagraph();
+      const tweetUrl = tweetMatch[1];
+      elements.push(
+        <div key={key++} className="tweet-embed" style={{ margin: '24px 0', display: 'flex', justifyContent: 'center' }}>
+          <blockquote className="twitter-tweet" data-theme="dark">
+            <a href={tweetUrl}>View tweet</a>
+          </blockquote>
+        </div>
       );
       continue;
     }
