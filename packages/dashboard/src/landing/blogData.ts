@@ -23,7 +23,7 @@ export const blogPosts: BlogPost[] = [
     category: 'Engineering',
     excerpt: 'Multi-agent orchestration is a step change in how tasks get done. After 6 weeks of building with agent swarms, here\'s what works, what breaks, and why the planning phase becomes everything.',
     content: `
-I've been building [Agent Relay](https://github.com/AgentWorkforce/relay) using Agent Relay. Agents coordinating to build the tool that lets them coordinate. It sounds recursive because it is. I took some time to jot down some thoughts about multi agent orchestration from the past few weeks where I've spoken to agents more than I've spoken to my wife 😳.
+I've been building [Agent Relay](https://github.com/AgentWorkforce/relay) using Agent Relay. Agents coordinating to build the tool that lets them coordinate. It sounds recursive because it is. I took some time to jot down some thoughts about multi-agent orchestration from the past few weeks where I've spoken to agents more than I've spoken to my wife 😳.
 
 For the past six weeks, I've been deep in this world. Agent Relay is an open-source communication layer allowing any CLI tool (Claude, Cursor, OpenCode, Gemini) to communicate efficiently and seamlessly. And it's rumored that Claude Code is coming out with first-party support for agent swarms:
 
@@ -31,11 +31,23 @@ For the past six weeks, I've been deep in this world. Agent Relay is an open-sou
 
 Am I worried about this? If I'm being completely honest, yes, a little bit. But my main feeling is that it's great to push multi-agent orchestration into the forefront of developer minds so the true power can be experienced and more best practices form around it.
 
+## Key Takeaways
+
+- **2-5 worker agents per Lead** is the sweet spot
+- **Claude for coordination, Codex for deep work** (match the CLI to the role)
+- **Planning is everything** (agents cut corners on vague specs)
+- **Shadow agents and reviewers** catch lazy work
+- **Store trajectories** so future agents have context
+
+---
+
+## Part 1: The Promise
+
 Multi-agent orchestration is a step change in how tasks get done. It puts agents front and center while the human takes a step back and just lets them cook. That doesn't mean the human will be completely removed. There are still bumps in the road to truly autonomous agent work, and the planning phase becomes one of the most crucial steps.
 
-## The Power of Agent Teams
+### What Multi-Agent Unlocks
 
-First and foremost, having agents who can communicate with each other and coordinate on tasks is a huge unlock. Assigning [agent profiles](https://github.com/AgentWorkforce/relay/tree/main/.claude/agents) similar to how human teams would organize has been a paradigm I have found success with. For instance:
+Having agents who can communicate with each other and coordinate on tasks is a huge unlock. Assigning [agent profiles](https://github.com/AgentWorkforce/relay/tree/main/.claude/agents) similar to how human teams would organize has been a paradigm I have found success with. For instance:
 
 - **Lead** – coordinates the team and breaks down tasks
 - **Backend** – implements server-side logic
@@ -47,41 +59,39 @@ First and foremost, having agents who can communicate with each other and coordi
 
 Each agent assumes its role, can read the logs of other agents, and can message others to check their work, sanity-check their decisions, and hand off tasks in a coordinated manner.
 
-The other method that has worked well for me is creating a detailed spec upfront and then spawning a Lead agent. I give it the spec and tell it to assemble a team as it sees fit. The Lead then spawns agents accordingly. Because Agent Relay is CLI-agnostic, I make sure to mix Codex, Claude, OpenCode, Gemini, and Droid agents, assigning different models based on the role. A fast model like Haiku or Conductor for Lead roles, and for deeper technical tasks, Opus or GPT-5 Codex high.
+### The Speed Improvement
+
+The method that has worked well for me is creating a detailed spec upfront and then spawning a Lead agent. I give it the spec and tell it to assemble a team as it sees fit. The Lead then spawns agents accordingly. Because Agent Relay is CLI-agnostic, I make sure to mix Codex, Claude, OpenCode, Gemini, and Droid agents, assigning different models based on the role. A fast model like Haiku or Conductor for Lead roles, and for deeper technical tasks, Opus or GPT-5 Codex high.
 
 Using this workflow, I've seen that not only does code quality increase, but the speed at which agents can pump out complex features is at least a **4-5X improvement**.
 
-I have been using Agent Relay to build itself on the cloud environment at [agent-relay.com](https://agent-relay.com) and the pace of delivery using agent orchestration has been mind-blowing.
+I have been using Agent Relay to build itself on the cloud environment at [agent-relay.com](https://agent-relay.com) and the pace of delivery has been mind-blowing.
 
 It hasn't been all good though...
 
-## Agents Are Sometimes Lazy
+---
+
+## Part 2: The Problems
+
+### Agents Are Sometimes Lazy
 
 I've had instances where an agent swarm takes on a complicated feature and then the Lead excitedly declares everything done. On one build, the Lead proudly reported "All 12 endpoints implemented!" When I tested it, only 8 actually returned data. The rest were stubbed out with TODOs. This happened occasionally with single-agent sessions, but imagine it compounding across 5, 6, or 10 agents...
 
-Agent Relay has a notion of a [**shadow agent**](https://docs.agent-relay.com/features/shadows#shadow-agents) that helps quite a bit with this problem. Reviewer agents also typically catch this type of shoddy work.
-
-## Agents Get Overwhelmed and Die
+### Agents Get Overwhelmed and Die
 
 Having a Lead agent creates a single point of failure. If the swarm is large and chatty, the Lead receives a flood of messages from other agents plus queries from the human asking about status or redirecting work. This can overwhelm the Lead, causing it to enter an endless loop and eventually die or become completely unresponsive.
 
-Team structure is pretty important. There's a magic ratio of Lead-to-worker agents that I haven't exactly figured out yet (it varies depending on roles) but I've had success with **2-5 worker agents per Lead**. A single Lead managing 10 agents usually becomes problematic.
+---
 
-Agent Relay also has a [\`continuity\`](https://docs.agent-relay.com/guides/session-continuity#session-continuity) concept, largely borrowed from the [Continuous Claude](https://github.com/parcadei/Continuous-Claude-v3) package by [@parcadei](https://x.com/parcadei). This enables ephemeral agents that save their context periodically, get released, then spawn again and continue seamlessly by reading their saved state.
+## Part 3: The Playbook
 
-Additionally, if you want more granular control or access to agent lifecycle events, Agent Relay has an extensive [hooks system](https://docs.agent-relay.com/guides/hooks) that gives you access to 7 different events enabling you to encourage to save continuity at choice event:
+Here's what I've learned about making multi-agent orchestration actually work.
 
-| Hook | Description |
-|------|-------------|
-| \`onSessionStart\` | Agent starts |
-| \`onSessionEnd\` | Agent stops |
-| \`onOutput\` | Agent produces output |
-| \`onMessageReceived\` | Receives relay message |
-| \`onMessageSent\` | Sends relay message |
-| \`onIdle\` | Agent inactive |
-| \`onError\` | Error occurs |
+### Team Structure
 
-## Communication Pattern Observations
+Team structure is critical. There's a magic ratio of Lead-to-worker agents that I haven't exactly figured out yet (it varies depending on roles) but I've had success with **2-5 worker agents per Lead**. A single Lead managing 10 agents usually becomes problematic.
+
+### Communication Patterns by CLI
 
 Not all CLI agents communicate the same way, and taking this into account is beneficial when working with swarms.
 
@@ -115,29 +125,38 @@ Agent Relay allows users to define a \`teams.json\` ([docs](https://docs.agent-r
 }
 \`\`\`
 
-## The Human's New Role
+### Catching Lazy Work
 
-Coordinating with multiple agents and seeing output fly in at rapid speed is quite exhilarating. Being able to remove myself as the bottleneck and just let the agents do their thing is a huge benefit. This necessitates that the **planning phase is carefully and meticulously done** to ensure agents have well-defined tasks with edge cases thought out.
-
-It also means the **review phase is paramount**. Having agents self-review and cross-review is an effective strategy. 
+Agent Relay has a notion of a [**shadow agent**](https://docs.agent-relay.com/features/shadows#shadow-agents) that helps quite a bit with this problem. Reviewer agents also typically catch shoddy work.
 
 ![Agent Relay dashboard showing Developer reporting completion to Coordinator, who then routes the work to ReviewerA for review](/blog/agent-review-workflow.png)
 
+Additionally, layering in one of the many AI code review tools has been effective at catching minor issues.
 
-Additionally, layering in one of the many AI code review tools has also been effective at catching minor issues.
+### Continuity and Hooks
 
-## Trajectories: The Unexpected Unlock
+Agent Relay has a [\`continuity\`](https://docs.agent-relay.com/guides/session-continuity#session-continuity) concept, largely borrowed from the [Continuous Claude](https://github.com/parcadei/Continuous-Claude-v3) package by [@parcadei](https://x.com/parcadei). This enables ephemeral agents that save their context periodically, get released, then spawn again and continue seamlessly by reading their saved state.
 
-One other thing that has been a huge and unexpected unlock is to have agents store **trajectories**, which can be defined as a train of thought of an agent stored in logical chapters for a completed task. It was inspired by [this thread](https://x.com/gergelyorosz/status/2002160432841097239) from [@GergelyOrosz](https://x.com/GergelyOrosz).
+If you want more granular control or access to agent lifecycle events, Agent Relay has an extensive [hooks system](https://docs.agent-relay.com/guides/hooks) with 7 different events:
 
-An example would look like this:
+| Hook | Description |
+|------|-------------|
+| \`onSessionStart\` | Agent starts |
+| \`onSessionEnd\` | Agent stops |
+| \`onOutput\` | Agent produces output |
+| \`onMessageReceived\` | Receives relay message |
+| \`onMessageSent\` | Sends relay message |
+| \`onIdle\` | Agent inactive |
+| \`onError\` | Error occurs |
+
+### Trajectories: Preserving Context
+
+One unexpected unlock has been having agents store **trajectories**, a train of thought stored in logical chapters for a completed task. Inspired by [this thread](https://x.com/gergelyorosz/status/2002160432841097239) from [@GergelyOrosz](https://x.com/GergelyOrosz).
 
 \`\`\`json
 {
   "id": "traj_itn5hyej5mi6",
-  "task": {
-    "title": "Fix module resolution issues - 17 test failures"
-  },
+  "task": { "title": "Fix module resolution issues" },
   "status": "completed",
   "chapters": [
     {
@@ -146,9 +165,7 @@ An example would look like this:
         {
           "type": "decision",
           "content": "Thread shadowMode through protocol layers",
-          "raw": {
-            "reasoning": "Devin review found fields were silently dropped..."
-          },
+          "raw": { "reasoning": "Devin review found fields were silently dropped..." },
           "significance": "high"
         }
       ]
@@ -161,11 +178,15 @@ An example would look like this:
 }
 \`\`\`
 
-The [AgentWorkforce/trajectories](https://github.com/AgentWorkforce/trajectories/) repo provides a CLI tool that agents can easily understand. It becomes invaluable when an agent in a new session needs to revisit a previously-worked feature or investigate a bug. By finding the relevant trajectory, the agent gains instant context and insight, making it much better informed on how to proceed. These trajectories are also useful to humans reviewing the codebase.
+The [AgentWorkforce/trajectories](https://github.com/AgentWorkforce/trajectories/) repo provides a CLI tool that agents can easily understand. It becomes invaluable when an agent needs to revisit a previously-worked feature or investigate a bug. By finding the relevant trajectory, the agent gains instant context. These trajectories are also useful to humans reviewing the codebase.
 
-## Looking Forward
+### The Human's New Role
 
-I'll continue to jot down thoughts as I continue down the road of multi-agent orchestration and communication using Agent Relay. I'm super bullish on it (I guess obviously since I started a company around it) and am excited for what's to come!
+Coordinating with multiple agents and seeing output fly in at rapid speed is exhilarating. Being able to remove myself as the bottleneck is a huge benefit. This necessitates that the **planning phase is carefully and meticulously done** to ensure agents have well-defined tasks with edge cases thought out.
+
+It also means the **review phase is paramount**. Having agents self-review and cross-review is an effective strategy.
+
+---
 
 ## Try It Yourself
 

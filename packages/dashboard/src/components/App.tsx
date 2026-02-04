@@ -1354,16 +1354,28 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   // Only show "Local" folder if we don't have bridge projects to merge them into
   // But always include human users so they appear in the sidebar for DM
   const localAgentsForSidebar = useMemo(() => {
+    // In cloud mode, filter human users to only show workspace members
+    // This prevents users from other workspaces appearing in Direct Messages
+    const filterHumansByWorkspace = (agents: Agent[]) => {
+      if (!isCloudMode || memberUsernames.size === 0) {
+        return agents;
+      }
+      return agents.filter(agent =>
+        !agent.isHuman || memberUsernames.has(agent.name.toLowerCase())
+      );
+    };
+
     // Human users should always be shown in sidebar for DM access
-    const humanUsers = projectAgents.filter(a => a.isHuman);
+    const humanUsers = filterHumansByWorkspace(projectAgents).filter(a => a.isHuman);
 
     if (mergedProjects.length > 0) {
       // Don't show AI agents separately - they're merged into projects
       // But keep human users visible for DM conversations
       return humanUsers;
     }
-    return projectAgents;
-  }, [mergedProjects, projectAgents]);
+    // Return all agents (AI + human), with human users filtered by workspace membership
+    return filterHumansByWorkspace(projectAgents);
+  }, [mergedProjects, projectAgents, isCloudMode, memberUsernames]);
 
   // Handle workspace selection
   const handleWorkspaceSelect = useCallback(async (workspace: Workspace) => {
