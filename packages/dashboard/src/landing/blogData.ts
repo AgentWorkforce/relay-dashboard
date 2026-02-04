@@ -57,9 +57,9 @@ It hasn't been all good though...
 
 ## Agents Are Sometimes Lazy
 
-I've had instances where an agent swarm takes on a complicated feature and then the Lead excitedly declares everything done. On one build, the Lead proudly reported "All 12 endpoints implemented!" When I tested it, only 8 actually returned data. The rest were stubbed out with TODOs. This happened occasionally with single-agent sessions, but imagine it compounding across 5, 6, or 10 agents. It becomes very problematic.
+I've had instances where an agent swarm takes on a complicated feature and then the Lead excitedly declares everything done. On one build, the Lead proudly reported "All 12 endpoints implemented!" When I tested it, only 8 actually returned data. The rest were stubbed out with TODOs. This happened occasionally with single-agent sessions, but imagine it compounding across 5, 6, or 10 agents...
 
-Agent Relay has a notion of a **shadow agent** that helps quite a bit with this problem. Reviewer agents also typically catch this type of shoddy work.
+Agent Relay has a notion of a [**shadow agent**](https://docs.agent-relay.com/features/shadows#shadow-agents) that helps quite a bit with this problem. Reviewer agents also typically catch this type of shoddy work.
 
 ## Agents Get Overwhelmed and Die
 
@@ -69,7 +69,7 @@ Team structure is pretty important. There's a magic ratio of Lead-to-worker agen
 
 Agent Relay also has a [\`continuity\`](https://docs.agent-relay.com/guides/session-continuity#session-continuity) concept, largely borrowed from the [Continuous Claude](https://github.com/parcadei/Continuous-Claude-v3) package by [@parcadei](https://x.com/parcadei). This enables ephemeral agents that save their context periodically, get released, then spawn again and continue seamlessly by reading their saved state.
 
-Additionally, if you want more granular control or access to agent lifecycle events, Agent Relay has an extensive [hooks system](https://docs.agent-relay.com/guides/hooks) that gives you access to 7 different events enabling you to encourage to save continuity at choice events:
+Additionally, if you want more granular control or access to agent lifecycle events, Agent Relay has an extensive [hooks system](https://docs.agent-relay.com/guides/hooks) that gives you access to 7 different events enabling you to encourage to save continuity at choice event:
 
 | Hook | Description |
 |------|-------------|
