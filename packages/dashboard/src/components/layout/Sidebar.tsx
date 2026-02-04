@@ -217,11 +217,11 @@ export function Sidebar({
   }, [selectedChannelId]);
 
   // Separate AI agents from human team members
-  // Also filter out system agents like _DashboardUI
-  const aiAgents = agents.filter(a => !a.isHuman && a.name !== '_DashboardUI');
+  // Also filter out system agents like Dashboard
+  const aiAgents = agents.filter(a => !a.isHuman && a.name !== 'Dashboard');
   const humanMembers = agents.filter(
     a => a.isHuman &&
-      a.name !== '_DashboardUI' &&
+      a.name !== 'Dashboard' &&
       (!currentUserName || a.name.toLowerCase() !== currentUserName.toLowerCase())
   );
   const filteredHumanMembers = humanMembers.filter(

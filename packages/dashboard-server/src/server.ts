@@ -22,11 +22,25 @@ import { detectWorkspacePath, getAgentOutboxTemplate } from '@agent-relay/config
 // Dynamically find the dashboard static files directory
 // We can't import from @agent-relay/dashboard directly due to circular dependency
 function findDashboardDir(): string | null {
-  // First, try the bundled 'out' folder adjacent to 'dist' (for npm global install / npx)
   const currentFileDir = path.dirname(fileURLToPath(import.meta.url));
-  const bundledOutDir = path.join(currentFileDir, '..', 'out');
-  if (fs.existsSync(bundledOutDir)) {
-    return bundledOutDir;
+
+  // Detect if running from a Bun bundled binary (virtual filesystem)
+  const isBundled = currentFileDir.startsWith('/$bunfs/');
+
+  // First, try the bundled 'out' folder adjacent to 'dist' (for npm global install / npx)
+  // Skip this check in bundled mode as the virtual filesystem won't have real files
+  if (!isBundled) {
+    const bundledOutDir = path.join(currentFileDir, '..', 'out');
+    if (fs.existsSync(bundledOutDir)) {
+      return bundledOutDir;
+    }
+  }
+
+  // For bundled binaries or as fallback, check ~/.relay/dashboard/out
+  // This allows caching dashboard files separately from the binary
+  const cachedDashboardDir = path.join(os.homedir(), '.relay', 'dashboard', 'out');
+  if (fs.existsSync(cachedDashboardDir)) {
+    return cachedDashboardDir;
   }
 
   try {
@@ -40,8 +54,11 @@ function findDashboardDir(): string | null {
   } catch {
     // Package not found, will use fallback
   }
+
+  // Return null with flag indicating bundled mode (for quieter error handling)
   return null;
 }
+
 import type { ThreadMetadata } from './types/threading.js';
 import type { DashboardOptions } from './types/index.js';
 import {
@@ -440,17 +457,26 @@ export async function startDashboard(
     ? { port: portOrOptions, dataDir: dataDirArg!, teamDir: teamDirArg!, dbPath: dbPathArg }
     : portOrOptions;
 
-  const { port, dataDir, teamDir, dbPath, enableSpawner, projectRoot, tmuxSession, onMarkSpawning, onClearSpawning } = options;
+  const { port, dataDir, teamDir, dbPath, enableSpawner, projectRoot, tmuxSession, onMarkSpawning, onClearSpawning, verbose } = options;
 
-  console.log('Starting dashboard...');
+  // Debug logging helper - only logs when verbose is true or VERBOSE env var is set
+  const isVerbose = verbose || process.env.VERBOSE === 'true';
+  const debug = (message: string) => {
+    if (isVerbose) {
+      console.log(message);
+    }
+  };
+
+  console.log('[dashboard] Starting dashboard...');
 
   const disableStorage = process.env.RELAY_DISABLE_STORAGE === 'true';
   // Use createStorageAdapter to match daemon's storage type (JSONL by default)
   // This ensures dashboard reads from the same storage as daemon writes to
+  // Enable watchForChanges so JSONL adapter auto-reloads when daemon writes new messages
   const storagePath = dbPath ?? path.join(dataDir, 'messages.sqlite');
   const storage: StorageAdapter | undefined = disableStorage
     ? undefined
-    : await createStorageAdapter(storagePath);
+    : await createStorageAdapter(storagePath, { watchForChanges: true });
 
   const defaultWorkspaceId = process.env.RELAY_WORKSPACE_ID ?? process.env.AGENT_RELAY_WORKSPACE_ID;
 
@@ -726,6 +752,10 @@ export async function startDashboard(
   // Track log subscriptions: agentName -> Set of WebSocket clients
   const logSubscriptions = new Map<string, Set<WebSocket>>();
 
+  // Track file watchers for externally-spawned worker logs (module scope to avoid duplicates)
+  const fileWatchers = new Map<string, fs.FSWatcher>();
+  const fileLastSize = new Map<string, number>();
+
   // Track alive status for ping/pong keepalive on main dashboard connections
   // This prevents TCP/proxy timeouts from killing idle workspace connections
   const mainClientAlive = new WeakMap<WebSocket, boolean>();
@@ -740,7 +770,7 @@ export async function startDashboard(
     wss.clients.forEach((ws) => {
       if (mainClientAlive.get(ws) === false) {
         // Client didn't respond to last ping - close gracefully
-        console.log('[dashboard] Main WebSocket client unresponsive, closing gracefully');
+        debug('[dashboard] Main WebSocket client unresponsive, closing gracefully');
         ws.close(1000, 'unresponsive');
         return;
       }
@@ -755,7 +785,7 @@ export async function startDashboard(
   const bridgePingInterval = setInterval(() => {
     wssBridge.clients.forEach((ws) => {
       if (bridgeClientAlive.get(ws) === false) {
-        console.log('[dashboard] Bridge WebSocket client unresponsive, closing gracefully');
+        debug('[dashboard] Bridge WebSocket client unresponsive, closing gracefully');
         ws.close(1000, 'unresponsive');
         return;
       }
@@ -956,14 +986,54 @@ export async function startDashboard(
 
     // Fallback for Next.js pages (e.g., /metrics -> /metrics.html)
     // These are needed when a route exists as both a directory and .html file
+    const sendFileWithFallback = (res: express.Response, filePath: string) => {
+      res.sendFile(filePath, (err) => {
+        if (err && !res.headersSent) {
+          res.status(404).send('Dashboard UI file not found. Please reinstall using: curl -fsSL https://raw.githubusercontent.com/AgentWorkforce/relay/main/install.sh | bash');
+        }
+      });
+    };
+
     app.get('/metrics', (req, res) => {
-      res.sendFile(path.join(dashboardDir, 'metrics.html'));
+      sendFileWithFallback(res, path.join(dashboardDir, 'metrics.html'));
     });
     app.get('/app', (req, res) => {
-      res.sendFile(path.join(dashboardDir, 'app.html'));
+      sendFileWithFallback(res, path.join(dashboardDir, 'app.html'));
+    });
+    // Catch-all for /app/* routes - serve app.html and let client-side routing handle it
+    // Express 5 requires named parameter for wildcards
+    app.get('/app/{*path}', (req, res) => {
+      sendFileWithFallback(res, path.join(dashboardDir, 'app.html'));
     });
   } else {
-    console.error('[dashboard] Dashboard not found - searched from:', __dirname);
+    // Serve a fallback page when dashboard UI files aren't available
+    const fallbackHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <title>Agent Relay Dashboard</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 100px auto; padding: 20px; }
+    h1 { color: #333; }
+    code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+    pre { background: #f4f4f4; padding: 12px; border-radius: 5px; overflow-x: auto; }
+    .api-status { margin-top: 30px; padding: 15px; background: #e8f5e9; border-radius: 5px; }
+  </style>
+</head>
+<body>
+  <h1>Agent Relay Dashboard</h1>
+  <p>The dashboard API is running, but the UI files are not available.</p>
+  <p>To get the full dashboard UI, reinstall using the official installer:</p>
+  <pre><code>curl -fsSL https://raw.githubusercontent.com/AgentWorkforce/relay/main/install.sh | bash</code></pre>
+  <div class="api-status">
+    <strong>API Status:</strong> Running<br>
+    <a href="/api/agents">View connected agents</a> |
+    <a href="/api/messages">View messages</a>
+  </div>
+</body>
+</html>`;
+    app.get('/', (req, res) => {
+      res.type('html').send(fallbackHtml);
+    });
   }
 
   // Relay clients for sending messages from dashboard
@@ -1039,6 +1109,8 @@ export async function startDashboard(
         cli: 'dashboard',
         reconnect: true,
         maxReconnectAttempts: 5,
+        // Dashboard is a reserved name, so we need to mark it as a system component
+        _isSystemComponent: senderName === 'Dashboard',
       });
 
       client.onError = (err: Error) => {
@@ -1085,6 +1157,57 @@ export async function startDashboard(
         });
       };
 
+      // Set up direct message handler to forward messages to presence WebSocket
+      // This enables agents to send replies that appear in the dashboard UI
+      client.onMessage = (from: string, payload: unknown, messageId: string) => {
+        const body = typeof payload === 'object' && payload !== null && 'body' in payload
+          ? (payload as { body: string }).body
+          : String(payload);
+        console.log(`[dashboard] *** DIRECT MESSAGE RECEIVED *** for ${senderName}: ${from} -> ${senderName}: ${body.substring(0, 50)}...`);
+
+        // Look up sender's info from presence (if they're an online user)
+        const senderPresence = onlineUsers.get(from);
+        const fromAvatarUrl = senderPresence?.info.avatarUrl;
+        // Determine entity type: user if they have presence state, agent otherwise
+        const fromEntityType: 'user' | 'agent' = senderPresence ? 'user' : 'agent';
+
+        const timestamp = new Date().toISOString();
+
+        // Persist the message to storage so it survives page refresh
+        if (storage) {
+          storage.saveMessage({
+            id: messageId || `dm-${crypto.randomUUID()}`,
+            ts: Date.now(),
+            from,
+            to: senderName,
+            topic: undefined,
+            kind: 'message',
+            body,
+            data: {
+              fromAvatarUrl,
+              fromEntityType,
+            },
+            status: 'unread',
+            is_urgent: false,
+            is_broadcast: false,
+          }).catch((err) => {
+            console.error('[dashboard] Failed to persist direct message', err);
+          });
+        }
+
+        // Broadcast to presence WebSocket clients so cloud/dashboard can display the message
+        broadcastDirectMessage({
+          type: 'direct_message',
+          targetUser: senderName,
+          from,
+          fromAvatarUrl,
+          fromEntityType,
+          body,
+          messageId,
+          timestamp,
+        });
+      };
+
       try {
         await client.connect();
         relayClients.set(senderName, client);
@@ -1105,8 +1228,8 @@ export async function startDashboard(
   };
 
   // Start default relay client connection (non-blocking)
-  // Use '_DashboardUI' to avoid conflicts with agents named 'Dashboard'
-  getRelayClient('_DashboardUI').catch(() => {});
+  // Use 'Dashboard' to avoid conflicts with agents named 'Dashboard'
+  getRelayClient('Dashboard').catch(() => {});
 
   // User bridge for human-to-human and human-to-agent messaging
   userBridge = new UserBridge({
@@ -1347,10 +1470,10 @@ export async function startDashboard(
       targets = [to];
     }
 
-    // Always use '_DashboardUI' client to avoid name conflicts with user agents
+    // Always use 'Dashboard' client to avoid name conflicts with user agents
     // (underscore prefix indicates system client, prevents collision if user names an agent "Dashboard")
     // The sender name is preserved in message history/logs but not used for the relay connection
-    const relayClient = await getRelayClient('_DashboardUI');
+    const relayClient = await getRelayClient('Dashboard');
     if (!relayClient || relayClient.state !== 'READY') {
       return res.status(503).json({ error: 'Relay daemon not connected' });
     }
@@ -1370,7 +1493,7 @@ export async function startDashboard(
 
       // Include attachments, channel context, and sender info in the message data field
       // For broadcasts (to='*'), include channel: 'general' so replies can be routed back
-      // For dashboard messages, include senderName so frontend can display actual user instead of '_DashboardUI'
+      // For dashboard messages, include senderName so frontend can display actual user instead of 'Dashboard'
       const isBroadcast = targets.length === 1 && targets[0] === '*';
       const messageData: Record<string, unknown> = {};
 
@@ -1382,7 +1505,7 @@ export async function startDashboard(
         messageData.channel = 'general';
       }
 
-      // Include actual sender name for dashboard messages (relay client uses '_DashboardUI' but
+      // Include actual sender name for dashboard messages (relay client uses 'Dashboard' but
       // we want the real user's name displayed in message history)
       if (senderName) {
         messageData.senderName = senderName;
@@ -1391,6 +1514,9 @@ export async function startDashboard(
       const hasMessageData = Object.keys(messageData).length > 0;
 
       // Send to all targets (single agent, team members, or broadcast)
+      // Note: We do NOT persist outgoing messages here because the relay daemon
+      // already persists them when delivered (in router.persistDeliverEnvelope).
+      // Persisting here would cause duplicate messages in storage.
       let allSent = true;
       for (const target of targets) {
         const sent = relayClient.sendMessage(target, message, 'message', hasMessageData ? messageData : undefined, thread);
@@ -1684,9 +1810,9 @@ export async function startDashboard(
         if ('channel' in row.data) {
           channel = (row.data as { channel: string }).channel;
         }
-        // For dashboard messages sent via _DashboardUI, use the actual sender name
+        // For dashboard messages sent via Dashboard, use the actual sender name
         // This provides proper attribution in message history
-        if ('senderName' in row.data && row.from === '_DashboardUI') {
+        if ('senderName' in row.data && row.from === 'Dashboard') {
           effectiveFrom = (row.data as { senderName: string }).senderName;
         }
       }
@@ -1720,7 +1846,7 @@ export async function startDashboard(
     // Fallback to daemon via RelayClient (for cases without local storage)
     // Uses queryMessages if available (SDK >= 2.0.26)
     try {
-      const client = await getRelayClient('_DashboardUI');
+      const client = await getRelayClient('Dashboard');
       const clientAny = client as any;
       if (client && client.state === 'READY' && typeof clientAny.queryMessages === 'function') {
         const messages = await clientAny.queryMessages({ limit: 100, order: 'desc' });
@@ -1962,6 +2088,23 @@ export async function startDashboard(
       }
     }
 
+    // Also check workers.json for externally-spawned workers (e.g., from agentswarm)
+    // These workers have log files but weren't spawned by the dashboard's spawner
+    const workersJsonPath = path.join(teamDir, 'workers.json');
+    if (fs.existsSync(workersJsonPath)) {
+      try {
+        const workersData = JSON.parse(fs.readFileSync(workersJsonPath, 'utf-8'));
+        for (const worker of workersData.workers || []) {
+          const agent = agentsMap.get(worker.name);
+          if (agent && !agent.isSpawned && worker.logFile && fs.existsSync(worker.logFile)) {
+            agent.isSpawned = true; // Mark as spawned so log button appears
+          }
+        }
+      } catch (err) {
+        // Ignore errors reading workers.json
+      }
+    }
+
     // Set team from teams.json for agents that don't have a team yet
     // This ensures agents defined in teams.json are associated with their team
     // even if they weren't spawned via auto-spawn
@@ -2000,8 +2143,8 @@ export async function startDashboard(
         // Exclude agents starting with __ (internal/system agents)
         if (agent.name.startsWith('__')) return false;
 
-        // Exclude _DashboardUI (system client for sending dashboard messages)
-        if (agent.name === '_DashboardUI') return false;
+        // Exclude Dashboard (system client for sending dashboard messages)
+        if (agent.name === 'Dashboard') return false;
 
         // Exclude agents without a proper CLI (improperly registered or stale)
         if (!agent.cli || agent.cli === 'Unknown') return false;
@@ -2160,7 +2303,7 @@ export async function startDashboard(
 
   // Handle new WebSocket connections - send initial data immediately
   wss.on('connection', async (ws, req) => {
-    console.log('[dashboard] WebSocket client connected from:', req.socket.remoteAddress);
+    debug(`[dashboard] WebSocket client connected from: ${req.socket.remoteAddress}`);
 
     // Mark client as alive initially for ping/pong keepalive
     mainClientAlive.set(ws, true);
@@ -2184,9 +2327,9 @@ export async function startDashboard(
       }
 
       if (ws.readyState === WebSocket.OPEN) {
-        console.log('[dashboard] Sending initial data, size:', payload.length, 'first 200 chars:', payload.substring(0, 200));
+        debug(`[dashboard] Sending initial data, size: ${payload.length}, first 200 chars: ${payload.substring(0, 200)}`);
         ws.send(payload);
-        console.log('[dashboard] Initial data sent successfully');
+        debug('[dashboard] Initial data sent successfully');
       } else {
         console.warn('[dashboard] WebSocket not open, state:', ws.readyState);
       }
@@ -2202,13 +2345,13 @@ export async function startDashboard(
     });
 
     ws.on('close', (code, reason) => {
-      console.log('[dashboard] WebSocket client disconnected, code:', code, 'reason:', reason?.toString() || 'none');
+      debug(`[dashboard] WebSocket client disconnected, code: ${code}, reason: ${reason?.toString() || 'none'}`);
     });
   });
 
   // Handle bridge WebSocket connections
   wssBridge.on('connection', async (ws) => {
-    console.log('[dashboard] Bridge WebSocket client connected');
+    debug('[dashboard] Bridge WebSocket client connected');
 
     // Mark client as alive initially for ping/pong keepalive
     bridgeClientAlive.set(ws, true);
@@ -2233,7 +2376,7 @@ export async function startDashboard(
     });
 
     ws.on('close', (code, reason) => {
-      console.log('[dashboard] Bridge WebSocket client disconnected, code:', code, 'reason:', reason?.toString() || 'none');
+      debug(`[dashboard] Bridge WebSocket client disconnected, code: ${code}, reason: ${reason?.toString() || 'none'}`);
     });
   });
 
@@ -2247,7 +2390,7 @@ export async function startDashboard(
     wssLogs.clients.forEach((ws) => {
       if (logClientAlive.get(ws) === false) {
         // Client didn't respond to last ping - close gracefully
-        console.log('[dashboard] Logs WebSocket client unresponsive, closing gracefully');
+        debug('[dashboard] Logs WebSocket client unresponsive, closing gracefully');
         ws.close(1000, 'unresponsive');
         return;
       }
@@ -2264,7 +2407,7 @@ export async function startDashboard(
 
   // Handle logs WebSocket connections for live log streaming
   wssLogs.on('connection', (ws, req) => {
-    console.log('[dashboard] Logs WebSocket client connected');
+    debug('[dashboard] Logs WebSocket client connected');
     const clientSubscriptions = new Set<string>();
 
     // Mark client as alive initially
@@ -2284,6 +2427,103 @@ export async function startDashboard(
         return data.agents?.some((a: { name: string }) => a.name === agentName) ?? false;
       } catch {
         return false;
+      }
+    };
+
+    // Helper to get worker info from workers.json (for externally-spawned workers)
+    interface WorkerMeta {
+      name: string;
+      cli: string;
+      task: string;
+      spawnedAt: number;
+      pid?: number;
+      logFile?: string;
+    }
+
+    const getExternalWorkerInfo = (agentName: string): WorkerMeta | null => {
+      const workersPath = path.join(teamDir, 'workers.json');
+      if (!fs.existsSync(workersPath)) return null;
+      try {
+        const data = JSON.parse(fs.readFileSync(workersPath, 'utf-8'));
+        const worker = data.workers?.find((w: WorkerMeta) => w.name === agentName);
+        return worker ?? null;
+      } catch {
+        return null;
+      }
+    };
+
+    // Helper to read logs from a log file (for externally-spawned workers)
+    const readLogsFromFile = (logFile: string, limit: number = 5000): string[] => {
+      if (!fs.existsSync(logFile)) return [];
+      try {
+        const content = fs.readFileSync(logFile, 'utf-8');
+        const lines = content.split('\n');
+        // Return last `limit` lines
+        return lines.slice(-limit);
+      } catch {
+        return [];
+      }
+    };
+
+    // Helper to start watching a log file for live updates
+    const watchLogFile = (agentName: string, logFile: string) => {
+      if (fileWatchers.has(agentName)) return; // Already watching
+
+      if (!fs.existsSync(logFile)) return;
+
+      try {
+        // Track current file size for incremental reads
+        const stats = fs.statSync(logFile);
+        fileLastSize.set(agentName, stats.size);
+
+        const watcher = fs.watch(logFile, (eventType) => {
+          if (eventType !== 'change') return;
+
+          const clients = logSubscriptions.get(agentName);
+          if (!clients || clients.size === 0) {
+            // No subscribers, stop watching
+            watcher.close();
+            fileWatchers.delete(agentName);
+            fileLastSize.delete(agentName);
+            return;
+          }
+
+          try {
+            const newStats = fs.statSync(logFile);
+            const lastSize = fileLastSize.get(agentName) || 0;
+
+            if (newStats.size > lastSize) {
+              // Read only the new content
+              const fd = fs.openSync(logFile, 'r');
+              const buffer = Buffer.alloc(newStats.size - lastSize);
+              fs.readSync(fd, buffer, 0, buffer.length, lastSize);
+              fs.closeSync(fd);
+
+              const newContent = buffer.toString('utf-8');
+              fileLastSize.set(agentName, newStats.size);
+
+              // Broadcast to subscribed clients
+              const payload = JSON.stringify({
+                type: 'output',
+                agent: agentName,
+                data: newContent,
+                timestamp: new Date().toISOString(),
+              });
+
+              for (const client of clients) {
+                if (client.readyState === WebSocket.OPEN) {
+                  client.send(payload);
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`[dashboard] Error reading log file updates for ${agentName}:`, err);
+          }
+        });
+
+        fileWatchers.set(agentName, watcher);
+      } catch (err) {
+        console.error(`[dashboard] Failed to watch log file for ${agentName}:`, err);
       }
     };
 
@@ -2335,7 +2575,7 @@ export async function startDashboard(
       }
       logSubscriptions.get(agentName)!.add(ws);
 
-      console.log(`[dashboard] Client subscribed to logs for: ${agentName} (spawned: ${isSpawned}, daemon: ${isDaemon})`);
+      debug(`[dashboard] Client subscribed to logs for: ${agentName} (spawned: ${isSpawned}, daemon: ${isDaemon})`);
 
       if (isSpawned && spawner) {
         // Send initial log history for spawned agents (5000 lines to match xterm scrollback capacity)
@@ -2346,12 +2586,37 @@ export async function startDashboard(
           lines: lines || [],
         }));
       } else {
-        // For daemon-connected agents, explain that PTY output isn't available
-        ws.send(JSON.stringify({
-          type: 'history',
-          agent: agentName,
-          lines: [`[${agentName} is a daemon-connected agent - PTY output not available. Showing relay messages only.]`],
-        }));
+        // Check if this is an externally-spawned worker with a log file
+        const externalWorker = getExternalWorkerInfo(agentName);
+        let logFile = externalWorker?.logFile;
+
+        // If no explicit logFile in workers.json, try conventional path
+        // This handles agents spawned via `agent-relay create-agent` CLI
+        if (!logFile) {
+          const conventionalPath = path.join(teamDir, 'worker-logs', `${agentName}.log`);
+          if (fs.existsSync(conventionalPath)) {
+            logFile = conventionalPath;
+          }
+        }
+
+        if (logFile && fs.existsSync(logFile)) {
+          // Read logs from the external worker's log file
+          const lines = readLogsFromFile(logFile, 5000);
+          ws.send(JSON.stringify({
+            type: 'history',
+            agent: agentName,
+            lines,
+          }));
+          // Start watching the log file for live updates
+          watchLogFile(agentName, logFile);
+        } else {
+          // For daemon-connected agents without log files, explain that PTY output isn't available
+          ws.send(JSON.stringify({
+            type: 'history',
+            agent: agentName,
+            lines: [`[${agentName} is a daemon-connected agent - PTY output not available. Showing relay messages only.]`],
+          }));
+        }
       }
 
       ws.send(JSON.stringify({
@@ -2389,7 +2654,18 @@ export async function startDashboard(
           clientSubscriptions.delete(agentName);
           logSubscriptions.get(agentName)?.delete(ws);
 
-          console.log(`[dashboard] Client unsubscribed from logs for: ${agentName}`);
+          // Clean up file watcher if no more subscribers
+          const remainingClients = logSubscriptions.get(agentName);
+          if (!remainingClients || remainingClients.size === 0) {
+            const watcher = fileWatchers.get(agentName);
+            if (watcher) {
+              watcher.close();
+              fileWatchers.delete(agentName);
+              fileLastSize.delete(agentName);
+            }
+          }
+
+          debug(`[dashboard] Client unsubscribed from logs for: ${agentName}`);
 
           ws.send(JSON.stringify({
             type: 'unsubscribed',
@@ -2438,6 +2714,17 @@ export async function startDashboard(
       // Clean up subscriptions on disconnect
       for (const agentName of clientSubscriptions) {
         logSubscriptions.get(agentName)?.delete(ws);
+        // Clean up file watchers if no more subscribers
+        const remainingClients = logSubscriptions.get(agentName);
+        if (!remainingClients || remainingClients.size === 0) {
+          const watcher = fileWatchers.get(agentName);
+          if (watcher) {
+            watcher.close();
+            fileWatchers.delete(agentName);
+            fileLastSize.delete(agentName);
+            console.log(`[dashboard] Stopped watching log file for: ${agentName}`);
+          }
+        }
       }
       const reasonStr = reason?.toString() || 'no reason';
       console.log(`[dashboard] Logs WebSocket client disconnected (code: ${code}, reason: ${reasonStr})`);
@@ -2543,6 +2830,42 @@ export async function startDashboard(
         client.send(payload);
       }
     });
+  };
+
+  // Helper to broadcast direct messages to all connected clients
+  // This enables agent replies to appear in the dashboard UI
+  // Broadcasts to both main wss (local mode) and wssPresence (cloud mode)
+  const broadcastDirectMessage = (message: {
+    type: 'direct_message';
+    targetUser: string;
+    from: string;
+    fromAvatarUrl?: string;
+    fromEntityType?: 'user' | 'agent';
+    body: string;
+    messageId: string;
+    timestamp: string;
+  }) => {
+    const payload = JSON.stringify(message);
+
+    // Broadcast to main WebSocket clients (local mode)
+    const mainClients = Array.from(wss.clients).filter(c => c.readyState === WebSocket.OPEN);
+    debug(`[dashboard] Broadcasting direct_message to ${mainClients.length} main clients`);
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(payload);
+      }
+    });
+
+    // Also broadcast to presence WebSocket clients (cloud mode)
+    const presenceClients = Array.from(wssPresence.clients).filter(c => c.readyState === WebSocket.OPEN);
+    if (presenceClients.length > 0) {
+      debug(`[dashboard] Broadcasting direct_message to ${presenceClients.length} presence clients`);
+      wssPresence.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(payload);
+        }
+      });
+    }
   };
 
   // Helper to get online users list (without ws references)
@@ -3707,8 +4030,8 @@ export async function startDashboard(
     const memUsage = process.memoryUsage();
     const socketExists = fs.existsSync(socketPath);
 
-    // Check relay client connectivity (check if default _DashboardUI client is connected)
-    const defaultClient = relayClients.get('_DashboardUI');
+    // Check relay client connectivity (check if default Dashboard client is connected)
+    const defaultClient = relayClients.get('Dashboard');
     const relayConnected = defaultClient?.state === 'READY';
 
     // If socket doesn't exist, daemon may not be running properly
@@ -3737,7 +4060,7 @@ export async function startDashboard(
     const uptime = process.uptime();
     const memUsage = process.memoryUsage();
     const socketExists = fs.existsSync(socketPath);
-    const defaultClient = relayClients.get('_DashboardUI');
+    const defaultClient = relayClients.get('Dashboard');
     const relayConnected = defaultClient?.state === 'READY';
 
     if (!socketExists) {
@@ -5490,7 +5813,7 @@ Start by greeting the project leads and asking for status updates.`;
 
     // Try to send message to agent
     try {
-      const client = await getRelayClient('_DashboardUI');
+      const client = await getRelayClient('Dashboard');
       if (client) {
         await client.sendMessage(agentName, responseMessage, 'message');
       }
@@ -5525,7 +5848,7 @@ Start by greeting the project leads and asking for status updates.`;
     }
 
     try {
-      const client = await getRelayClient('_DashboardUI');
+      const client = await getRelayClient('Dashboard');
       if (client) {
         await client.sendMessage(agentName, responseMessage, 'message');
       }
@@ -5766,7 +6089,7 @@ Start by greeting the project leads and asking for status updates.`;
 
     // Send task to agent via relay
     try {
-      const client = await getRelayClient('_DashboardUI');
+      const client = await getRelayClient('Dashboard');
       if (client) {
         const taskMessage = `TASK ASSIGNED [${priority.toUpperCase()}]: ${title}\n\n${description || 'No additional details.'}`;
         await client.sendMessage(agentName, taskMessage, 'message');
@@ -5823,7 +6146,7 @@ Start by greeting the project leads and asking for status updates.`;
     // Notify agent of cancellation if task is still active
     if (task.status === 'pending' || task.status === 'assigned' || task.status === 'in_progress') {
       try {
-        const client = await getRelayClient('_DashboardUI');
+        const client = await getRelayClient('Dashboard');
         if (client) {
           await client.sendMessage(task.agentName, `TASK CANCELLED: ${task.title}`, 'message');
         }
@@ -5910,7 +6233,7 @@ Start by greeting the project leads and asking for status updates.`;
     }
 
     try {
-      const client = await getRelayClient('_DashboardUI');
+      const client = await getRelayClient('Dashboard');
       if (!client) {
         return res.status(503).json({
           success: false,
@@ -6054,7 +6377,11 @@ Start by greeting the project leads and asking for status updates.`;
         await healthWorker.start();
         console.log(`Health check worker running at http://localhost:${healthPort}/health`);
       } catch (err) {
-        console.warn('[dashboard] Failed to start health worker, using main thread health check:', err);
+        // Worker threads don't work in bundled binaries - this is expected
+        const isBundledError = err instanceof Error && err.message.includes('bundled binary');
+        if (!isBundledError) {
+          console.warn('[dashboard] Failed to start health worker, using main thread health check:', err);
+        }
       }
 
       resolve(availablePort);

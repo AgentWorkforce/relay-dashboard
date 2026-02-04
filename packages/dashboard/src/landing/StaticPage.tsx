@@ -11,12 +11,13 @@ import { LogoIcon } from '../components/Logo';
 
 interface StaticPageProps {
   title: string;
+  titleLink?: string;
   subtitle?: string;
   children: React.ReactNode;
   lastUpdated?: string;
 }
 
-export function StaticPage({ title, subtitle, children, lastUpdated }: StaticPageProps) {
+export function StaticPage({ title, titleLink, subtitle, children, lastUpdated }: StaticPageProps) {
   return (
     <div className="landing-page static-page">
       <div className="landing-bg">
@@ -29,7 +30,7 @@ export function StaticPage({ title, subtitle, children, lastUpdated }: StaticPag
       <main>
         <section className="static-hero">
           <div className="static-hero-content">
-            <h1>{title}</h1>
+            <h1>{titleLink ? <a href={titleLink} style={{ color: 'inherit', textDecoration: 'none' }}>{title}</a> : title}</h1>
             {subtitle && <p className="static-subtitle">{subtitle}</p>}
             {lastUpdated && <p className="static-updated">Last updated: {lastUpdated}</p>}
           </div>

@@ -15,7 +15,8 @@ interface WorkspaceMember {
   role: string;
   isPending: boolean;
   user?: {
-    githubUsername: string;
+    githubUsername?: string;
+    displayName?: string;
     email?: string;
     avatarUrl?: string;
   };
@@ -83,11 +84,22 @@ export function useWorkspaceMembers(
   }, [fetchMembers]);
 
   // Build set of member usernames (lowercase for case-insensitive comparison)
+  // Include githubUsername, displayName, and email prefix to match all possible presence usernames
+  // (The auth API uses: displayName || githubUsername || email.split('@')[0])
   const memberUsernames = useMemo(() => {
     const usernames = new Set<string>();
     for (const member of members) {
+      // Add GitHub username if available
       if (member.user?.githubUsername) {
         usernames.add(member.user.githubUsername.toLowerCase());
+      }
+      // Also add displayName for email-only users who don't have a GitHub username
+      if (member.user?.displayName) {
+        usernames.add(member.user.displayName.toLowerCase());
+      }
+      // Also add email prefix for email-only users without displayName
+      if (member.user?.email) {
+        usernames.add(member.user.email.split('@')[0].toLowerCase());
       }
     }
     return usernames;

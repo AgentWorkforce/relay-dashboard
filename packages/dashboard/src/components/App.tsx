@@ -206,8 +206,17 @@ export interface AppProps {
 }
 
 export function App({ wsUrl, orchestratorUrl }: AppProps) {
+  // Ref to hold event handler - needed because handlePresenceEvent is defined later
+  // but we need to pass it to useWebSocket which is called first
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wsEventHandlerRef = useRef<((event: any) => void) | undefined>(undefined);
+
   // WebSocket connection for real-time data (per-project daemon)
-  const { data, isConnected, error: wsError } = useWebSocket({ url: wsUrl });
+  // Pass event handler for direct_message/channel_message events in local mode
+  const { data, isConnected, error: wsError } = useWebSocket({
+    url: wsUrl,
+    onEvent: (event) => wsEventHandlerRef.current?.(event),
+  });
 
   // Orchestrator for multi-workspace management
   const {
@@ -576,10 +585,10 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       };
       appendChannelMessage(channelId, msg, { incrementUnread: selectedChannelId !== channelId });
     } else if (event?.type === 'direct_message') {
-      // Handle direct messages sent to the user's GitHub username
+      // Handle direct messages sent to the user
+      // In local mode without auth, use targetUser from event or fallback to 'Dashboard'
       const sender = event.from || 'unknown';
-      const recipient = currentUser?.displayName;
-      if (!recipient) return;
+      const recipient = currentUser?.displayName || event.targetUser || 'Dashboard';
 
       // Create DM channel ID with sorted participants for consistency
       const participants = [sender, recipient].sort();
@@ -601,6 +610,10 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       appendChannelMessage(dmChannelId, msg, { incrementUnread: selectedChannelId !== dmChannelId });
     }
   }, [addActivityEvent, appendChannelMessage, currentUser?.displayName, selectedChannelId]);
+
+  // Keep the ref in sync with the callback for useWebSocket's onEvent
+  // This enables direct_message handling in local mode (where usePresence may not connect)
+  wsEventHandlerRef.current = handlePresenceEvent;
 
   const { onlineUsers: allOnlineUsers, typingUsers, sendTyping, isConnected: isPresenceConnected } = usePresence({
     currentUser: presenceUser,
@@ -1344,16 +1357,28 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   // Only show "Local" folder if we don't have bridge projects to merge them into
   // But always include human users so they appear in the sidebar for DM
   const localAgentsForSidebar = useMemo(() => {
+    // In cloud mode, filter human users to only show workspace members
+    // This prevents users from other workspaces appearing in Direct Messages
+    const filterHumansByWorkspace = (agents: Agent[]) => {
+      if (!isCloudMode || memberUsernames.size === 0) {
+        return agents;
+      }
+      return agents.filter(agent =>
+        !agent.isHuman || memberUsernames.has(agent.name.toLowerCase())
+      );
+    };
+
     // Human users should always be shown in sidebar for DM access
-    const humanUsers = projectAgents.filter(a => a.isHuman);
+    const humanUsers = filterHumansByWorkspace(projectAgents).filter(a => a.isHuman);
 
     if (mergedProjects.length > 0) {
       // Don't show AI agents separately - they're merged into projects
       // But keep human users visible for DM conversations
       return humanUsers;
     }
-    return projectAgents;
-  }, [mergedProjects, projectAgents]);
+    // Return all agents (AI + human), with human users filtered by workspace membership
+    return filterHumansByWorkspace(projectAgents);
+  }, [mergedProjects, projectAgents, isCloudMode, memberUsernames]);
 
   // Handle workspace selection
   const handleWorkspaceSelect = useCallback(async (workspace: Workspace) => {

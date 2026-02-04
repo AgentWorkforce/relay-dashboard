@@ -1,6 +1,6 @@
 {
   "name": "relay-dashboard-monorepo",
-  "version": "2.0.45",
+  "version": "2.0.61",
   "private": true,
   "description": "Monorepo for Agent Relay dashboard packages",
   "workspaces": [
@@ -26,7 +26,7 @@
     "version:major": "npm version major --workspaces --no-git-tag-version"
   },
   "devDependencies": {
-    "agent-trajectories": "^0.2.3",
+    "agent-trajectories": "^0.3.0",
     "concurrently": "^8.2.2"
   },
   "repository": {

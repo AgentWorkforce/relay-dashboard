@@ -1,10 +1,13 @@
 {
   "name": "@agent-relay/dashboard",
-  "version": "2.0.45",
+  "version": "2.0.61",
   "description": "Web dashboard UI for Agent Relay - visual agent coordination and management",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "relay-dashboard": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -31,7 +34,6 @@
     "clean": "rm -rf out .next dist"
   },
   "dependencies": {
-    "@agent-relay/dashboard-server": "^2.0.41",
     "@nangohq/frontend": "^0.69.20",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",

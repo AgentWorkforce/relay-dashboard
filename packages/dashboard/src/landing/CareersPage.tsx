@@ -16,10 +16,6 @@ export function CareersPage() {
         We're building something that will fundamentally change how software gets built. AI agents working together as coordinated teams is the next evolution of developer tools, and we're at the forefront of making it happen.
       </p>
 
-      <h2>Open Positions</h2>
-      <p>
-        We don't have any open positions at the moment, but we're always interested in meeting talented people who are passionate about developer tools and AI.
-      </p>
       <p>
         If you think you'd be a great fit, send us an email at{' '}
         <a href="mailto:hiring@agent-relay.com">hiring@agent-relay.com</a> with a bit about yourself and what you're interested in working on.

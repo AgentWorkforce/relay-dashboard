@@ -9,7 +9,45 @@
  * - Mock mode: Returns fixture data for testing without dependencies
  */
 
+import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { startServer } from './proxy-server.js';
+
+// Read version - prefer build-time define for compiled binaries, fall back to package.json
+function getVersion(): string {
+  // Check for build-time defined version (set via bun build --define)
+  // This is used when running as a compiled standalone binary
+  if (process.env.DASHBOARD_SERVER_VERSION) {
+    return process.env.DASHBOARD_SERVER_VERSION;
+  }
+
+  // Fall back to reading from package.json (for development/npm installs)
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+
+    // Walk up to find package.json
+    let dir = __dirname;
+    for (let i = 0; i < 5; i++) {
+      const pkgPath = join(dir, 'package.json');
+      if (existsSync(pkgPath)) {
+        try {
+          const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+          if (pkg.name === '@agent-relay/dashboard-server') {
+            return pkg.version || 'unknown';
+          }
+        } catch {
+          // Continue searching
+        }
+      }
+      dir = dirname(dir);
+    }
+  } catch {
+    // Filesystem access failed (e.g., in compiled binary with virtual fs)
+  }
+  return 'unknown';
+}
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -35,16 +73,19 @@ for (let i = 0; i < args.length; i++) {
     options.teamDir = args[++i];
   } else if (arg === '--project-root') {
     options.projectRoot = args[++i];
+  } else if (arg === '--version' || arg === '-V') {
+    console.log(getVersion());
+    process.exit(0);
   } else if (arg === '--help' || arg === '-h') {
     console.log(`
-Relay Dashboard Server
+Relay Dashboard Server v${getVersion()}
 
 A standalone dashboard for Agent Relay that can run in three modes:
 - Integrated mode: Full @agent-relay integration (used by CLI)
 - Proxy mode (default): Forwards requests to a relay daemon HTTP endpoint
 - Mock mode: Returns fixture data for testing without dependencies
 
-Usage: relay-dashboard [options]
+Usage: relay-dashboard-server [options]
 
 Options:
   -p, --port <port>        Port to listen on (default: 3888, env: PORT)
@@ -55,6 +96,7 @@ Options:
   --integrated             Run in integrated mode (requires --data-dir, --team-dir, --project-root)
   --data-dir <path>        Data directory for integrated mode
   --team-dir <path>        Team directory for integrated mode
+  -V, --version            Output the version number
   --project-root <path>    Project root for integrated mode
   -h, --help               Show this help message
 
@@ -86,6 +128,7 @@ async function main() {
       teamDir: options.teamDir as string,
       projectRoot: options.projectRoot as string,
       enableSpawner: true,
+      verbose: options.verbose as boolean | undefined,
     });
   } else {
     // Proxy or mock mode

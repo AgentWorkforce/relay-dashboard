@@ -26,6 +26,8 @@ export interface DashboardOptions {
   projectRoot?: string;
   /** Tmux session name for workers */
   tmuxSession?: string;
+  /** Enable verbose logging (WebSocket connections, broadcasts, etc.) */
+  verbose?: boolean;
   /**
    * Callback to mark an agent as spawning (before HELLO completes).
    * Messages sent to this agent will be queued for delivery after registration.
