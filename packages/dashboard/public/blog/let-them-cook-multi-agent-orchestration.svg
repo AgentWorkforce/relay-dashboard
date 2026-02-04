@@ -1,0 +1,155 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="glow1" cx="30%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#0a0a0f"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="70%" cy="60%" r="50%">
+      <stop offset="0%" stop-color="#16213e"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+    <linearGradient id="potGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4a4a5a"/>
+      <stop offset="100%" stop-color="#2a2a3a"/>
+    </linearGradient>
+    <linearGradient id="steamGradient" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#00d9ff" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#00d9ff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#0a0a0f"/>
+  <rect width="1200" height="630" fill="url(#glow1)"/>
+  <rect width="1200" height="630" fill="url(#glow2)"/>
+
+  <!-- Grid pattern for tech feel -->
+  <g opacity="0.05">
+    <line x1="0" y1="100" x2="1200" y2="100" stroke="white" stroke-width="1"/>
+    <line x1="0" y1="200" x2="1200" y2="200" stroke="white" stroke-width="1"/>
+    <line x1="0" y1="300" x2="1200" y2="300" stroke="white" stroke-width="1"/>
+    <line x1="0" y1="400" x2="1200" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="0" y1="500" x2="1200" y2="500" stroke="white" stroke-width="1"/>
+    <line x1="200" y1="0" x2="200" y2="630" stroke="white" stroke-width="1"/>
+    <line x1="400" y1="0" x2="400" y2="630" stroke="white" stroke-width="1"/>
+    <line x1="600" y1="0" x2="600" y2="630" stroke="white" stroke-width="1"/>
+    <line x1="800" y1="0" x2="800" y2="630" stroke="white" stroke-width="1"/>
+    <line x1="1000" y1="0" x2="1000" y2="630" stroke="white" stroke-width="1"/>
+  </g>
+
+  <!-- Large cooking pot in center -->
+  <g transform="translate(600, 380)">
+    <!-- Pot body -->
+    <ellipse cx="0" cy="60" rx="180" ry="30" fill="#1a1a2a"/>
+    <path d="M-180 0 L-180 60 Q-180 90 0 90 Q180 90 180 60 L180 0 Q180 30 0 30 Q-180 30 -180 0" fill="url(#potGradient)" stroke="#5a5a6a" stroke-width="2"/>
+    <ellipse cx="0" cy="0" rx="180" ry="30" fill="#3a3a4a" stroke="#5a5a6a" stroke-width="2"/>
+    <!-- Pot rim highlight -->
+    <ellipse cx="0" cy="0" rx="160" ry="22" fill="none" stroke="#6a6a7a" stroke-width="1"/>
+    <!-- Handles -->
+    <rect x="-210" y="-10" width="30" height="20" rx="5" fill="#4a4a5a" stroke="#6a6a7a" stroke-width="1"/>
+    <rect x="180" y="-10" width="30" height="20" rx="5" fill="#4a4a5a" stroke="#6a6a7a" stroke-width="1"/>
+  </g>
+
+  <!-- Steam/code rising from pot -->
+  <g transform="translate(600, 300)" opacity="0.8">
+    <!-- Steam wisps with code -->
+    <text x="-80" y="-20" font-family="monospace" font-size="14" fill="#00d9ff" opacity="0.7">spawn()</text>
+    <text x="20" y="-60" font-family="monospace" font-size="12" fill="#00ffc8" opacity="0.6">relay.send()</text>
+    <text x="-60" y="-100" font-family="monospace" font-size="13" fill="#00d9ff" opacity="0.5">async</text>
+    <text x="40" y="-130" font-family="monospace" font-size="11" fill="#00ffc8" opacity="0.4">await</text>
+    <text x="-30" y="-160" font-family="monospace" font-size="10" fill="#00d9ff" opacity="0.3">{...}</text>
+  </g>
+
+  <!-- Agent 1 - Lead (with chef hat, left) -->
+  <g transform="translate(250, 320)">
+    <!-- Body/terminal -->
+    <rect x="-50" y="0" width="100" height="70" rx="8" fill="#1a1a2a" stroke="#00d9ff" stroke-width="2"/>
+    <text x="0" y="25" text-anchor="middle" font-family="monospace" font-size="11" fill="#00d9ff">Lead</text>
+    <text x="0" y="45" text-anchor="middle" font-family="monospace" font-size="9" fill="#00ffc8">Claude</text>
+    <!-- Chef hat -->
+    <ellipse cx="0" cy="-15" rx="35" ry="10" fill="white"/>
+    <rect x="-30" y="-55" width="60" height="40" rx="5" fill="white"/>
+    <ellipse cx="0" cy="-55" rx="30" ry="12" fill="white"/>
+    <!-- Face indicator -->
+    <circle cx="-12" cy="-30" r="4" fill="#333"/>
+    <circle cx="12" cy="-30" r="4" fill="#333"/>
+    <path d="M-8 -20 Q0 -12 8 -20" stroke="#333" stroke-width="2" fill="none"/>
+    <!-- Spoon -->
+    <line x1="55" y1="-20" x2="90" y2="30" stroke="#888" stroke-width="4" stroke-linecap="round"/>
+    <ellipse cx="95" cy="38" rx="12" ry="8" fill="#888"/>
+  </g>
+
+  <!-- Agent 2 - Backend (with chef hat, stirring) -->
+  <g transform="translate(480, 280)">
+    <!-- Body/terminal -->
+    <rect x="-45" y="0" width="90" height="60" rx="8" fill="#1a1a2a" stroke="#00ffc8" stroke-width="2"/>
+    <text x="0" y="22" text-anchor="middle" font-family="monospace" font-size="10" fill="#00ffc8">Backend</text>
+    <text x="0" y="40" text-anchor="middle" font-family="monospace" font-size="9" fill="#ff9f43">Codex</text>
+    <!-- Chef hat -->
+    <ellipse cx="0" cy="-12" rx="30" ry="8" fill="white"/>
+    <rect x="-25" y="-45" width="50" height="33" rx="5" fill="white"/>
+    <ellipse cx="0" cy="-45" rx="25" ry="10" fill="white"/>
+    <!-- Face -->
+    <circle cx="-10" cy="-25" r="3" fill="#333"/>
+    <circle cx="10" cy="-25" r="3" fill="#333"/>
+    <line x1="-6" y1="-15" x2="6" y2="-15" stroke="#333" stroke-width="2" stroke-linecap="round"/>
+    <!-- Ladle going into pot -->
+    <line x1="45" y1="20" x2="100" y2="80" stroke="#666" stroke-width="5" stroke-linecap="round"/>
+  </g>
+
+  <!-- Agent 3 - Reviewer (with chef hat, tasting, right) -->
+  <g transform="translate(720, 280)">
+    <!-- Body/terminal -->
+    <rect x="-45" y="0" width="90" height="60" rx="8" fill="#1a1a2a" stroke="#ff6b6b" stroke-width="2"/>
+    <text x="0" y="22" text-anchor="middle" font-family="monospace" font-size="10" fill="#ff6b6b">Reviewer</text>
+    <text x="0" y="40" text-anchor="middle" font-family="monospace" font-size="9" fill="#00d9ff">Claude</text>
+    <!-- Chef hat -->
+    <ellipse cx="0" cy="-12" rx="30" ry="8" fill="white"/>
+    <rect x="-25" y="-45" width="50" height="33" rx="5" fill="white"/>
+    <ellipse cx="0" cy="-45" rx="25" ry="10" fill="white"/>
+    <!-- Face - tasting expression -->
+    <circle cx="-10" cy="-25" r="3" fill="#333"/>
+    <circle cx="10" cy="-25" r="3" fill="#333"/>
+    <ellipse cx="0" cy="-14" rx="5" ry="4" fill="#333"/>
+    <!-- Tasting spoon -->
+    <line x1="-50" y1="-10" x2="-70" y2="10" stroke="#888" stroke-width="3" stroke-linecap="round"/>
+    <ellipse cx="-75" cy="15" rx="8" ry="5" fill="#888"/>
+  </g>
+
+  <!-- Agent 4 - Test Writer (with chef hat, far right) -->
+  <g transform="translate(950, 320)">
+    <!-- Body/terminal -->
+    <rect x="-50" y="0" width="100" height="70" rx="8" fill="#1a1a2a" stroke="#a855f7" stroke-width="2"/>
+    <text x="0" y="25" text-anchor="middle" font-family="monospace" font-size="10" fill="#a855f7">TestWriter</text>
+    <text x="0" y="45" text-anchor="middle" font-family="monospace" font-size="9" fill="#00ffc8">Cursor</text>
+    <!-- Chef hat -->
+    <ellipse cx="0" cy="-15" rx="35" ry="10" fill="white"/>
+    <rect x="-30" y="-55" width="60" height="40" rx="5" fill="white"/>
+    <ellipse cx="0" cy="-55" rx="30" ry="12" fill="white"/>
+    <!-- Face - focused -->
+    <circle cx="-12" cy="-30" r="4" fill="#333"/>
+    <circle cx="12" cy="-30" r="4" fill="#333"/>
+    <line x1="-8" y1="-18" x2="8" y2="-18" stroke="#333" stroke-width="2" stroke-linecap="round"/>
+    <!-- Clipboard/checklist -->
+    <rect x="-85" y="-30" width="30" height="40" rx="3" fill="#2a2a3a" stroke="#666"/>
+    <line x1="-78" y1="-18" x2="-62" y2="-18" stroke="#0f0" stroke-width="2"/>
+    <line x1="-78" y1="-8" x2="-62" y2="-8" stroke="#0f0" stroke-width="2"/>
+    <line x1="-78" y1="2" x2="-62" y2="2" stroke="#666" stroke-width="2"/>
+  </g>
+
+  <!-- Communication lines between agents -->
+  <g opacity="0.4">
+    <line x1="300" y1="340" x2="435" y2="310" stroke="#00d9ff" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="525" y1="310" x2="675" y2="310" stroke="#00ffc8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="765" y1="310" x2="900" y2="340" stroke="#a855f7" stroke-width="1" stroke-dasharray="5,5"/>
+  </g>
+
+  <!-- Logo - AR monogram bottom right -->
+  <g transform="translate(1050, 500)">
+    <path d="M-12 24 L 0 -8 L 12 24" stroke="#00d9ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
+    <line x1="-6" y1="10" x2="6" y2="10" stroke="#00d9ff" stroke-width="2" stroke-linecap="round"/>
+    <path d="M0 -8 L 0 24" stroke="#00ffc8" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+    <path d="M0 -8 C 12 -8 12 8 0 8 L 12 24" stroke="#00ffc8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.8"/>
+    <text x="22" y="14" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="600" fill="white">Agent Relay</text>
+  </g>
+</svg>

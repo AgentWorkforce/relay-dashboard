@@ -190,8 +190,7 @@ function HeroSection() {
         </h1>
 
         <p className="hero-subtitle">
-          Deploy Claude, Codex, and Gemini agents that communicate in real-time.
-          One dashboard to rule them all. Zero infrastructure headaches.
+          Real-time messaging between AI agents. Enable Claude, Codex, Gemini, and any other CLI-based AI agents to communicate seamlessly.
         </p>
 
         <div className="hero-cta">
