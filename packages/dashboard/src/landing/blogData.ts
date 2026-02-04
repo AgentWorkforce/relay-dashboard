@@ -39,7 +39,6 @@ Am I worried about this? If I'm being completely honest, yes, a little bit. But 
 - **Shadow agents and reviewers** catch lazy work
 - **Store trajectories** so future agents have context
 
----
 
 ## Part 1: The Promise
 
@@ -69,7 +68,6 @@ I have been using Agent Relay to build itself on the cloud environment at [agent
 
 It hasn't been all good though...
 
----
 
 ## Part 2: The Problems
 
@@ -81,7 +79,6 @@ I've had instances where an agent swarm takes on a complicated feature and then 
 
 Having a Lead agent creates a single point of failure. If the swarm is large and chatty, the Lead receives a flood of messages from other agents plus queries from the human asking about status or redirecting work. This can overwhelm the Lead, causing it to enter an endless loop and eventually die or become completely unresponsive.
 
----
 
 ## Part 3: The Playbook
 
@@ -186,7 +183,6 @@ Coordinating with multiple agents and seeing output fly in at rapid speed is exh
 
 It also means the **review phase is paramount**. Having agents self-review and cross-review is an effective strategy.
 
----
 
 ## Try It Yourself
 
