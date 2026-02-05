@@ -5225,8 +5225,8 @@ export async function startDashboard(
             error: 'Not connected to relay daemon',
           });
         }
-        // Note: spawnerName, userId, includeWorkflowConventions require SDK >= 2.2.0
-        // The daemon's SpawnManager passes them through to the underlying AgentSpawner
+        // spawnerName/userId/includeWorkflowConventions need SDK >= 2.2.0 types
+        // Cast removed once SDK is republished with these fields
         result = await client.spawn({
           name,
           cli,
@@ -5239,8 +5239,8 @@ export async function startDashboard(
           shadowOf,
           shadowTriggers,
           shadowSpeakOn,
-          ...((spawnerName || undefined) && { spawnerName }),
-          ...((typeof userId === 'string') && { userId }),
+          spawnerName: spawnerName || undefined,
+          userId: typeof userId === 'string' ? userId : undefined,
           includeWorkflowConventions: true,
         } as Parameters<typeof client.spawn>[0]);
       } else {
