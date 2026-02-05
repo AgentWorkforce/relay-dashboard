@@ -1748,7 +1748,14 @@ export async function startDashboard(
   // Helper to check if an agent name is internal/system (should be hidden from UI)
   // Convention: agent names starting with __ are internal (e.g., __spawner__, __DashboardBridge__)
   const isInternalAgent = (name: string): boolean => {
+    if (name === '__cli_sender__') return false;
     return name.startsWith('__');
+  };
+
+  // Display-name remapping for CLI sender (used across message and history endpoints)
+  const remapAgentName = (name: string): string => {
+    if (name === '__cli_sender__') return 'CLI';
+    return name;
   };
 
   const buildThreadSummaryMap = (rows: StoredMessage[]): Map<string, ThreadMetadata> => {
@@ -1802,6 +1809,7 @@ export async function startDashboard(
       let attachments: Attachment[] | undefined;
       let channel: string | undefined;
       let effectiveFrom = row.from;
+      let effectiveTo = row.to;
 
       if (row.data && typeof row.data === 'object') {
         if ('attachments' in row.data) {
@@ -1817,9 +1825,12 @@ export async function startDashboard(
         }
       }
 
+      effectiveFrom = remapAgentName(effectiveFrom);
+      effectiveTo = remapAgentName(effectiveTo);
+
       return {
         from: effectiveFrom,
-        to: row.to,
+        to: effectiveTo,
         content: row.body,
         timestamp: new Date(row.ts).toISOString(),
         id: row.id,
@@ -4916,8 +4927,8 @@ export async function startDashboard(
 
       const result = messages.map(m => ({
         id: m.id,
-        from: m.from,
-        to: m.to,
+        from: remapAgentName(m.from),
+        to: remapAgentName(m.to),
         content: m.body,
         timestamp: new Date(m.ts).toISOString(),
         thread: m.thread,
@@ -4961,8 +4972,8 @@ export async function startDashboard(
         // Skip messages from/to internal system agents (e.g., __spawner__)
         if (isInternalAgent(msg.from) || isInternalAgent(msg.to)) continue;
 
-        // Create normalized key (sorted participants)
-        const participants = [msg.from, msg.to].sort();
+        // Create normalized key (sorted participants, with display names)
+        const participants = [remapAgentName(msg.from), remapAgentName(msg.to)].sort();
         const key = participants.join(':');
 
         const existing = conversationMap.get(key);
