@@ -124,7 +124,7 @@ const AGENT_TEMPLATES = [
     command: 'codex',
     description: 'OpenAI Codex agent',
     icon: '⚡',
-    providerId: 'codex', // Backend uses 'openai', but we check for both
+    providerId: 'codex',
     supportsModelSelection: true,
   },
   {

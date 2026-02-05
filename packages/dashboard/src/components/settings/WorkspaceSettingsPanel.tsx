@@ -84,7 +84,7 @@ const AI_PROVIDERS: AIProvider[] = [
   },
   {
     id: 'codex',
-    name: 'openai', // Must be lowercase to match backend validation
+    name: 'codex', // Must match backend provider key
     displayName: 'Codex',
     description: 'Codex - OpenAI coding assistant',
     color: '#10A37F',
@@ -211,19 +211,10 @@ export function WorkspaceSettingsPanel({
 
       // Mark connected providers for this workspace
       if (providersResult.success) {
-        // Map backend IDs to frontend IDs for consistency
-        const BACKEND_TO_FRONTEND_MAP: Record<string, string> = {
-          openai: 'codex', // Backend stores 'openai', frontend uses 'codex'
-        };
         const connected: Record<string, boolean> = {};
         providersResult.data.providers.forEach((p) => {
           if (p.isConnected) {
             connected[p.id] = true;
-            // Also mark the frontend ID as connected if there's a mapping
-            const frontendId = BACKEND_TO_FRONTEND_MAP[p.id];
-            if (frontendId) {
-              connected[frontendId] = true;
-            }
           }
         });
         setProviderStatus(connected);

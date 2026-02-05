@@ -1279,12 +1279,16 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
             id: p.id,
             path: p.path,
             name: p.name || p.path.split('/').pop(),
-            agents: (p.agents || []).map((a) => ({
-              name: a.name,
-              status: a.status === 'online' || a.status === 'active' ? 'online' : 'offline',
-              currentTask: a.task,
-              cli: a.cli,
-            })) as Agent[],
+            agents: (p.agents || [])
+              // Filter out human users (cli === 'dashboard') from project agents
+              // Humans should appear in Direct Messages, not under projects
+              .filter((a) => a.cli !== 'dashboard')
+              .map((a) => ({
+                name: a.name,
+                status: a.status === 'online' || a.status === 'active' ? 'online' : 'offline',
+                currentTask: a.task,
+                cli: a.cli,
+              })) as Agent[],
             lead: p.lead,
           }));
           setProjects(projectList);
@@ -1307,11 +1311,16 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   const BRIDGE_AGENT_NAMES = ['architect'];
 
   // Separate bridge-level agents from regular project agents
+  // Filter out human users - they should appear in Direct Messages, not merged into projects
   const { bridgeAgents, projectAgents } = useMemo(() => {
     const bridge: Agent[] = [];
     const project: Agent[] = [];
 
     for (const agent of agents) {
+      // Skip human users - they shouldn't be merged into projects
+      if (agent.isHuman || agent.cli === 'dashboard') {
+        continue;
+      }
       if (BRIDGE_AGENT_NAMES.includes(agent.name.toLowerCase())) {
         bridge.push(agent);
       } else {

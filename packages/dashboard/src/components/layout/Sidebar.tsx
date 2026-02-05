@@ -556,11 +556,14 @@ export function Sidebar({
             currentProject={currentProject}
             selectedAgent={selectedAgent}
             searchQuery={searchQuery}
+            pinnedAgents={pinnedAgents}
+            isMaxPinned={isMaxPinned}
             onProjectSelect={onProjectSelect}
             onAgentSelect={onAgentSelect}
             onReleaseClick={onReleaseClick}
             onLogsClick={onLogsClick}
             onProfileClick={onProfileClick}
+            onPinToggle={(agent) => togglePin(agent.name)}
             compact={true}
           />
         ) : (

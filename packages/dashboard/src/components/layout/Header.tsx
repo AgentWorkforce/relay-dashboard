@@ -67,10 +67,6 @@ export function Header({
   onMenuClick,
   hasUnreadNotifications,
 }: HeaderProps) {
-  // In channels view, use selectedChannelName; otherwise use currentChannel
-  const isChannelsView = viewMode === 'channels';
-  const displayChannel = isChannelsView && selectedChannelName ? selectedChannelName : currentChannel;
-  const isGeneral = displayChannel === 'general';
   const colors = selectedAgent ? getAgentColor(selectedAgent.name) : null;
   const hasMultipleProjects = projects.length > 1;
 
@@ -112,20 +108,7 @@ export function Header({
       <div className="w-px h-6 bg-border-subtle mr-3 max-md:hidden" />
 
       <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-        {isChannelsView && selectedChannelName ? (
-          <>
-            <span className="text-accent-cyan text-base sm:text-lg font-mono">#</span>
-            <span className="font-display font-semibold text-sm sm:text-base text-text-primary truncate max-w-[100px] sm:max-w-none">{selectedChannelName}</span>
-          </>
-        ) : isGeneral ? (
-          <>
-            <span className="text-accent-cyan text-base sm:text-lg font-mono">#</span>
-            <span className="font-display font-semibold text-sm sm:text-base text-text-primary truncate max-w-[100px] sm:max-w-none">general</span>
-            <span className="text-text-muted text-sm ml-2 pl-3 border-l border-border-subtle hidden md:inline">
-              All agent communications
-            </span>
-          </>
-        ) : selectedAgent ? (
+        {selectedAgent && !selectedAgent.isHuman && selectedAgent.cli !== 'dashboard' ? (
           <>
             <div
               className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-semibold text-[10px] sm:text-xs border-2 flex-shrink-0"
@@ -160,6 +143,9 @@ export function Header({
               </span>
             )}
           </>
+        ) : selectedAgent && (selectedAgent.isHuman || selectedAgent.cli === 'dashboard') ? (
+          // Human user DM - don't display channel name in header
+          null
         ) : (
           <>
             <span className="text-accent-cyan text-base sm:text-lg font-mono">@</span>

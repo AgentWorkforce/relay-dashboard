@@ -20,7 +20,7 @@ export const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
   },
   codex: {
     id: 'codex',
-    name: 'openai',
+    name: 'codex',
     displayName: 'Codex',
     color: '#10A37F',
     agentCommand: 'codex',

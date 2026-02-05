@@ -328,7 +328,7 @@ export function TerminalProviderSetup({
 
   const handleComplete = useCallback(async () => {
     // Mark provider as connected in the database
-    // Use provider.name (anthropic/openai) not provider.id (claude/codex)
+    // Use provider.name (canonical backend name e.g. 'codex', 'anthropic')
     const providerName = provider.name || provider.id;
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
