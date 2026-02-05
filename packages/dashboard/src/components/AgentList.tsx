@@ -46,7 +46,6 @@ export function AgentList({
   showGroupStats = true,
 }: AgentListProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [allExpanded, setAllExpanded] = useState(true);
   const [isPinnedExpanded, setIsPinnedExpanded] = useState(true);
 
   // Filter out setup agents (temporary agents for provider auth)
@@ -103,13 +102,15 @@ export function AgentList({
     });
   };
 
+  // Derive from actual state so the label is always accurate
+  const allExpanded = groups.length > 0 && groups.every((g) => expandedGroups.has(g.prefix));
+
   const toggleAll = () => {
     if (allExpanded) {
       setExpandedGroups(new Set());
     } else {
       setExpandedGroups(new Set(groups.map((g) => g.prefix)));
     }
-    setAllExpanded(!allExpanded);
   };
 
   if (agents.length === 0) {
@@ -246,6 +247,7 @@ function AgentGroupComponent({
     group.agents[0].name.toLowerCase() === group.prefix.toLowerCase();
 
   // For solo agents, render just the card without a group header
+  // When collapsed, switch to compact mode since there's no group header to collapse to
   if (isSoloAgent) {
     const agent = group.agents[0];
     return (
@@ -254,7 +256,7 @@ function AgentGroupComponent({
           key={agent.name}
           agent={agent}
           isSelected={agent.name === selectedAgent}
-          compact={compact}
+          compact={!isExpanded || compact}
           isPinned={pinnedAgents.includes(agent.name)}
           isMaxPinned={isMaxPinned}
           onClick={onAgentSelect}

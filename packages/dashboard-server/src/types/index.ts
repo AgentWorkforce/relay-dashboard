@@ -9,6 +9,28 @@ import type { Server } from 'http';
 import type { WebSocketServer } from 'ws';
 
 /**
+ * Interface for spawn manager read operations.
+ * When the daemon's SpawnManager is passed in, the dashboard uses it
+ * for read operations (logs, worker listing) instead of creating its own AgentSpawner.
+ * Spawn/release go through the SDK client → daemon socket.
+ */
+export interface SpawnManagerLike {
+  hasWorker(name: string): boolean;
+  getWorkerOutput(name: string, limit?: number): string[] | undefined;
+  getWorkerRawOutput(name: string): string | undefined;
+  getActiveWorkers(): Array<{
+    name: string;
+    cli: string;
+    task: string;
+    team?: string;
+    spawnerName?: string;
+    spawnedAt: number;
+    pid?: number;
+  }>;
+  sendWorkerInput(name: string, data: string): boolean;
+}
+
+/**
  * Options for starting the dashboard server
  */
 export interface DashboardOptions {
@@ -38,6 +60,12 @@ export interface DashboardOptions {
    * Called when spawn fails or is cancelled.
    */
   onClearSpawning?: (agentName: string) => void;
+  /**
+   * Daemon's SpawnManager instance for read operations (logs, worker listing).
+   * When provided, spawn/release go through the SDK client instead of a local AgentSpawner.
+   * This solves relay-pty binary resolution issues in npx/global installs.
+   */
+  spawnManager?: SpawnManagerLike;
 }
 
 /**
