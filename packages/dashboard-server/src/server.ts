@@ -2833,8 +2833,8 @@ export async function startDashboard(
     });
   };
 
-  // Helper to broadcast channel messages to all presence clients
-  // This is used by fallback relay clients to forward messages to cloud-connected users
+  // Helper to broadcast channel messages to all connected clients
+  // Broadcasts to both main wss (local mode) and wssPresence (cloud mode)
   const broadcastChannelMessage = (message: {
     type: 'channel_message';
     targetUser: string;
@@ -2848,6 +2848,13 @@ export async function startDashboard(
     timestamp: string;
   }) => {
     const payload = JSON.stringify(message);
+    // Broadcast to main WebSocket clients (local mode)
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(payload);
+      }
+    });
+    // Also broadcast to presence WebSocket clients (cloud mode)
     wssPresence.clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(payload);
@@ -3737,6 +3744,8 @@ export async function startDashboard(
         if (workspaceId && data?._workspaceId && data._workspaceId !== workspaceId) {
           return false;
         }
+        // Filter out internal/system agents (e.g., __system__, __spawner__)
+        if (isInternalAgent(m.from)) return false;
         // Accept message if it has _isChannelMessage flag OR if it's addressed to a channel
         return Boolean(data?._isChannelMessage) || (m.to && m.to.startsWith('#'));
       });
