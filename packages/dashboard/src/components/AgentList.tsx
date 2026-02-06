@@ -9,7 +9,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Agent } from '../types';
 import { AgentCard } from './AgentCard';
 import { groupAgents, getGroupStats, filterAgents, getAgentDisplayName, type AgentGroup } from '../lib/hierarchy';
-import { STATUS_COLORS } from '../lib/colors';
+import { STATUS_COLORS, getAgentColor, getAgentInitials } from '../lib/colors';
 
 export interface AgentListProps {
   agents: Agent[];
@@ -47,6 +47,7 @@ export function AgentList({
 }: AgentListProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [isPinnedExpanded, setIsPinnedExpanded] = useState(true);
+  const [isAllCollapsed, setIsAllCollapsed] = useState(false);
 
   // Filter out setup agents (temporary agents for provider auth)
   // and system agents like Dashboard (used for dashboard message sending)
@@ -102,14 +103,15 @@ export function AgentList({
     });
   };
 
-  // Derive from actual state so the label is always accurate
-  const allExpanded = groups.length > 0 && groups.every((g) => expandedGroups.has(g.prefix));
-
   const toggleAll = () => {
-    if (allExpanded) {
-      setExpandedGroups(new Set());
-    } else {
+    if (isAllCollapsed) {
+      // Expand: restore all groups and show everything
+      setIsAllCollapsed(false);
       setExpandedGroups(new Set(groups.map((g) => g.prefix)));
+      setIsPinnedExpanded(true);
+    } else {
+      // Collapse: hide entire panel contents
+      setIsAllCollapsed(true);
     }
   };
 
@@ -133,74 +135,76 @@ export function AgentList({
 
   return (
     <div className="flex flex-col gap-1">
-      {groups.length > 1 && (
-        <div className="flex justify-between items-center py-2 px-3 text-xs text-text-muted">
-          <span>{filteredAgents.length} agents</span>
-          <button
-            className="bg-transparent border-none text-accent cursor-pointer text-xs hover:underline"
-            onClick={toggleAll}
-          >
-            {allExpanded ? 'Collapse all' : 'Expand all'}
-          </button>
-        </div>
-      )}
+      <div className="flex justify-between items-center py-2 px-3 text-xs text-text-muted">
+        <span>{filteredAgents.length} agents</span>
+        <button
+          className="bg-transparent border-none text-accent cursor-pointer text-xs hover:underline"
+          onClick={toggleAll}
+        >
+          {isAllCollapsed ? 'Expand all' : 'Collapse all'}
+        </button>
+      </div>
 
-      {/* Pinned Agents Section */}
-      {pinnedAgentsList.length > 0 && (
-        <div className="mb-2">
-          <button
-            className="flex items-center gap-2 w-full py-2 px-3 bg-transparent border-none cursor-pointer text-sm text-left rounded transition-colors duration-200 relative hover:bg-amber-400/5"
-            onClick={() => setIsPinnedExpanded(!isPinnedExpanded)}
-          >
-            <div className="absolute left-0 top-1 bottom-1 w-[3px] rounded-sm bg-amber-400" />
-            <PinnedChevronIcon expanded={isPinnedExpanded} />
-            <PinHeaderIcon />
-            <span className="font-semibold text-amber-400">Pinned</span>
-            <span className="text-text-muted font-normal">({pinnedAgentsList.length})</span>
-          </button>
+      {!isAllCollapsed && (
+        <>
+          {/* Pinned Agents Section */}
+          {pinnedAgentsList.length > 0 && (
+            <div className="mb-2">
+              <button
+                className="flex items-center gap-2 w-full py-2 px-3 bg-transparent border-none cursor-pointer text-sm text-left rounded transition-colors duration-200 relative hover:bg-amber-400/5"
+                onClick={() => setIsPinnedExpanded(!isPinnedExpanded)}
+              >
+                <div className="absolute left-0 top-1 bottom-1 w-[3px] rounded-sm bg-amber-400" />
+                <PinnedChevronIcon expanded={isPinnedExpanded} />
+                <PinHeaderIcon />
+                <span className="font-semibold text-amber-400">Pinned</span>
+                <span className="text-text-muted font-normal">({pinnedAgentsList.length})</span>
+              </button>
 
-          {isPinnedExpanded && (
-            <div className="py-1 pl-4 flex flex-col gap-1">
-              {pinnedAgentsList.map((agent) => (
-                <AgentCard
-                  key={agent.name}
-                  agent={agent}
-                  isSelected={agent.name === selectedAgent}
-                  compact={compact}
-                  isPinned={true}
-                  isMaxPinned={isMaxPinned}
-                  onClick={onAgentSelect}
-                  onMessageClick={onAgentMessage}
-                  onReleaseClick={onReleaseClick}
-                  onLogsClick={onLogsClick}
-                  onProfileClick={onProfileClick}
-                  onPinToggle={onPinToggle}
-                />
-              ))}
+              {isPinnedExpanded && (
+                <div className="py-1 pl-4 flex flex-col gap-1">
+                  {pinnedAgentsList.map((agent) => (
+                    <AgentCard
+                      key={agent.name}
+                      agent={agent}
+                      isSelected={agent.name === selectedAgent}
+                      compact={compact}
+                      isPinned={true}
+                      isMaxPinned={isMaxPinned}
+                      onClick={onAgentSelect}
+                      onMessageClick={onAgentMessage}
+                      onReleaseClick={onReleaseClick}
+                      onLogsClick={onLogsClick}
+                      onProfileClick={onProfileClick}
+                      onPinToggle={onPinToggle}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           )}
-        </div>
-      )}
 
-      {groups.map((group) => (
-        <AgentGroupComponent
-          key={group.prefix}
-          group={group}
-          isExpanded={expandedGroups.has(group.prefix)}
-          selectedAgent={selectedAgent}
-          compact={compact}
-          showStats={showGroupStats}
-          pinnedAgents={pinnedAgents}
-          isMaxPinned={isMaxPinned}
-          onToggle={() => toggleGroup(group.prefix)}
-          onAgentSelect={onAgentSelect}
-          onAgentMessage={onAgentMessage}
-          onReleaseClick={onReleaseClick}
-          onLogsClick={onLogsClick}
-          onProfileClick={onProfileClick}
-          onPinToggle={onPinToggle}
-        />
-      ))}
+          {groups.map((group) => (
+            <AgentGroupComponent
+              key={group.prefix}
+              group={group}
+              isExpanded={expandedGroups.has(group.prefix)}
+              selectedAgent={selectedAgent}
+              compact={compact}
+              showStats={showGroupStats}
+              pinnedAgents={pinnedAgents}
+              isMaxPinned={isMaxPinned}
+              onToggle={() => toggleGroup(group.prefix)}
+              onAgentSelect={onAgentSelect}
+              onAgentMessage={onAgentMessage}
+              onReleaseClick={onReleaseClick}
+              onLogsClick={onLogsClick}
+              onProfileClick={onProfileClick}
+              onPinToggle={onPinToggle}
+            />
+          ))}
+        </>
+      )}
     </div>
   );
 }
@@ -241,13 +245,11 @@ function AgentGroupComponent({
   const stats = showStats ? getGroupStats(group.agents) : null;
 
   // Check if this is a "solo" agent - single agent in group where name matches prefix
-  // (e.g., "Lead" agent with no team set creates a "lead" group)
   const isSoloAgent =
     group.agents.length === 1 &&
     group.agents[0].name.toLowerCase() === group.prefix.toLowerCase();
 
   // For solo agents, render just the card without a group header
-  // When collapsed, switch to compact mode since there's no group header to collapse to
   if (isSoloAgent) {
     const agent = group.agents[0];
     return (
@@ -256,7 +258,7 @@ function AgentGroupComponent({
           key={agent.name}
           agent={agent}
           isSelected={agent.name === selectedAgent}
-          compact={!isExpanded || compact}
+          compact={compact}
           isPinned={pinnedAgents.includes(agent.name)}
           isMaxPinned={isMaxPinned}
           onClick={onAgentSelect}

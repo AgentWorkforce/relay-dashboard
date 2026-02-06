@@ -199,14 +199,14 @@ export function AgentCard({
               </span>
             )}
           </div>
-          {!displayNameOverride && (
+          {agent.cli && (
             <span className="text-[10px] text-text-muted truncate font-mono opacity-70 mt-0.5">
-              {agent.isLocal ? agent.daemonName || agent.machineId : getAgentBreadcrumb(agent.name)}
+              {agent.cli}
             </span>
           )}
-          {agent.profile?.model && (
-            <span className="text-[9px] text-accent-cyan font-mono opacity-80 mt-0.5" title={`Model: ${agent.profile.model}`}>
-              {agent.profile.model}
+          {(agent.model || agent.profile?.model) && (
+            <span className="text-[9px] text-accent-muted font-mono opacity-80 mt-0.5" title={`Model: ${agent.model || agent.profile?.model}`}>
+              {agent.model || agent.profile?.model}
             </span>
           )}
 
@@ -280,12 +280,6 @@ export function AgentCard({
                   boxShadow: isOnline ? `0 0 6px ${statusColor}` : 'none',
                 }}
                 title={statusTooltip}
-              />
-            )}
-            {agent.needsAttention && (
-              <div
-                className="w-2 h-2 rounded-full bg-warning animate-pulse shadow-[0_0_8px_rgba(255,107,53,0.5)]"
-                title="Needs Attention - Agent requires user input or has pending decisions"
               />
             )}
             {isStuck && (
@@ -391,10 +385,10 @@ export function AgentCard({
 
       <div className="mt-3 flex justify-between items-center">
         <div className="flex gap-2 text-xs text-text-muted flex-wrap">
-          {agent.cli && <span className="bg-bg-hover py-0.5 px-1.5 rounded">{agent.cli}</span>}
-          {agent.profile?.model && (
-            <span className="bg-accent-cyan/10 text-accent-cyan py-0.5 px-1.5 rounded font-mono text-[10px]" title={`Model: ${agent.profile.model}`}>
-              {agent.profile.model}
+          {agent.cli && <span className="bg-bg-hover py-0.5 px-1.5 rounded">-{agent.cli}-</span>}
+          {(agent.model || agent.profile?.model) && (
+            <span className="bg-accent-cyan/10 text-accent-cyan py-0.5 px-1.5 rounded font-mono text-[10px]" title={`Model: ${agent.model || agent.profile?.model}`}>
+              {agent.model || agent.profile?.model}
             </span>
           )}
           {agent.messageCount !== undefined && agent.messageCount > 0 && (
