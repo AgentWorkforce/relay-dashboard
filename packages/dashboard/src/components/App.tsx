@@ -2755,6 +2755,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
                 compactMode={settings.display.compactMode}
                 onAgentClick={setSelectedAgentProfile}
                 onUserClick={setSelectedUserProfile}
+                onLogsClick={handleLogsClick}
                 onlineUsers={onlineUsers}
               />
             )}

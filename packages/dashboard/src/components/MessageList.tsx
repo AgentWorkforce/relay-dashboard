@@ -13,6 +13,7 @@ import { MessageStatusIndicator } from './MessageStatusIndicator';
 import { ThinkingIndicator } from './ThinkingIndicator';
 import { MessageSenderName } from './MessageSenderName';
 import { formatMessageBody } from './utils/messageFormatting';
+import { AgentLogPreview } from './AgentLogPreview';
 
 // Provider icons and colors matching landing page
 const PROVIDER_CONFIG: Record<string, { icon: string; color: string }> = {
@@ -71,6 +72,8 @@ export interface MessageListProps {
   onAgentClick?: (agent: Agent) => void;
   /** Callback when a human user name is clicked to open profile */
   onUserClick?: (user: UserPresence) => void;
+  /** Callback when logs should open for an agent */
+  onLogsClick?: (agent: Agent) => void;
   /** Online users list for profile lookup */
   onlineUsers?: UserPresence[];
 }
@@ -89,6 +92,7 @@ export function MessageList({
   compactMode = false,
   onAgentClick,
   onUserClick,
+  onLogsClick,
   onlineUsers = [],
 }: MessageListProps) {
   // Build a map of agent name -> processing state for quick lookup
@@ -292,6 +296,7 @@ export function MessageList({
             onlineUsers={onlineUsers}
             onAgentClick={onAgentClick}
             onUserClick={onUserClick}
+            onLogsClick={onLogsClick}
           />
         );
       })}
@@ -317,6 +322,8 @@ interface MessageItemProps {
   onAgentClick?: (agent: Agent) => void;
   /** Callback when a user name is clicked */
   onUserClick?: (user: UserPresence) => void;
+  /** Callback when logs should open for an agent */
+  onLogsClick?: (agent: Agent) => void;
 }
 
 function MessageItem({
@@ -331,6 +338,7 @@ function MessageItem({
   onlineUsers = [],
   onAgentClick,
   onUserClick,
+  onLogsClick,
 }: MessageItemProps) {
   const timestamp = formatTimestamp(message.timestamp);
 
@@ -501,6 +509,16 @@ function MessageItem({
         {/* Attachments */}
         {message.attachments && message.attachments.length > 0 && (
           <MessageAttachments attachments={message.attachments} />
+        )}
+
+        {/* Live log preview while the recipient agent is processing */}
+        {showThinking && recipientAgent && (
+          <AgentLogPreview
+            agentName={recipientAgent.name}
+            lines={5}
+            compact={compactMode}
+            onExpand={onLogsClick ? () => onLogsClick(recipientAgent) : undefined}
+          />
         )}
       </div>
     </div>
