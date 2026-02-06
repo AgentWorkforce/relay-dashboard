@@ -110,6 +110,7 @@ export function MessageList({
   // This is used to only show the thinking indicator on the most recent message
   const latestMessageToAgent = new Map<string, string>();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(autoScrollDefault);
   const prevFilteredLengthRef = useRef<number>(0);
   const prevChannelRef = useRef<string>(currentChannel);
@@ -117,6 +118,7 @@ export function MessageList({
   const shouldScrollRef = useRef(false);
   // Track if a scroll is in progress to prevent race conditions
   const isScrollingRef = useRef(false);
+  const resizeScrollRafRef = useRef<number | null>(null);
 
   useEffect(() => {
     setAutoScroll(autoScrollDefault);
@@ -205,6 +207,48 @@ export function MessageList({
     }
   }, [autoScroll]);
 
+  // Keep the view pinned to the bottom while auto-scroll is enabled, even when content grows
+  // without new messages (e.g. log previews expanding from 1->5 lines, images loading).
+  useEffect(() => {
+    if (!autoScrollDefault) return;
+    if (!autoScroll) return;
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const content = contentRef.current;
+    if (!content) return;
+
+    const ro = new ResizeObserver(() => {
+      if (!autoScroll || !scrollContainerRef.current) return;
+
+      // Batch multiple ResizeObserver events into a single RAF.
+      if (resizeScrollRafRef.current !== null) return;
+      resizeScrollRafRef.current = requestAnimationFrame(() => {
+        resizeScrollRafRef.current = null;
+        if (!autoScroll || !scrollContainerRef.current) return;
+
+        isScrollingRef.current = true;
+        const container = scrollContainerRef.current;
+        container.scrollTop = container.scrollHeight;
+
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            isScrollingRef.current = false;
+          }, 50);
+        });
+      });
+    });
+
+    ro.observe(content);
+
+    return () => {
+      ro.disconnect();
+      if (resizeScrollRafRef.current !== null) {
+        cancelAnimationFrame(resizeScrollRafRef.current);
+        resizeScrollRafRef.current = null;
+      }
+    };
+  }, [autoScroll, autoScrollDefault]);
+
   // Auto-scroll to bottom when new messages arrive - use useLayoutEffect for immediate execution
   useLayoutEffect(() => {
     if (shouldScrollRef.current && scrollContainerRef.current) {
@@ -260,46 +304,51 @@ export function MessageList({
 
   return (
     <div
-      className={`flex flex-col bg-bg-secondary h-full overflow-y-auto ${
-        compactMode ? 'gap-0 p-1 sm:p-1.5' : 'gap-2 p-3 sm:p-4'
-      }`}
+      className="bg-bg-secondary h-full overflow-y-auto"
       ref={scrollContainerRef}
       onScroll={handleScroll}
     >
-      {filteredMessages.map((message) => {
-        // Check if message is from current user (Dashboard or GitHub username)
-        const isFromCurrentUser = message.from === 'Dashboard' ||
-          (currentUser && message.from === currentUser.displayName);
+      <div
+        ref={contentRef}
+        className={`flex flex-col ${
+          compactMode ? 'gap-0 p-1 sm:p-1.5' : 'gap-2 p-3 sm:p-4'
+        }`}
+      >
+        {filteredMessages.map((message) => {
+          // Check if message is from current user (Dashboard or GitHub username)
+          const isFromCurrentUser = message.from === 'Dashboard' ||
+            (currentUser && message.from === currentUser.displayName);
 
-        // Check if this is the latest message from current user to this recipient
-        // Only the latest message should show the thinking indicator
-        const isLatestToRecipient = isFromCurrentUser && message.to !== '*' &&
-          latestMessageToAgent.get(message.to) === message.id;
+          // Check if this is the latest message from current user to this recipient
+          // Only the latest message should show the thinking indicator
+          const isLatestToRecipient = isFromCurrentUser && message.to !== '*' &&
+            latestMessageToAgent.get(message.to) === message.id;
 
-        // Check if the recipient is currently processing
-        // Only show thinking indicator for the LATEST message from current user to an agent
-        const recipientProcessing = isLatestToRecipient
-          ? processingAgents.get(message.to)
-          : undefined;
+          // Check if the recipient is currently processing
+          // Only show thinking indicator for the LATEST message from current user to an agent
+          const recipientProcessing = isLatestToRecipient
+            ? processingAgents.get(message.to)
+            : undefined;
 
-        return (
-          <MessageItem
-            key={message.id}
-            message={message}
-            isHighlighted={message.id === highlightedMessageId}
-            onThreadClick={onThreadClick}
-            recipientProcessing={recipientProcessing}
-            currentUser={currentUser}
-            showTimestamps={showTimestamps}
-            compactMode={compactMode}
-            agents={agents}
-            onlineUsers={onlineUsers}
-            onAgentClick={onAgentClick}
-            onUserClick={onUserClick}
-            onLogsClick={onLogsClick}
-          />
-        );
-      })}
+          return (
+            <MessageItem
+              key={message.id}
+              message={message}
+              isHighlighted={message.id === highlightedMessageId}
+              onThreadClick={onThreadClick}
+              recipientProcessing={recipientProcessing}
+              currentUser={currentUser}
+              showTimestamps={showTimestamps}
+              compactMode={compactMode}
+              agents={agents}
+              onlineUsers={onlineUsers}
+              onAgentClick={onAgentClick}
+              onUserClick={onUserClick}
+              onLogsClick={onLogsClick}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }
