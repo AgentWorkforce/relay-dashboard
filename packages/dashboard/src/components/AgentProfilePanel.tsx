@@ -202,27 +202,32 @@ export function AgentProfilePanel({
             const providerInfo = PROVIDER_CONFIG[providerKey] || PROVIDER_CONFIG.other;
             return (
               <div
-                className="flex items-center gap-2 mt-3 px-3 py-2 rounded-lg border"
+                className="flex items-center gap-3 mt-3 px-3 py-2.5 rounded-lg border"
                 style={{
                   borderColor: `${providerInfo.color}40`,
                   backgroundColor: `${providerInfo.color}10`,
                 }}
               >
                 <span className="text-lg">{providerInfo.icon}</span>
-                <div className="flex flex-col">
-                  <span className="text-xs text-[#8d8d8e] uppercase tracking-wide">Provider</span>
+                <div className="flex flex-col gap-0.5">
                   <span
                     className="text-sm font-medium"
                     style={{ color: providerInfo.color }}
                   >
                     {providerInfo.label}
                   </span>
+                  {(agent.model || profile?.model) && (
+                    <span
+                      className="text-[11px] font-mono px-1.5 py-0.5 rounded w-fit"
+                      style={{
+                        color: providerInfo.color,
+                        backgroundColor: `${providerInfo.color}15`,
+                      }}
+                    >
+                      {agent.model || profile?.model}
+                    </span>
+                  )}
                 </div>
-                {profile?.model && (
-                  <span className="ml-auto text-xs text-[#8d8d8e] font-mono">
-                    {profile.model}
-                  </span>
-                )}
               </div>
             );
           })()}
@@ -395,11 +400,11 @@ export function AgentProfilePanel({
             )}
 
             {/* Model */}
-            {profile?.model && (
+            {(agent.model || profile?.model) && (
               <div>
                 <label className="text-xs text-[#8d8d8e] uppercase tracking-wide">Model</label>
                 <p className="text-sm text-[#d1d2d3] mt-1 font-mono">
-                  {profile.model}
+                  {agent.model || profile?.model}
                 </p>
               </div>
             )}

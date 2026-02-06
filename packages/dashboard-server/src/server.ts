@@ -390,6 +390,7 @@ interface AgentStatus {
   isSpawned?: boolean;
   team?: string;
   avatarUrl?: string;
+  model?: string;
 }
 
 interface Attachment {
@@ -997,25 +998,56 @@ export async function startDashboard(
     app.use(express.static(dashboardDir, { extensions: ['html'] }));
 
     // Fallback for Next.js pages (e.g., /metrics -> /metrics.html)
-    // These are needed when a route exists as both a directory and .html file
-    const sendFileWithFallback = (res: express.Response, filePath: string) => {
+    // These are needed when a route exists as both a directory and .html file.
+    // For /app/* deep links we prefer redirecting to "/" if the export is missing,
+    // so users don’t get stuck on a plain-text error on refresh.
+    const uiMissingMessage =
+      'Dashboard UI file not found. Please reinstall using: curl -fsSL https://raw.githubusercontent.com/AgentWorkforce/relay/main/install.sh | bash';
+
+    const sendFileOr = (
+      res: express.Response,
+      filePath: string,
+      onError: (err: Error) => void
+    ) => {
       res.sendFile(filePath, (err) => {
         if (err && !res.headersSent) {
-          res.status(404).send('Dashboard UI file not found. Please reinstall using: curl -fsSL https://raw.githubusercontent.com/AgentWorkforce/relay/main/install.sh | bash');
+          onError(err);
         }
       });
     };
 
+    const sendFileOrText404 = (res: express.Response, filePath: string, message: string) => {
+      sendFileOr(res, filePath, () => {
+        res.status(404).send(message);
+      });
+    };
+
+    const sendFileOrRedirectRoot = (res: express.Response, filePath: string) => {
+      sendFileOr(res, filePath, () => {
+        // If the app entrypoint isn’t present, try to recover by sending users
+        // to the root page (if it exists). Otherwise keep the install hint.
+        if (fs.existsSync(path.join(dashboardDir, 'index.html'))) {
+          res.redirect(302, '/');
+          return;
+        }
+        res.status(404).send(uiMissingMessage);
+      });
+    };
+
     app.get('/metrics', (req, res) => {
-      sendFileWithFallback(res, path.join(dashboardDir, 'metrics.html'));
+      sendFileOrText404(
+        res,
+        path.join(dashboardDir, 'metrics.html'),
+        uiMissingMessage
+      );
     });
     app.get('/app', (req, res) => {
-      sendFileWithFallback(res, path.join(dashboardDir, 'app.html'));
+      sendFileOrRedirectRoot(res, path.join(dashboardDir, 'app.html'));
     });
     // Catch-all for /app/* routes - serve app.html and let client-side routing handle it
     // Express 5 requires named parameter for wildcards
     app.get('/app/{*path}', (req, res) => {
-      sendFileWithFallback(res, path.join(dashboardDir, 'app.html'));
+      sendFileOrRedirectRoot(res, path.join(dashboardDir, 'app.html'));
     });
   } else {
     // Serve a fallback page when dashboard UI files aren't available
@@ -2097,7 +2129,7 @@ export async function startDashboard(
       }
     }
 
-    // Mark spawned agents with isSpawned flag and team
+    // Mark spawned agents with isSpawned flag, team, and model
     if (spawnReader) {
       const activeWorkers = spawnReader.getActiveWorkers();
       for (const worker of activeWorkers) {
@@ -2106,6 +2138,13 @@ export async function startDashboard(
           agent.isSpawned = true;
           if (worker.team) {
             agent.team = worker.team;
+          }
+          // Extract model from spawn command (e.g., "codex --model gpt-5.2-codex" → "gpt-5.2-codex")
+          if (worker.cli) {
+            const modelMatch = worker.cli.match(/--model\s+(\S+)/);
+            if (modelMatch) {
+              agent.model = modelMatch[1];
+            }
           }
         }
       }
