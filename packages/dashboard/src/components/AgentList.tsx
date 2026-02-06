@@ -136,7 +136,7 @@ export function AgentList({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex justify-between items-center py-2 px-3 text-xs text-text-muted">
-        <span>{filteredAgents.length} agents</span>
+        <span>{filteredAgents.length} {filteredAgents.length === 1 ? 'agent' : 'agents'}</span>
         <button
           className="bg-transparent border-none text-accent cursor-pointer text-xs hover:underline"
           onClick={toggleAll}

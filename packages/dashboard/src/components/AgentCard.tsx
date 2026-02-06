@@ -385,7 +385,7 @@ export function AgentCard({
 
       <div className="mt-3 flex justify-between items-center">
         <div className="flex gap-2 text-xs text-text-muted flex-wrap">
-          {agent.cli && <span className="bg-bg-hover py-0.5 px-1.5 rounded">-{agent.cli}-</span>}
+          {agent.cli && <span className="bg-bg-hover py-0.5 px-1.5 rounded">{agent.cli}</span>}
           {(agent.model || agent.profile?.model) && (
             <span className="bg-accent-cyan/10 text-accent-cyan py-0.5 px-1.5 rounded font-mono text-[10px]" title={`Model: ${agent.model || agent.profile?.model}`}>
               {agent.model || agent.profile?.model}
