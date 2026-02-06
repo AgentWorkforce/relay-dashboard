@@ -1,6 +1,6 @@
 {
   "name": "@agent-relay/dashboard-server",
-  "version": "2.0.64",
+  "version": "2.0.65",
   "description": "Express server for Agent Relay dashboard - serves UI and proxies to relay daemon",
   "type": "module",
   "main": "dist/index.js",
