@@ -39,6 +39,9 @@ export interface UseChannelsOptions {
   workspaceId?: string;
 }
 
+/** Connection quality state for UI indicators */
+export type ChannelConnectionState = 'connected' | 'reconnecting' | 'disconnected';
+
 export interface UseChannelsReturn {
   /** List of channels user has joined */
   channels: string[];
@@ -52,6 +55,8 @@ export interface UseChannelsReturn {
   sendDirectMessage: (to: string, body: string, thread?: string) => void;
   /** Whether connected */
   isConnected: boolean;
+  /** Granular connection quality: 'connected', 'reconnecting', or 'disconnected' */
+  connectionState: ChannelConnectionState;
   /** Recent messages (last 100) */
   messages: ChannelMessage[];
 }
@@ -71,10 +76,13 @@ export function useChannels(options: UseChannelsOptions = {}): UseChannelsReturn
   const [channels, setChannels] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChannelMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<ChannelConnectionState>('disconnected');
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttemptsRef = useRef(0);
   const isConnectingRef = useRef(false);
+  const hasConnectedBeforeRef = useRef(false);
   const currentUserRef = useRef(currentUser);
   const onMessageRef = useRef(onMessage);
   const workspaceIdRef = useRef(workspaceId);
@@ -88,6 +96,11 @@ export function useChannels(options: UseChannelsOptions = {}): UseChannelsReturn
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (isConnectingRef.current) return;
 
+    // Track reconnection state
+    if (hasConnectedBeforeRef.current) {
+      setConnectionState('reconnecting');
+    }
+
     isConnectingRef.current = true;
     const url = wsUrl || getPresenceUrl();
 
@@ -97,6 +110,9 @@ export function useChannels(options: UseChannelsOptions = {}): UseChannelsReturn
       ws.onopen = () => {
         isConnectingRef.current = false;
         setIsConnected(true);
+        setConnectionState('connected');
+        reconnectAttemptsRef.current = 0;
+        hasConnectedBeforeRef.current = true;
 
         const currentUserInfo = currentUserRef.current;
         if (currentUserInfo) {
@@ -127,9 +143,22 @@ export function useChannels(options: UseChannelsOptions = {}): UseChannelsReturn
         wsRef.current = null;
 
         if (currentUserRef.current) {
+          setConnectionState('reconnecting');
+          const baseDelay = Math.min(
+            500 * Math.pow(2, reconnectAttemptsRef.current),
+            15000
+          );
+          // Add jitter to prevent thundering herd
+          const delay = Math.round(baseDelay * (0.5 + Math.random() * 0.5));
+          reconnectAttemptsRef.current++;
+
+          console.log(`[WS:Channels] Reconnecting (attempt ${reconnectAttemptsRef.current})...`);
+
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
-          }, 2000);
+          }, delay);
+        } else {
+          setConnectionState('disconnected');
         }
       };
 
@@ -230,6 +259,7 @@ export function useChannels(options: UseChannelsOptions = {}): UseChannelsReturn
     }
 
     setIsConnected(false);
+    setConnectionState('disconnected');
     setChannels([]);
   }, []);
 
@@ -305,6 +335,25 @@ export function useChannels(options: UseChannelsOptions = {}): UseChannelsReturn
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
 
+  // Visibility change listener: reconnect when tab becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Check if connection is dead and reconnect
+        if (currentUserRef.current && (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED)) {
+          console.log('[WS:Channels] Tab visible, reconnecting...');
+          reconnectAttemptsRef.current = 0; // Reset attempts for visibility-triggered reconnect
+          connect();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [connect]);
+
   return {
     channels,
     joinChannel,
@@ -312,6 +361,7 @@ export function useChannels(options: UseChannelsOptions = {}): UseChannelsReturn
     sendChannelMessage,
     sendDirectMessage,
     isConnected,
+    connectionState,
     messages,
   };
 }

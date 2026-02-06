@@ -50,6 +50,9 @@ export interface UsePresenceOptions {
   workspaceId?: string;
 }
 
+/** Connection quality state for UI indicators */
+export type PresenceConnectionState = 'connected' | 'reconnecting' | 'disconnected';
+
 export interface UsePresenceReturn {
   /** List of online users */
   onlineUsers: UserPresence[];
@@ -59,6 +62,8 @@ export interface UsePresenceReturn {
   sendTyping: (isTyping: boolean) => void;
   /** Whether connected to presence system */
   isConnected: boolean;
+  /** Granular connection quality: 'connected', 'reconnecting', or 'disconnected' */
+  connectionState: PresenceConnectionState;
 }
 
 /**
@@ -74,11 +79,14 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
   const [onlineUsers, setOnlineUsers] = useState<UserPresence[]>([]);
   const [typingUsers, setTypingUsers] = useState<TypingIndicator[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<PresenceConnectionState>('disconnected');
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttemptsRef = useRef(0);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isConnectingRef = useRef(false); // Prevent race conditions
+  const hasConnectedBeforeRef = useRef(false);
   const currentUserRef = useRef(currentUser);
   currentUserRef.current = currentUser; // Keep ref in sync with prop
   const workspaceIdRef = useRef(workspaceId);
@@ -104,6 +112,11 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (isConnectingRef.current) return; // Prevent concurrent connect attempts
 
+    // Track reconnection state
+    if (hasConnectedBeforeRef.current) {
+      setConnectionState('reconnecting');
+    }
+
     isConnectingRef.current = true;
     const url = wsUrl || getPresenceUrl();
 
@@ -113,6 +126,9 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
       ws.onopen = () => {
         isConnectingRef.current = false;
         setIsConnected(true);
+        setConnectionState('connected');
+        reconnectAttemptsRef.current = 0;
+        hasConnectedBeforeRef.current = true;
 
         // Announce presence (use ref to get latest user info)
         const currentUserInfo = currentUserRef.current;
@@ -143,11 +159,24 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
         setIsConnected(false);
         wsRef.current = null;
 
-        // Reconnect after 2 seconds (only if not intentionally disconnected)
+        // Reconnect with backoff and jitter (only if not intentionally disconnected)
         if (currentUserRef.current) {
+          setConnectionState('reconnecting');
+          const baseDelay = Math.min(
+            500 * Math.pow(2, reconnectAttemptsRef.current),
+            15000
+          );
+          // Add jitter to prevent thundering herd
+          const delay = Math.round(baseDelay * (0.5 + Math.random() * 0.5));
+          reconnectAttemptsRef.current++;
+
+          console.log(`[WS:Presence] Reconnecting (attempt ${reconnectAttemptsRef.current})...`);
+
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
-          }, 2000);
+          }, delay);
+        } else {
+          setConnectionState('disconnected');
         }
       };
 
@@ -254,6 +283,7 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
     }
 
     setIsConnected(false);
+    setConnectionState('disconnected');
   }, []); // Use ref for currentUser to avoid dependency
 
   // Send typing indicator
@@ -318,10 +348,30 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []); // Use ref for currentUser to avoid dependency
 
+  // Visibility change listener: reconnect when tab becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Check if connection is dead and reconnect
+        if (currentUserRef.current && (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED)) {
+          console.log('[WS:Presence] Tab visible, reconnecting...');
+          reconnectAttemptsRef.current = 0; // Reset attempts for visibility-triggered reconnect
+          connect();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [connect]);
+
   return {
     onlineUsers,
     typingUsers,
     sendTyping,
     isConnected,
+    connectionState,
   };
 }

@@ -70,6 +70,7 @@ import {
   getSupportedProviders,
 } from '@agent-relay/daemon';
 import { HealthWorkerManager, getHealthPort } from './services/health-worker-manager.js';
+import { MessageBuffer } from './messageBuffer.js';
 
 /**
  * Get the host to bind to.
@@ -655,8 +656,11 @@ export async function startDashboard(
   };
 
   // Initialize spawner if enabled
-  // Use detectWorkspacePath to find the actual repo directory in cloud workspaces
-  const workspacePath = detectWorkspacePath(projectRoot || dataDir);
+  // When projectRoot is explicitly provided (e.g., via --project-root), use it directly.
+  // Only use detectWorkspacePath for cloud workspace auto-detection when no explicit root is given.
+  // This fixes #380: detectWorkspacePath could re-resolve projectRoot incorrectly when
+  // tool directories like ~/.nvm contain package.json markers.
+  const workspacePath = projectRoot || detectWorkspacePath(dataDir);
   console.log(`[dashboard] Workspace path: ${workspacePath}`);
 
   // When an external SpawnManager is provided (from the daemon), use it for read operations
@@ -769,6 +773,22 @@ export async function startDashboard(
   const fileWatchers = new Map<string, fs.FSWatcher>();
   const fileLastSize = new Map<string, number>();
 
+  // Message buffers for replay on reconnect
+  // Main buffer stores broadcast messages for the main dashboard WebSocket
+  const mainMessageBuffer = new MessageBuffer(500);
+  // Per-agent log buffers store log output for each agent (smaller capacity since per-agent)
+  const agentLogBuffers = new Map<string, MessageBuffer>();
+
+  /** Get or create a log buffer for an agent */
+  const getAgentLogBuffer = (agentName: string): MessageBuffer => {
+    let buffer = agentLogBuffers.get(agentName);
+    if (!buffer) {
+      buffer = new MessageBuffer(200);
+      agentLogBuffers.set(agentName, buffer);
+    }
+    return buffer;
+  };
+
   // Track alive status for ping/pong keepalive on main dashboard connections
   // This prevents TCP/proxy timeouts from killing idle workspace connections
   const mainClientAlive = new WeakMap<WebSocket, boolean>();
@@ -776,9 +796,9 @@ export async function startDashboard(
   // Track alive status for ping/pong keepalive on bridge connections
   const bridgeClientAlive = new WeakMap<WebSocket, boolean>();
 
-  // Ping interval for main dashboard WebSocket connections (30 seconds)
-  // Aligns with heartbeat timeout (5s heartbeat * 6 multiplier = 30s)
-  const MAIN_PING_INTERVAL_MS = 30000;
+  // Ping interval for main dashboard WebSocket connections (15 seconds)
+  // Reduced from 30s to detect disconnects faster and minimize message loss window
+  const MAIN_PING_INTERVAL_MS = 15000;
   const mainPingInterval = setInterval(() => {
     wss.clients.forEach((ws) => {
       if (mainClientAlive.get(ws) === false) {
@@ -793,8 +813,9 @@ export async function startDashboard(
     });
   }, MAIN_PING_INTERVAL_MS);
 
-  // Ping interval for bridge WebSocket connections (30 seconds)
-  const BRIDGE_PING_INTERVAL_MS = 30000;
+  // Ping interval for bridge WebSocket connections (15 seconds)
+  // Reduced from 30s to detect disconnects faster and minimize message loss window
+  const BRIDGE_PING_INTERVAL_MS = 15000;
   const bridgePingInterval = setInterval(() => {
     wssBridge.clients.forEach((ws) => {
       if (bridgeClientAlive.get(ws) === false) {
@@ -2141,7 +2162,8 @@ export async function startDashboard(
           }
           // Extract model from spawn command (e.g., "codex --model gpt-5.2-codex" → "gpt-5.2-codex")
           if (worker.cli) {
-            const modelMatch = worker.cli.match(/--model\s+(\S+)/);
+            // Support both `--model foo` and `--model=foo`
+            const modelMatch = worker.cli.match(/--model[=\s]+(\S+)/);
             if (modelMatch) {
               agent.model = modelMatch[1];
             }
@@ -2251,13 +2273,17 @@ export async function startDashboard(
   const broadcastData = async () => {
     try {
       const data = await getAllData();
-      const payload = JSON.stringify(data);
+      const rawPayload = JSON.stringify(data);
 
       // Guard against empty/invalid payloads
-      if (!payload || payload.length === 0) {
+      if (!rawPayload || rawPayload.length === 0) {
         console.warn('[dashboard] Skipping broadcast - empty payload');
         return;
       }
+
+      // Push into buffer and wrap with sequence ID for replay support
+      const seq = mainMessageBuffer.push('data', rawPayload);
+      const payload = JSON.stringify({ seq, ...data });
 
       wss.clients.forEach(client => {
         // Skip clients that are still being initialized by the connection handler
@@ -2375,6 +2401,11 @@ export async function startDashboard(
       mainClientAlive.set(ws, true);
     });
 
+    // Send current sequence ID so client can track its position
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'sync', sequenceId: mainMessageBuffer.currentId() }));
+    }
+
     // Mark as initializing to prevent broadcastData from sending before we do
     initializingClients.add(ws);
 
@@ -2401,6 +2432,42 @@ export async function startDashboard(
       // Now allow broadcastData to send to this client
       initializingClients.delete(ws);
     }
+
+    // Handle messages from client (replay requests, etc.)
+    ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+
+        // Handle replay request: client sends { type: "replay", lastSequenceId: N }
+        if (msg.type === 'replay' && typeof msg.lastSequenceId === 'number') {
+          const missed = mainMessageBuffer.getAfter(msg.lastSequenceId);
+          const gapMs = missed.length > 0 ? Date.now() - missed[0].timestamp : 0;
+
+          console.log(`[dashboard] Client replaying ${missed.length} missed messages (gap: ${gapMs}ms)`);
+
+          // Send each missed message with its original sequence ID
+          for (const buffered of missed) {
+            if (ws.readyState === WebSocket.OPEN) {
+              try {
+                // Reconstruct the payload with the seq wrapper
+                const original = JSON.parse(buffered.payload);
+                ws.send(JSON.stringify({ seq: buffered.id, ...original }));
+              } catch (err) {
+                console.error('[dashboard] Failed to replay message:', err);
+              }
+            }
+          }
+
+          // Send current sync position after replay
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'sync', sequenceId: mainMessageBuffer.currentId() }));
+          }
+        }
+      } catch (err) {
+        // Non-JSON messages are ignored (binary, etc.)
+        debug(`[dashboard] Unhandled main WebSocket message: ${err}`);
+      }
+    });
 
     ws.on('error', (err) => {
       console.error('[dashboard] WebSocket client error:', err);
@@ -2445,9 +2512,9 @@ export async function startDashboard(
   // Track alive status for ping/pong keepalive on log connections
   const logClientAlive = new WeakMap<WebSocket, boolean>();
 
-  // Ping interval for log WebSocket connections (30 seconds)
-  // This prevents TCP/proxy timeouts from killing idle connections
-  const LOG_PING_INTERVAL_MS = 30000;
+  // Ping interval for log WebSocket connections (15 seconds)
+  // Reduced from 30s to detect disconnects faster and minimize message loss window
+  const LOG_PING_INTERVAL_MS = 15000;
   const logPingInterval = setInterval(() => {
     wssLogs.clients.forEach((ws) => {
       if (logClientAlive.get(ws) === false) {
@@ -2479,6 +2546,11 @@ export async function startDashboard(
     ws.on('pong', () => {
       logClientAlive.set(ws, true);
     });
+
+    // Send sync message with current server timestamp so client can track its position
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'sync', serverTimestamp: Date.now() }));
+    }
 
     // Helper to check if agent is daemon-connected (from agents.json)
     const isDaemonConnected = (agentName: string): boolean => {
@@ -2571,6 +2643,9 @@ export async function startDashboard(
                 data: newContent,
                 timestamp: new Date().toISOString(),
               });
+
+              // Push into per-agent log buffer for replay on reconnect
+              getAgentLogBuffer(agentName).push('output', payload);
 
               for (const client of clients) {
                 if (client.readyState === WebSocket.OPEN) {
@@ -2763,6 +2838,31 @@ export async function startDashboard(
             }));
           }
         }
+
+        // Handle replay request: client sends { type: "replay", agent: "name", lastTimestamp: N }
+        // Logs use timestamps instead of sequence IDs since the data is raw text
+        if (msg.type === 'replay' && typeof msg.agent === 'string' && typeof msg.lastTimestamp === 'number') {
+          const logBuffer = agentLogBuffers.get(msg.agent);
+          if (logBuffer) {
+            const missed = logBuffer.getAfterTimestamp(msg.lastTimestamp);
+            const gapMs = missed.length > 0 ? Date.now() - missed[0].timestamp : 0;
+
+            console.log(`[dashboard] Client replaying ${missed.length} missed log messages for ${msg.agent} (gap: ${gapMs}ms)`);
+
+            // Send replay as a structured response the client expects
+            if (ws.readyState === WebSocket.OPEN) {
+              try {
+                const entries = missed.map(m => ({
+                  content: m.payload,
+                  timestamp: m.timestamp,
+                }));
+                ws.send(JSON.stringify({ type: 'replay', entries }));
+              } catch (err) {
+                console.error('[dashboard] Failed to replay log messages:', err);
+              }
+            }
+          }
+        }
       } catch (err) {
         console.error('[dashboard] Invalid logs WebSocket message:', err);
       }
@@ -2784,6 +2884,7 @@ export async function startDashboard(
             watcher.close();
             fileWatchers.delete(agentName);
             fileLastSize.delete(agentName);
+            agentLogBuffers.delete(agentName);
             console.log(`[dashboard] Stopped watching log file for: ${agentName}`);
           }
         }
@@ -2843,12 +2944,17 @@ export async function startDashboard(
       }
     }
 
-    const payload = JSON.stringify({
+    const logPayload = {
       type: 'output',
       agent: agentName,
       data: output,
       timestamp: new Date().toISOString(),
-    });
+    };
+    const payload = JSON.stringify(logPayload);
+
+    // Push into per-agent log buffer for replay on reconnect
+    // Logs use timestamps instead of sequence IDs since the data is raw text
+    getAgentLogBuffer(agentName).push('output', payload);
 
     for (const client of clients) {
       if (client.readyState === WebSocket.OPEN) {
@@ -2886,7 +2992,10 @@ export async function startDashboard(
     mentions?: string[];
     timestamp: string;
   }) => {
-    const payload = JSON.stringify(message);
+    // Push into buffer and wrap with sequence ID for replay support
+    const rawPayload = JSON.stringify(message);
+    const seq = mainMessageBuffer.push('channel_message', rawPayload);
+    const payload = JSON.stringify({ seq, ...message });
     // Broadcast to main WebSocket clients (local mode)
     wss.clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
@@ -2914,7 +3023,10 @@ export async function startDashboard(
     messageId: string;
     timestamp: string;
   }) => {
-    const payload = JSON.stringify(message);
+    // Push into buffer and wrap with sequence ID for replay support
+    const rawPayload = JSON.stringify(message);
+    const seq = mainMessageBuffer.push('direct_message', rawPayload);
+    const payload = JSON.stringify({ seq, ...message });
 
     // Broadcast to main WebSocket clients (local mode)
     const mainClients = Array.from(wss.clients).filter(c => c.readyState === WebSocket.OPEN);

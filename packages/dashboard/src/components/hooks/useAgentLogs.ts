@@ -3,10 +3,13 @@
  *
  * React hook for streaming live PTY output from agents via WebSocket.
  * Connects to the agent log streaming endpoint and provides real-time updates.
+ *
+ * Supports log replay on reconnect: tracks the last received timestamp and
+ * requests missed log entries from the server after reconnecting.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getWebSocketUrl } from '../../lib/config';
+import { useWorkspaceWsUrl } from '../WorkspaceContext';
 
 export interface LogLine {
   id: string;
@@ -28,22 +31,19 @@ export interface UseAgentLogsOptions {
   maxReconnectAttempts?: number;
 }
 
+/** Connection quality state for UI indicators */
+export type LogConnectionState = 'connected' | 'reconnecting' | 'disconnected';
+
 export interface UseAgentLogsReturn {
   logs: LogLine[];
   isConnected: boolean;
   isConnecting: boolean;
+  /** Granular connection quality: 'connected', 'reconnecting', or 'disconnected' */
+  connectionState: LogConnectionState;
   error: Error | null;
   connect: () => void;
   disconnect: () => void;
   clear: () => void;
-}
-
-/**
- * Get WebSocket URL for agent log streaming using centralized config
- */
-function getLogStreamUrl(agentName: string): string {
-  const path = `/ws/logs/${encodeURIComponent(agentName)}`;
-  return getWebSocketUrl(path);
 }
 
 /**
@@ -63,9 +63,12 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
     maxReconnectAttempts = Infinity,
   } = options;
 
+  const logStreamUrl = useWorkspaceWsUrl(`/ws/logs/${encodeURIComponent(agentName)}`);
+
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [connectionState, setConnectionState] = useState<LogConnectionState>('disconnected');
   const [error, setError] = useState<Error | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -81,8 +84,21 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
   // Track if we've successfully received data per-WebSocket instance
   const hasReceivedDataMapRef = useRef(new WeakMap<WebSocket, boolean>());
 
+  // Replay support: track last received timestamp and known content for dedup
+  const lastTimestampRef = useRef<number | null>(null);
+  const hasConnectedBeforeRef = useRef(false);
+  // Track recent log content hashes for deduplication during replay
+  const recentLogHashesRef = useRef(new Set<string>());
+
   // Keep agent name ref updated
   agentNameRef.current = agentName;
+
+  /**
+   * Generate a simple hash for a log line to detect duplicates.
+   */
+  const logHash = useCallback((content: string, timestamp: number): string => {
+    return `${timestamp}:${content.slice(0, 100)}`;
+  }, []);
 
   const connect = useCallback(() => {
     // Ensure reconnects are allowed for this session
@@ -95,14 +111,17 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
       return;
     }
 
+    // Track reconnection state
+    if (hasConnectedBeforeRef.current) {
+      setConnectionState('reconnecting');
+    }
+
     isConnectingRef.current = true;
     setIsConnecting(true);
     setError(null);
 
-    const url = getLogStreamUrl(agentNameRef.current);
-
     try {
-      const ws = new WebSocket(url);
+      const ws = new WebSocket(logStreamUrl);
       wsRef.current = ws;
       // Initialize per-WebSocket state
       manualCloseMapRef.current.set(ws, false);
@@ -112,8 +131,21 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
         isConnectingRef.current = false;
         setIsConnected(true);
         setIsConnecting(false);
+        setConnectionState('connected');
         setError(null);
         reconnectAttemptsRef.current = 0;
+
+        // On reconnect, request replay of missed log entries
+        if (hasConnectedBeforeRef.current && lastTimestampRef.current !== null) {
+          console.log(`[WS:Logs] Requesting replay from timestamp ${lastTimestampRef.current}`);
+          ws.send(JSON.stringify({
+            type: 'replay',
+            agent: agentNameRef.current,
+            lastTimestamp: lastTimestampRef.current,
+          }));
+        }
+
+        hasConnectedBeforeRef.current = true;
 
         // Add system message for connection
         setLogs((prev) => [
@@ -146,12 +178,14 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
 
         // Skip logging/reconnecting for intentional disconnects (cleanup, user toggle)
         if (wasManualClose) {
+          setConnectionState('disconnected');
           return;
         }
 
         // Don't reconnect if agent was not found (custom close code 4404)
         // This prevents infinite reconnect loops for non-existent agents
         if (event.code === 4404) {
+          setConnectionState('disconnected');
           return;
         }
 
@@ -186,15 +220,22 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
           reconnect &&
           reconnectAttemptsRef.current < maxReconnectAttempts
         ) {
-          const delay = Math.min(
-            1000 * Math.pow(2, reconnectAttemptsRef.current),
-            30000
+          setConnectionState('reconnecting');
+          const baseDelay = Math.min(
+            500 * Math.pow(2, reconnectAttemptsRef.current),
+            15000
           );
+          // Add jitter to prevent thundering herd
+          const delay = Math.round(baseDelay * (0.5 + Math.random() * 0.5));
           reconnectAttemptsRef.current++;
+
+          console.log(`[WS:Logs] Reconnecting (attempt ${reconnectAttemptsRef.current})...`);
 
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
           }, delay);
+        } else {
+          setConnectionState('disconnected');
         }
       };
 
@@ -230,6 +271,42 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
             return;
           }
 
+          // Handle replay response: array of missed log entries
+          if (data.type === 'replay' && Array.isArray(data.entries)) {
+            hasReceivedDataMapRef.current.set(ws, true);
+            setLogs((prev) => {
+              const replayLines: LogLine[] = [];
+              for (const entry of data.entries) {
+                const content = entry.content || '';
+                const timestamp = entry.timestamp || Date.now();
+                const hash = logHash(content, timestamp);
+
+                // Skip duplicates
+                if (recentLogHashesRef.current.has(hash)) {
+                  continue;
+                }
+                recentLogHashesRef.current.add(hash);
+
+                replayLines.push({
+                  id: generateLogId(),
+                  timestamp,
+                  content,
+                  type: 'stdout' as const,
+                  agentName: agentNameRef.current,
+                });
+
+                // Update last timestamp
+                if (timestamp > (lastTimestampRef.current ?? 0)) {
+                  lastTimestampRef.current = timestamp;
+                }
+              }
+
+              if (replayLines.length === 0) return prev;
+              return [...prev, ...replayLines].slice(-maxLines);
+            });
+            return;
+          }
+
           // Handle history (initial log dump)
           if (data.type === 'history' && Array.isArray(data.lines)) {
             // Mark as having received data - connection is established
@@ -237,13 +314,19 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
               hasReceivedDataMapRef.current.set(ws, true);
             }
             setLogs((prev) => {
-              const historyLines: LogLine[] = data.lines.map((line: string) => ({
-                id: generateLogId(),
-                timestamp: Date.now(),
-                content: line,
-                type: 'stdout' as const,
-                agentName: data.agent || agentNameRef.current,
-              }));
+              const historyLines: LogLine[] = data.lines.map((line: string) => {
+                const ts = Date.now();
+                const hash = logHash(line, ts);
+                recentLogHashesRef.current.add(hash);
+                lastTimestampRef.current = ts;
+                return {
+                  id: generateLogId(),
+                  timestamp: ts,
+                  content: line,
+                  type: 'stdout' as const,
+                  agentName: data.agent || agentNameRef.current,
+                };
+              });
               return [...prev, ...historyLines].slice(-maxLines);
             });
             return;
@@ -253,12 +336,16 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
           if (typeof data === 'string') {
             // Simple string message
             hasReceivedDataMapRef.current.set(ws, true);
+            const ts = Date.now();
+            lastTimestampRef.current = ts;
+            const hash = logHash(data, ts);
+            recentLogHashesRef.current.add(hash);
             setLogs((prev) => {
               const newLogs = [
                 ...prev,
                 {
                   id: generateLogId(),
-                  timestamp: Date.now(),
+                  timestamp: ts,
                   content: data,
                   type: 'stdout' as const,
                   agentName: agentNameRef.current,
@@ -269,14 +356,19 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
           } else if (data.type === 'log' || data.type === 'output') {
             // Structured log message
             hasReceivedDataMapRef.current.set(ws, true);
+            const ts = data.timestamp || Date.now();
+            const content = data.content || data.data || data.message || '';
+            lastTimestampRef.current = ts;
+            const hash = logHash(content, ts);
+            recentLogHashesRef.current.add(hash);
             setLogs((prev) => {
               const logType: LogLine['type'] = data.stream === 'stderr' ? 'stderr' : 'stdout';
               const newLogs: LogLine[] = [
                 ...prev,
                 {
                   id: generateLogId(),
-                  timestamp: data.timestamp || Date.now(),
-                  content: data.content || data.data || data.message || '',
+                  timestamp: ts,
+                  content,
                   type: logType,
                   agentName: data.agentName || agentNameRef.current,
                 },
@@ -289,10 +381,15 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
             setLogs((prev) => {
               const newLines: LogLine[] = data.lines.map((line: string | { content: string; type?: string }) => {
                 const lineType: LogLine['type'] = (typeof line === 'object' && line.type === 'stderr') ? 'stderr' : 'stdout';
+                const content = typeof line === 'string' ? line : line.content;
+                const ts = Date.now();
+                lastTimestampRef.current = ts;
+                const hash = logHash(content, ts);
+                recentLogHashesRef.current.add(hash);
                 return {
                   id: generateLogId(),
-                  timestamp: Date.now(),
-                  content: typeof line === 'string' ? line : line.content,
+                  timestamp: ts,
+                  content,
                   type: lineType,
                   agentName: agentNameRef.current,
                 };
@@ -300,16 +397,24 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
               return [...prev, ...newLines].slice(-maxLines);
             });
           }
+
+          // Keep the dedup set from growing unbounded
+          if (recentLogHashesRef.current.size > 2000) {
+            const entries = Array.from(recentLogHashesRef.current);
+            recentLogHashesRef.current = new Set(entries.slice(-1000));
+          }
         } catch {
           // Handle plain text messages
           if (typeof event.data === 'string') {
             hasReceivedDataMapRef.current.set(ws, true);
+            const ts = Date.now();
+            lastTimestampRef.current = ts;
             setLogs((prev) => {
               const newLogs = [
                 ...prev,
                 {
                   id: generateLogId(),
-                  timestamp: Date.now(),
+                  timestamp: ts,
                   content: event.data,
                   type: 'stdout' as const,
                   agentName: agentNameRef.current,
@@ -325,7 +430,7 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
       setError(e instanceof Error ? e : new Error('Failed to create WebSocket'));
       setIsConnecting(false);
     }
-  }, [maxLines, reconnect, maxReconnectAttempts]);
+  }, [logStreamUrl, maxLines, reconnect, maxReconnectAttempts, logHash]);
 
   const disconnect = useCallback(() => {
     // Prevent reconnection attempts after an intentional disconnect
@@ -348,10 +453,12 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
     isConnectingRef.current = false;
     setIsConnected(false);
     setIsConnecting(false);
+    setConnectionState('disconnected');
   }, []);
 
   const clear = useCallback(() => {
     setLogs([]);
+    recentLogHashesRef.current.clear();
   }, []);
 
   // Auto-connect on mount or agent change
@@ -365,10 +472,30 @@ export function useAgentLogs(options: UseAgentLogsOptions): UseAgentLogsReturn {
     };
   }, [agentName, autoConnect, connect, disconnect]);
 
+  // Visibility change listener: reconnect when tab becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Check if connection is dead and reconnect
+        if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+          console.log('[WS:Logs] Tab visible, reconnecting...');
+          reconnectAttemptsRef.current = 0; // Reset attempts for visibility-triggered reconnect
+          connect();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [connect]);
+
   return {
     logs,
     isConnected,
     isConnecting,
+    connectionState,
     error,
     connect,
     disconnect,
