@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev -w @agent-relay/dashboard\" \"npm run dev -w @agent-relay/dashboard-server\"",
     "dev:mock": "concurrently \"npm run dev -w @agent-relay/dashboard\" \"npm run dev:mock -w @agent-relay/dashboard-server\"",
-    "build": "npm run build -w @agent-relay/dashboard-server && npm run build -w @agent-relay/dashboard && cp -r packages/dashboard/out packages/dashboard-server/out",
+    "build": "npm run build -w @agent-relay/dashboard-server && npm run build -w @agent-relay/dashboard && rm -rf packages/dashboard-server/out && cp -r packages/dashboard/out packages/dashboard-server/out",
     "start": "concurrently \"npm run start -w @agent-relay/dashboard\" \"npm run start -w @agent-relay/dashboard-server\"",
     "start:mock": "concurrently \"npm run start -w @agent-relay/dashboard\" \"npm run start:mock -w @agent-relay/dashboard-server\"",
     "lint": "echo 'TODO: Set up ESLint for both packages'",
