@@ -46,7 +46,6 @@ export function useWebSocket() {
   const setStatus = useWsStore((s) => s.setStatus);
   const appendMessage = useMessageStore((s) => s.appendMessage);
   const appendReply = useThreadStore((s) => s.appendReply);
-  const parentMessage = useThreadStore((s) => s.parentMessage);
 
   const wsRef = useRef<WebSocket | null>(null);
   const retriesRef = useRef(0);
@@ -64,7 +63,8 @@ export function useWebSocket() {
         }
         case 'thread.reply': {
           const reply: Message = event.data;
-          if (parentMessage && event.data.parent_id === parentMessage.id) {
+          const currentParent = useThreadStore.getState().parentMessage;
+          if (currentParent && event.data.parent_id === currentParent.id) {
             appendReply(reply);
           }
           break;
@@ -86,7 +86,7 @@ export function useWebSocket() {
           break;
       }
     },
-    [appendMessage, appendReply, parentMessage],
+    [appendMessage, appendReply],
   );
 
   const connect = useCallback(() => {

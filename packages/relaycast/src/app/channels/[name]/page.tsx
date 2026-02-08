@@ -46,6 +46,7 @@ function ChannelContent() {
   // Initial load
   useEffect(() => {
     if (!apiKey) return;
+    setHasMore(true);
     setLoading(true);
     fetchMessages(apiKey, channelName, { limit: 50 })
       .then((msgs) => {

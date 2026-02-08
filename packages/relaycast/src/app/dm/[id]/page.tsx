@@ -47,6 +47,7 @@ function DmContent() {
 
   useEffect(() => {
     if (!agentToken) return;
+    setHasMore(true);
     setLoading(true);
     fetchDmMessages(agentToken, conversationId, { limit: 50 })
       .then((msgs) => {
