@@ -69,6 +69,7 @@ function SettingsContent() {
     <div className="mx-auto max-w-2xl p-8">
       <h1 className="mb-6 text-2xl font-semibold text-text">Settings</h1>
 
+      {/* Workspace name */}
       <section className="mb-8">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-text-muted">
           Workspace Name
@@ -88,9 +89,12 @@ function SettingsContent() {
             {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
-        {nameMsg && <p className="mt-1 text-xs text-text-muted">{nameMsg}</p>}
+        {nameMsg && (
+          <p className="mt-1 text-xs text-text-muted">{nameMsg}</p>
+        )}
       </section>
 
+      {/* System prompt */}
       <section className="mb-8">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-text-muted">
           System Prompt
@@ -115,6 +119,7 @@ function SettingsContent() {
         </div>
       </section>
 
+      {/* Billing link */}
       <section>
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-text-muted">
           Billing
@@ -137,4 +142,3 @@ export default function SettingsPage() {
     </RelaycastProvider>
   );
 }
-

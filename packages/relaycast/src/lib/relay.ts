@@ -296,3 +296,107 @@ export async function removeReaction(
     { method: 'DELETE' },
   );
 }
+
+/* ------------------------------------------------------------------ */
+/*  Workspace management                                               */
+/* ------------------------------------------------------------------ */
+
+export async function updateWorkspace(
+  apiKey: string,
+  data: { name?: string },
+): Promise<WorkspaceInfo> {
+  return apiFetch<WorkspaceInfo>('/v1/workspace', apiKey, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchSystemPrompt(
+  apiKey: string,
+): Promise<{ prompt: string }> {
+  return apiFetch<{ prompt: string }>('/v1/workspace/system-prompt', apiKey);
+}
+
+export async function updateSystemPrompt(
+  apiKey: string,
+  prompt: string,
+): Promise<void> {
+  await apiFetch<void>('/v1/workspace/system-prompt', apiKey, {
+    method: 'PUT',
+    body: JSON.stringify({ prompt }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Workspace stats & activity                                         */
+/* ------------------------------------------------------------------ */
+
+export interface WorkspaceStats {
+  total_agents: number;
+  online_agents: number;
+  total_channels: number;
+  messages_today: number;
+  active_conversations: number;
+}
+
+export async function fetchWorkspaceStats(
+  apiKey: string,
+): Promise<WorkspaceStats> {
+  return apiFetch<WorkspaceStats>('/v1/workspace/stats', apiKey);
+}
+
+export interface ActivityItem {
+  type: 'message' | 'dm' | 'thread_reply' | 'reaction';
+  id: string;
+  channel_name?: string;
+  agent_name: string;
+  text?: string;
+  emoji?: string;
+  created_at: string;
+}
+
+export async function fetchActivity(
+  apiKey: string,
+  opts?: { limit?: number },
+): Promise<ActivityItem[]> {
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  const qs = params.toString();
+  return apiFetch<ActivityItem[]>(`/v1/activity${qs ? `?${qs}` : ''}`, apiKey);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Billing                                                            */
+/* ------------------------------------------------------------------ */
+
+export interface BillingUsage {
+  messages: { used: number; limit: number };
+  agents: { used: number; limit: number };
+  storage: { used_mb: number; limit_mb: number };
+}
+
+export async function fetchBillingUsage(
+  apiKey: string,
+): Promise<BillingUsage> {
+  return apiFetch<BillingUsage>('/v1/billing/usage', apiKey);
+}
+
+export interface BillingSubscription {
+  plan: string;
+  status: string;
+  current_period_end?: string;
+}
+
+export async function fetchBillingSubscription(
+  apiKey: string,
+): Promise<BillingSubscription> {
+  return apiFetch<BillingSubscription>('/v1/billing/subscription', apiKey);
+}
+
+export async function createBillingPortal(
+  apiKey: string,
+): Promise<{ url: string }> {
+  return apiFetch<{ url: string }>('/v1/billing/portal', apiKey, {
+    method: 'POST',
+  });
+}
