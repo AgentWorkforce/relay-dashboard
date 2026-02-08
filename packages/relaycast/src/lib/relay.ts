@@ -19,7 +19,8 @@ async function apiFetch<T>(
     },
   });
 
-  const json = await res.json();
+  const text = await res.text();
+  const json = text ? JSON.parse(text) : {};
 
   if (!res.ok || json.ok === false) {
     const msg =

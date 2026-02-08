@@ -92,12 +92,19 @@ export const useMessageStore = create<MessageState>()((set) => ({
       messagesByChannel: { ...s.messagesByChannel, [channel]: messages },
     })),
   appendMessage: (channel, message) =>
-    set((s) => ({
-      messagesByChannel: {
-        ...s.messagesByChannel,
-        [channel]: [...(s.messagesByChannel[channel] ?? []), message],
-      },
-    })),
+    set((s) => {
+      const existing = s.messagesByChannel[channel] ?? [];
+      // Deduplicate: skip if this message ID already exists
+      if (existing.some((m) => m.id === message.id)) return s;
+      // Replace optimistic temp message if one exists for this channel
+      const hasTemp = existing.some((m) => m.id.startsWith('temp-'));
+      const updated = hasTemp
+        ? [...existing.filter((m) => !m.id.startsWith('temp-')), message]
+        : [...existing, message];
+      return {
+        messagesByChannel: { ...s.messagesByChannel, [channel]: updated },
+      };
+    }),
   prependMessages: (channel, messages) =>
     set((s) => ({
       messagesByChannel: {
@@ -133,5 +140,12 @@ export const useThreadStore = create<ThreadState>()((set) => ({
   closeThread: () => set({ parentMessage: null, replies: [] }),
   setReplies: (replies) => set({ replies }),
   appendReply: (reply) =>
-    set((s) => ({ replies: [...s.replies, reply] })),
+    set((s) => {
+      if (s.replies.some((r) => r.id === reply.id)) return s;
+      const hasTemp = s.replies.some((r) => r.id.startsWith('temp-'));
+      const updated = hasTemp
+        ? [...s.replies.filter((r) => !r.id.startsWith('temp-')), reply]
+        : [...s.replies, reply];
+      return { replies: updated };
+    }),
 }));
