@@ -1,17 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import Link from 'next/link';
 import { useAuthStore, useChannelStore } from '@/lib/store';
 import {
   fetchChannels,
   fetchDmConversations,
   type DmConversation,
 } from '@/lib/relay';
+import ConnectionStatus from './ConnectionStatus';
 
 export default function RelaycastSidebar() {
   const { apiKey, agentToken, workspace, logout } = useAuthStore();
-  const { channels, activeChannel, setChannels, setActiveChannel } =
-    useChannelStore();
+  const { channels, setChannels } = useChannelStore();
+  const pathname = usePathname();
   const [dms, setDms] = useState<DmConversation[]>([]);
 
   useEffect(() => {
@@ -58,21 +61,25 @@ export default function RelaycastSidebar() {
             Channels
           </h3>
           <ul>
-            {channels.map((ch) => (
-              <li key={ch.name}>
-                <button
-                  onClick={() => setActiveChannel(ch.name)}
-                  className={`flex w-full items-center rounded px-2 py-1 text-sm transition ${
-                    activeChannel === ch.name
-                      ? 'bg-accent-glow text-accent'
-                      : 'text-text-muted hover:bg-bg-elevated hover:text-text'
-                  }`}
-                >
-                  <span className="mr-1 text-text-muted">#</span>
-                  <span className="truncate">{ch.name}</span>
-                </button>
-              </li>
-            ))}
+            {channels.map((ch) => {
+              const href = `/channels/${encodeURIComponent(ch.name)}`;
+              const isActive = pathname === href;
+              return (
+                <li key={ch.name}>
+                  <Link
+                    href={href}
+                    className={`flex w-full items-center rounded px-2 py-1 text-sm transition ${
+                      isActive
+                        ? 'bg-accent-glow text-accent'
+                        : 'text-text-muted hover:bg-bg-elevated hover:text-text'
+                    }`}
+                  >
+                    <span className="mr-1 text-text-muted">#</span>
+                    <span className="truncate">{ch.name}</span>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </div>
 
@@ -115,9 +122,10 @@ export default function RelaycastSidebar() {
 
       {/* Footer */}
       <div className="border-t border-border px-4 py-3">
+        <ConnectionStatus />
         <button
           onClick={handleLogout}
-          className="text-sm text-text-muted transition hover:text-red"
+          className="mt-2 text-sm text-text-muted transition hover:text-red"
         >
           Log out
         </button>

@@ -96,3 +96,103 @@ export async function fetchDmConversations(
 ): Promise<DmConversation[]> {
   return apiFetch<DmConversation[]>('/v1/dm/conversations', agentToken);
 }
+
+/* ------------------------------------------------------------------ */
+/*  Channel detail + messages                                          */
+/* ------------------------------------------------------------------ */
+
+export interface ChannelDetail {
+  name: string;
+  topic?: string;
+  member_count?: number;
+  is_member?: boolean;
+}
+
+export async function fetchChannelInfo(
+  apiKey: string,
+  channelName: string,
+): Promise<ChannelDetail> {
+  return apiFetch<ChannelDetail>(
+    `/v1/channels/${encodeURIComponent(channelName)}`,
+    apiKey,
+  );
+}
+
+export interface MessageResponse {
+  id: string;
+  channel_name?: string;
+  agent_name: string;
+  text: string;
+  created_at: string;
+  reply_count?: number;
+  reactions?: { emoji: string; count: number; agents: string[] }[];
+}
+
+export async function fetchMessages(
+  apiKey: string,
+  channelName: string,
+  opts?: { limit?: number; before?: string },
+): Promise<MessageResponse[]> {
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  if (opts?.before) params.set('before', opts.before);
+  const qs = params.toString();
+  return apiFetch<MessageResponse[]>(
+    `/v1/channels/${encodeURIComponent(channelName)}/messages${qs ? `?${qs}` : ''}`,
+    apiKey,
+  );
+}
+
+export async function sendMessage(
+  agentToken: string,
+  channelName: string,
+  text: string,
+): Promise<MessageResponse> {
+  return apiFetch<MessageResponse>(
+    `/v1/channels/${encodeURIComponent(channelName)}/messages`,
+    agentToken,
+    { method: 'POST', body: JSON.stringify({ text }) },
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Threads                                                            */
+/* ------------------------------------------------------------------ */
+
+export async function fetchReplies(
+  apiKey: string,
+  messageId: string,
+): Promise<MessageResponse[]> {
+  return apiFetch<MessageResponse[]>(
+    `/v1/messages/${encodeURIComponent(messageId)}/replies`,
+    apiKey,
+  );
+}
+
+export async function sendReply(
+  agentToken: string,
+  messageId: string,
+  text: string,
+): Promise<MessageResponse> {
+  return apiFetch<MessageResponse>(
+    `/v1/messages/${encodeURIComponent(messageId)}/replies`,
+    agentToken,
+    { method: 'POST', body: JSON.stringify({ text }) },
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Agents                                                             */
+/* ------------------------------------------------------------------ */
+
+export interface AgentSummary {
+  name: string;
+  type?: string;
+  status?: string;
+}
+
+export async function fetchAgents(
+  apiKey: string,
+): Promise<AgentSummary[]> {
+  return apiFetch<AgentSummary[]>('/v1/agents', apiKey);
+}
