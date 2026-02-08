@@ -5,9 +5,13 @@ import RelaycastSidebar from '@/components/RelaycastSidebar';
 const mocks = vi.hoisted(() => ({
   logout: vi.fn(),
   setChannels: vi.fn(),
-  setActiveChannel: vi.fn(),
   fetchChannels: vi.fn(),
   fetchDmConversations: vi.fn(),
+  usePathname: vi.fn(() => '/channels/general'),
+}));
+
+vi.mock('next/navigation', () => ({
+  usePathname: mocks.usePathname,
 }));
 
 vi.mock('@/lib/store', () => ({
@@ -22,9 +26,7 @@ vi.mock('@/lib/store', () => ({
       { name: 'general', topic: 'General' },
       { name: 'code-review', topic: 'Reviews' },
     ],
-    activeChannel: 'general',
     setChannels: mocks.setChannels,
-    setActiveChannel: mocks.setActiveChannel,
   }),
 }));
 
@@ -54,15 +56,16 @@ describe('RelaycastSidebar', () => {
   });
 
   it('highlights active channel', () => {
+    mocks.usePathname.mockReturnValue('/channels/general');
     render(<RelaycastSidebar />);
-    const generalBtn = screen.getByText('general').closest('button');
-    expect(generalBtn?.className).toContain('accent');
+    const generalLink = screen.getByText('general').closest('a');
+    expect(generalLink?.className).toContain('accent');
   });
 
-  it('clicking channel calls setActiveChannel', () => {
+  it('channel links have correct hrefs', () => {
     render(<RelaycastSidebar />);
-    fireEvent.click(screen.getByText('code-review'));
-    expect(mocks.setActiveChannel).toHaveBeenCalledWith('code-review');
+    const codeReviewLink = screen.getByText('code-review').closest('a');
+    expect(codeReviewLink).toHaveAttribute('href', '/channels/code-review');
   });
 
   it('renders navigation links', () => {

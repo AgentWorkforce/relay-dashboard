@@ -112,3 +112,26 @@ export const useMessageStore = create<MessageState>()((set) => ({
       return { messagesByChannel: copy };
     }),
 }));
+
+/* ------------------------------------------------------------------ */
+/*  Thread Store                                                       */
+/* ------------------------------------------------------------------ */
+
+interface ThreadState {
+  parentMessage: Message | null;
+  replies: Message[];
+  openThread: (msg: Message) => void;
+  closeThread: () => void;
+  setReplies: (replies: Message[]) => void;
+  appendReply: (reply: Message) => void;
+}
+
+export const useThreadStore = create<ThreadState>()((set) => ({
+  parentMessage: null,
+  replies: [],
+  openThread: (msg) => set({ parentMessage: msg, replies: [] }),
+  closeThread: () => set({ parentMessage: null, replies: [] }),
+  setReplies: (replies) => set({ replies }),
+  appendReply: (reply) =>
+    set((s) => ({ replies: [...s.replies, reply] })),
+}));
