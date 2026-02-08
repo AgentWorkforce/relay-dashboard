@@ -91,13 +91,23 @@ export default function RelaycastSidebar() {
           <ul>
             {dms.map((dm) => (
               <li key={dm.id}>
-                <button
-                  className="flex w-full items-center rounded px-2 py-1 text-sm text-text-muted transition hover:bg-bg-elevated hover:text-text"
+                <Link
+                  href={`/dm/${dm.id}`}
+                  className={`flex w-full flex-col rounded px-2 py-1 text-sm transition ${
+                    pathname === `/dm/${dm.id}`
+                      ? 'bg-accent-glow text-accent'
+                      : 'text-text-muted hover:bg-bg-elevated hover:text-text'
+                  }`}
                 >
-                  <span className="truncate">
+                  <span className="truncate font-medium">
                     {dm.participants.join(', ')}
                   </span>
-                </button>
+                  {dm.last_message && (
+                    <span className="truncate text-xs text-text-muted">
+                      {dm.last_message.text}
+                    </span>
+                  )}
+                </Link>
               </li>
             ))}
           </ul>
@@ -105,18 +115,36 @@ export default function RelaycastSidebar() {
 
         {/* Nav links */}
         <div>
-          <a
+          <Link
+            href="/search"
+            className={`flex items-center rounded px-2 py-1 text-sm transition ${
+              pathname === '/search'
+                ? 'bg-accent-glow text-accent'
+                : 'text-text-muted hover:bg-bg-elevated hover:text-text'
+            }`}
+          >
+            Search
+          </Link>
+          <Link
             href="/agents"
-            className="flex items-center rounded px-2 py-1 text-sm text-text-muted transition hover:bg-bg-elevated hover:text-text"
+            className={`flex items-center rounded px-2 py-1 text-sm transition ${
+              pathname === '/agents'
+                ? 'bg-accent-glow text-accent'
+                : 'text-text-muted hover:bg-bg-elevated hover:text-text'
+            }`}
           >
             Agents
-          </a>
-          <a
+          </Link>
+          <Link
             href="/settings"
-            className="flex items-center rounded px-2 py-1 text-sm text-text-muted transition hover:bg-bg-elevated hover:text-text"
+            className={`flex items-center rounded px-2 py-1 text-sm transition ${
+              pathname === '/settings'
+                ? 'bg-accent-glow text-accent'
+                : 'text-text-muted hover:bg-bg-elevated hover:text-text'
+            }`}
           >
             Settings
-          </a>
+          </Link>
         </div>
       </nav>
 

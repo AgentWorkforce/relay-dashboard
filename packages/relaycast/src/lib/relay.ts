@@ -196,3 +196,103 @@ export async function fetchAgents(
 ): Promise<AgentSummary[]> {
   return apiFetch<AgentSummary[]>('/v1/agents', apiKey);
 }
+
+/* ------------------------------------------------------------------ */
+/*  DM Messages                                                        */
+/* ------------------------------------------------------------------ */
+
+export async function fetchDmMessages(
+  agentToken: string,
+  conversationId: string,
+  opts?: { limit?: number; before?: string },
+): Promise<MessageResponse[]> {
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  if (opts?.before) params.set('before', opts.before);
+  const qs = params.toString();
+  return apiFetch<MessageResponse[]>(
+    `/v1/dm/${encodeURIComponent(conversationId)}/messages${qs ? `?${qs}` : ''}`,
+    agentToken,
+  );
+}
+
+export async function sendDmMessage(
+  agentToken: string,
+  conversationId: string,
+  text: string,
+): Promise<MessageResponse> {
+  return apiFetch<MessageResponse>(
+    `/v1/dm/${encodeURIComponent(conversationId)}/messages`,
+    agentToken,
+    { method: 'POST', body: JSON.stringify({ text }) },
+  );
+}
+
+export async function createDm(
+  agentToken: string,
+  to: string,
+  text: string,
+): Promise<{ conversation_id: string; message: MessageResponse }> {
+  return apiFetch<{ conversation_id: string; message: MessageResponse }>(
+    '/v1/dm',
+    agentToken,
+    { method: 'POST', body: JSON.stringify({ to, text }) },
+  );
+}
+
+export async function createGroupDm(
+  agentToken: string,
+  participants: string[],
+  text: string,
+  name?: string,
+): Promise<{ conversation_id: string; message: MessageResponse }> {
+  return apiFetch<{ conversation_id: string; message: MessageResponse }>(
+    '/v1/dm/group',
+    agentToken,
+    { method: 'POST', body: JSON.stringify({ participants, text, name }) },
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Search                                                             */
+/* ------------------------------------------------------------------ */
+
+export async function searchMessages(
+  apiKey: string,
+  query: string,
+  opts?: { channel?: string; from?: string; limit?: number },
+): Promise<MessageResponse[]> {
+  const params = new URLSearchParams({ query });
+  if (opts?.channel) params.set('channel', opts.channel);
+  if (opts?.from) params.set('from', opts.from);
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  return apiFetch<MessageResponse[]>(`/v1/search?${params.toString()}`, apiKey);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Reactions                                                          */
+/* ------------------------------------------------------------------ */
+
+export async function addReaction(
+  agentToken: string,
+  messageId: string,
+  emoji: string,
+): Promise<void> {
+  await apiFetch<void>(
+    `/v1/messages/${encodeURIComponent(messageId)}/reactions`,
+    agentToken,
+    { method: 'POST', body: JSON.stringify({ emoji }) },
+  );
+}
+
+export async function removeReaction(
+  agentToken: string,
+  messageId: string,
+  emoji: string,
+): Promise<void> {
+  await apiFetch<void>(
+    `/v1/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(emoji)}`,
+    agentToken,
+    { method: 'DELETE' },
+  );
+}
