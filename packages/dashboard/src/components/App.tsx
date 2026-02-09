@@ -1221,35 +1221,24 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     if (workspaces.length > 0) {
       // If we have repos for the active workspace, show each repo as a project folder
       if (workspaceRepos.length > 1 && effectiveActiveWorkspaceId) {
-        const workspaceAgents = orchestratorAgents.filter(
-          (a) => a.workspaceId === effectiveActiveWorkspaceId
-        );
-        const projectList: Project[] = workspaceRepos.map((repo) => {
+        // Create empty project shells from workspace repos.
+        // Agent placement is handled entirely by mergedProjects using daemon WebSocket data
+        // (which has accurate real-time cwd from agentCwdMap). This avoids duplication
+        // between orchestratorAgents and projectAgents having stale/conflicting cwd values.
+        const repoProjects: Project[] = workspaceRepos.map((repo) => {
           const repoName = repo.githubFullName.split('/').pop() || repo.githubFullName;
-          // Filter agents: match by cwd if available, otherwise show under active repo
-          const isActiveRepo = repo.id === currentProject || (!currentProject && repo === workspaceRepos[0]);
-          const repoAgents = workspaceAgents.filter((a) => {
-            if (a.cwd) return a.cwd === repoName;
-            // No cwd data yet — show under the active repo as fallback
-            return isActiveRepo;
-          });
           return {
             id: repo.id,
             path: repo.githubFullName,
             name: repoName,
-            agents: repoAgents.map((a) => ({
-              name: a.name,
-              status: a.status === 'running' ? 'online' : 'offline',
-              isSpawned: true,
-              cli: a.provider,
-            })) as Agent[],
+            agents: [] as Agent[],
             lead: undefined,
           };
         });
-        setProjects(projectList);
+        setProjects(repoProjects);
         // Set first repo as current if none selected
-        if (!currentProject || !projectList.find(p => p.id === currentProject)) {
-          setCurrentProject(projectList[0]?.id);
+        if (!currentProject || !repoProjects.find(p => p.id === currentProject)) {
+          setCurrentProject(repoProjects[0]?.id);
         }
       } else {
         // Single repo or no repos fetched yet - show workspace as single project
@@ -1356,28 +1345,41 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   const mergedProjects = useMemo(() => {
     if (projects.length === 0) return projects;
 
-    // Get local agent names (excluding bridge agents)
-    const localAgentNames = new Set(projectAgents.map((a) => a.name.toLowerCase()));
-    if (localAgentNames.size === 0) return projects;
+    if (projectAgents.length === 0) return projects;
 
     if (workspaceRepos.length > 1) {
       // Multi-repo: assign agents to projects by cwd match
-      // Agents without cwd go to the active project only
-      return projects.map((project) => {
+      // Agents without cwd sit outside any repo folder (workspace-level)
+      const repoNames = new Set(projects.map(p => p.name));
+      const repoProjects = projects.map((project) => {
         const repoName = project.name;
-        const isActiveProject = project.id === currentProject;
-        const existingNames = new Set(project.agents.map((a) => a.name.toLowerCase()));
-        const newAgents = projectAgents.filter((a) => {
-          if (existingNames.has(a.name.toLowerCase())) return false;
-          if (a.cwd) return a.cwd === repoName;
-          return isActiveProject; // fallback: show under active project
-        });
-
+        const matchingAgents = projectAgents.filter((a) => a.cwd === repoName);
         return {
           ...project,
-          agents: [...project.agents, ...newAgents],
+          agents: [...project.agents, ...matchingAgents],
         };
       });
+
+      // Collect workspace-level agents into a virtual "Workspace" project:
+      // - Agents without cwd (spawned at workspace root or relay-protocol spawned)
+      // - Agents with cwd that doesn't match any repo (prevents orphaned agents)
+      const placedAgentNames = new Set(repoProjects.flatMap(p => p.agents.map(a => a.name.toLowerCase())));
+      const workspaceAgents = projectAgents.filter((a) => {
+        if (placedAgentNames.has(a.name.toLowerCase())) return false;
+        return !a.cwd || !repoNames.has(a.cwd);
+      });
+
+      if (workspaceAgents.length > 0) {
+        const workspaceProject: Project = {
+          id: '__workspace__',
+          path: '/workspace',
+          name: 'Workspace',
+          agents: workspaceAgents,
+        };
+        return [workspaceProject, ...repoProjects];
+      }
+
+      return repoProjects;
     }
 
     // Single-repo / bridge mode: merge into current/first project
@@ -2662,8 +2664,6 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
           hasActiveTrajectory={trajectoryStatus?.active}
           onFleetClick={() => setIsFleetViewActive(!isFleetViewActive)}
           isFleetViewActive={isFleetViewActive}
-          onCoordinatorClick={handleCoordinatorClick}
-          hasMultipleProjects={mergedProjects.length > 1}
         />
       </div>
 
@@ -2684,7 +2684,6 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
           onSettingsClick={handleSettingsClick}
           onHistoryClick={handleHistoryClick}
           onNewConversationClick={handleNewConversationClick}
-          onCoordinatorClick={handleCoordinatorClick}
           onFleetClick={() => setIsFleetViewActive(!isFleetViewActive)}
           isFleetViewActive={isFleetViewActive}
           onTrajectoryClick={() => setIsTrajectoryOpen(true)}

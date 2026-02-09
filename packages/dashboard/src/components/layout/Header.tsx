@@ -31,7 +31,6 @@ export interface HeaderProps {
   onSettingsClick?: () => void;
   onHistoryClick?: () => void;
   onNewConversationClick?: () => void;
-  onCoordinatorClick?: () => void;
   /** Fleet view toggle */
   onFleetClick?: () => void;
   /** Whether fleet view is currently active */
@@ -59,7 +58,6 @@ export function Header({
   onSettingsClick,
   onHistoryClick,
   onNewConversationClick,
-  onCoordinatorClick,
   onFleetClick,
   isFleetViewActive,
   onTrajectoryClick,
@@ -68,8 +66,6 @@ export function Header({
   hasUnreadNotifications,
 }: HeaderProps) {
   const colors = selectedAgent ? getAgentColor(selectedAgent.name) : null;
-  const hasMultipleProjects = projects.length > 1;
-
   return (
     <header className="h-[52px] bg-bg-secondary border-b border-border-subtle flex items-center justify-between px-2 sm:px-4">
       {/* Mobile hamburger menu button - always visible on mobile */}
@@ -185,18 +181,7 @@ export function Header({
           <HistoryIcon />
         </button>
 
-        {/* Coordinator button - shown when multiple projects are connected (hidden on mobile) */}
-        {hasMultipleProjects && (
-          <button
-            className="hidden md:flex items-center justify-center p-2 bg-bg-tertiary border border-border-subtle rounded-lg text-text-secondary cursor-pointer transition-all duration-150 hover:bg-bg-elevated hover:border-border-medium hover:text-accent-purple"
-            onClick={onCoordinatorClick}
-            title="Coordinator Agent"
-          >
-            <CoordinatorIcon />
-          </button>
-        )}
-
-        {/* Fleet Overview toggle (hidden on small mobile) */}
+{/* Fleet Overview toggle (hidden on small mobile) */}
         {onFleetClick && (
           <button
             className={`hidden sm:flex items-center justify-center p-1.5 sm:p-2 border rounded-lg cursor-pointer transition-all duration-150 ${
@@ -324,18 +309,3 @@ function MenuIcon() {
   );
 }
 
-function CoordinatorIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3" />
-      <circle cx="5" cy="5" r="2" />
-      <circle cx="19" cy="5" r="2" />
-      <circle cx="5" cy="19" r="2" />
-      <circle cx="19" cy="19" r="2" />
-      <line x1="9.5" y1="9.5" x2="6.5" y2="6.5" />
-      <line x1="14.5" y1="9.5" x2="17.5" y2="6.5" />
-      <line x1="9.5" y1="14.5" x2="6.5" y2="17.5" />
-      <line x1="14.5" y1="14.5" x2="17.5" y2="17.5" />
-    </svg>
-  );
-}

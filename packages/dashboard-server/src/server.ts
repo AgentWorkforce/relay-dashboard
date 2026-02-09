@@ -2199,6 +2199,20 @@ export async function startDashboard(
       }
     }
 
+    // Mark relay-protocol spawned agents (spawned by other agents, not via dashboard /api/spawn)
+    // These agents have log files in the team directory but aren't tracked by agentCwdMap
+    if (spawnReader) {
+      for (const [name, agent] of agentsMap) {
+        if (agent.isSpawned) continue;
+        if (onlineUsers.has(name) || name === 'Dashboard') continue;
+        // Check if there's a log file for this agent (indicates it was spawned)
+        const logPath = path.join(teamDir, `${name}.log`);
+        if (fs.existsSync(logPath)) {
+          agent.isSpawned = true;
+        }
+      }
+    }
+
     // Set team from teams.json for agents that don't have a team yet
     // This ensures agents defined in teams.json are associated with their team
     // even if they weren't spawned via auto-spawn

@@ -189,7 +189,11 @@ export function CoordinatorPanel({
         );
       } else {
         const errorData = await response.json().catch(() => ({}));
-        setError(errorData.error || `Failed to ${enable ? 'enable' : 'disable'} coordinator`);
+        if (response.status === 402 && errorData.upgrade) {
+          setError(`${errorData.error}. Go to Settings > Billing to upgrade.`);
+        } else {
+          setError(errorData.error || `Failed to ${enable ? 'enable' : 'disable'} coordinator`);
+        }
       }
     } catch (_err) {
       setError(`Failed to ${enable ? 'enable' : 'disable'} coordinator`);

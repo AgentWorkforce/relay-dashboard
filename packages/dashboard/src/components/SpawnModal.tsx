@@ -384,9 +384,14 @@ export function SpawnModal({
     // Derive cwd: in cloud mode with repos, use selected repo name; otherwise use text input
     let effectiveCwd: string | undefined;
     if (isCloudMode && repos && repos.length > 0 && selectedRepoId) {
-      const selectedRepo = repos.find(r => r.id === selectedRepoId);
-      if (selectedRepo) {
-        effectiveCwd = selectedRepo.githubFullName.split('/').pop();
+      if (selectedRepoId === '__all__') {
+        // Coordinator mode: no cwd, agent starts at workspace root with access to all repos
+        effectiveCwd = undefined;
+      } else {
+        const selectedRepo = repos.find(r => r.id === selectedRepoId);
+        if (selectedRepo) {
+          effectiveCwd = selectedRepo.githubFullName.split('/').pop();
+        }
       }
     } else {
       effectiveCwd = cwd.trim() || undefined;
@@ -649,12 +654,20 @@ export function SpawnModal({
                 onChange={(e) => setSelectedRepoId(e.target.value)}
                 disabled={isSpawning}
               >
+                {repos.length > 1 && (
+                  <option value="__all__">All Repositories (Coordinator)</option>
+                )}
                 {repos.map((repo) => (
                   <option key={repo.id} value={repo.id}>
                     {repo.githubFullName}
                   </option>
                 ))}
               </select>
+              {selectedRepoId === '__all__' && (
+                <p className="mt-1.5 text-xs text-accent-purple">
+                  Agent will have access to all repositories in this workspace
+                </p>
+              )}
             </div>
           ) : (
             <div className="mb-5">
