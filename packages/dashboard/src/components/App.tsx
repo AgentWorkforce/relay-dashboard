@@ -1416,7 +1416,8 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     };
 
     // Human users should always be shown in sidebar for DM access
-    const humanUsers = filterHumansByWorkspace(projectAgents).filter(a => a.isHuman);
+    // Source from unfiltered `agents` since projectAgents filters out humans
+    const humanUsers = filterHumansByWorkspace(agents).filter(a => a.isHuman);
 
     if (mergedProjects.length > 0) {
       // Don't show AI agents separately - they're merged into projects
@@ -1424,8 +1425,8 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       return humanUsers;
     }
     // Return all agents (AI + human), with human users filtered by workspace membership
-    return filterHumansByWorkspace(projectAgents);
-  }, [mergedProjects, projectAgents, isCloudMode, memberUsernames]);
+    return [...filterHumansByWorkspace(projectAgents), ...humanUsers];
+  }, [mergedProjects, projectAgents, agents, isCloudMode, memberUsernames]);
 
   // Handle workspace selection
   const handleWorkspaceSelect = useCallback(async (workspace: Workspace) => {

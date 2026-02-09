@@ -217,6 +217,10 @@ export function WorkspaceSettingsPanel({
         providersResult.data.providers.forEach((p) => {
           if (p.isConnected) {
             connected[p.id] = true;
+            // Map backend 'openai' to frontend 'codex' for consistency
+            if (p.id === 'openai') {
+              connected['codex'] = true;
+            }
           }
         });
         setProviderStatus(connected);

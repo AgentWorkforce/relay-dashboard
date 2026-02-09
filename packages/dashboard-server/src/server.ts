@@ -5513,8 +5513,10 @@ export async function startDashboard(
 
       res.json({ success: true, path: targetDir });
     } catch (err: any) {
-      console.error('[api/repos/clone] Clone failed:', err.message);
-      res.status(500).json({ success: false, error: err.message });
+      // Sanitize error message to avoid leaking GITHUB_TOKEN embedded in the clone URL
+      const safeMessage = (err.message || 'Clone failed').replace(/https:\/\/[^@]+@/g, 'https://***@');
+      console.error('[api/repos/clone] Clone failed:', safeMessage);
+      res.status(500).json({ success: false, error: safeMessage });
     }
   });
 
