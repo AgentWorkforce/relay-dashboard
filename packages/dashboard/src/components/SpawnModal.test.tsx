@@ -71,10 +71,12 @@ describe('SpawnModal', () => {
       renderSpawnModal({ isCloudMode: true, repos: mockRepos });
       const select = screen.getByLabelText('Repository') as HTMLSelectElement;
       const options = select.querySelectorAll('option');
-      expect(options.length).toBe(3);
-      expect(options[0].textContent).toBe('AgentWorkforce/relay');
-      expect(options[1].textContent).toBe('AgentWorkforce/trajectories');
-      expect(options[2].textContent).toBe('AgentWorkforce/relay-cloud');
+      // 3 repos + "All Repositories (Coordinator)" option when repos.length > 1
+      expect(options.length).toBe(4);
+      expect(options[0].textContent).toBe('All Repositories (Coordinator)');
+      expect(options[1].textContent).toBe('AgentWorkforce/relay');
+      expect(options[2].textContent).toBe('AgentWorkforce/trajectories');
+      expect(options[3].textContent).toBe('AgentWorkforce/relay-cloud');
     });
 
     it('pre-selects the active repo', async () => {

@@ -340,7 +340,7 @@ export function SpawnModal({
       setLocalError(null);
       setTimeout(() => nameInputRef.current?.focus(), 100);
     }
-  }, [isOpen, agentDefaults]);
+  }, [isOpen, agentDefaults, activeRepoId, repos]);
 
   const validateName = useCallback(
     (value: string): string | null => {
