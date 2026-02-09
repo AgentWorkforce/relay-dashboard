@@ -90,10 +90,11 @@ type CursorModel = string;
 
 /** Model options for Codex agents */
 export const CODEX_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
-  { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
-  { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini' },
-  { value: 'gpt-5.2', label: 'GPT-5.2' },
+  { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex — Frontier agentic coding model' },
+  { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex — Latest frontier agentic coding model' },
+  { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max — Deep and fast reasoning' },
+  { value: 'gpt-5.2', label: 'GPT-5.2 — Frontier model, knowledge & reasoning' },
+  { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini — Cheaper, faster' },
 ];
 
 type CodexModel = string;
@@ -406,10 +407,16 @@ export function SpawnModal({
       onClick={onClose}
     >
       <div
-        className="bg-bg-primary border border-border rounded-xl w-[480px] max-w-[90vw] max-h-[90vh] overflow-y-auto shadow-modal animate-slide-up"
+        className="relative bg-bg-primary border border-border rounded-xl w-[480px] max-w-[90vw] max-h-[90vh] overflow-y-auto shadow-modal animate-slide-up"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
+        {isSpawning && (
+          <SpawningOverlay
+            agentName={name.trim() || suggestedName()}
+            colors={colors}
+          />
+        )}
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h2 className="m-0 text-lg font-semibold text-text-primary">Spawn New Agent</h2>
           <button
@@ -789,17 +796,8 @@ export function SpawnModal({
               disabled={isSpawning || (isCloudMode && !hasActiveCredentials)}
               title={!hasActiveCredentials && isCloudMode ? `Connect ${selectedTemplate.name} credentials first` : undefined}
             >
-              {isSpawning ? (
-                <>
-                  <Spinner />
-                  Spawning...
-                </>
-              ) : (
-                <>
-                  <RocketIcon />
-                  Spawn Agent
-                </>
-              )}
+              <RocketIcon />
+              Spawn Agent
             </button>
           </div>
         </form>
@@ -852,6 +850,90 @@ function Spinner() {
         strokeLinecap="round"
       />
     </svg>
+  );
+}
+
+const SPAWNING_MESSAGES = [
+  'Initializing agent environment...',
+  'Loading model configuration...',
+  'Establishing communication channel...',
+  'Preparing workspace...',
+  'Almost ready...',
+];
+
+function SpawningOverlay({ agentName, colors }: { agentName: string; colors: { primary: string; text: string } }) {
+  const [messageIndex, setMessageIndex] = useState(0);
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    const msgInterval = setInterval(() => {
+      setMessageIndex((prev) => (prev + 1) % SPAWNING_MESSAGES.length);
+    }, 2400);
+    return () => clearInterval(msgInterval);
+  }, []);
+
+  useEffect(() => {
+    const dotInterval = setInterval(() => {
+      setDots((prev) => (prev.length >= 3 ? '' : prev + '.'));
+    }, 500);
+    return () => clearInterval(dotInterval);
+  }, []);
+
+  const initials = getAgentInitials(agentName);
+
+  return (
+    <div className="absolute inset-0 bg-bg-primary/95 backdrop-blur-sm flex flex-col items-center justify-center z-10 rounded-xl">
+      {/* Pulsing agent avatar */}
+      <div className="relative mb-6">
+        <div
+          className="absolute inset-0 rounded-full animate-ping opacity-20"
+          style={{ backgroundColor: colors.primary }}
+        />
+        <div
+          className="relative w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold animate-pulse"
+          style={{ backgroundColor: colors.primary, color: colors.text }}
+        >
+          {initials}
+        </div>
+      </div>
+
+      {/* Spawning label */}
+      <div className="text-lg font-semibold text-text-primary mb-2">
+        Spawning {agentName}{dots}
+      </div>
+
+      {/* Cycling status message */}
+      <div
+        className="text-sm text-text-muted transition-opacity duration-300 mb-6"
+        key={messageIndex}
+        style={{ animation: 'fadeInUp 0.3s ease-out' }}
+      >
+        {SPAWNING_MESSAGES[messageIndex]}
+      </div>
+
+      {/* Progress bar */}
+      <div className="w-48 h-1 bg-bg-hover rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full"
+          style={{
+            backgroundColor: colors.primary,
+            animation: 'spawningProgress 2.4s ease-in-out infinite',
+          }}
+        />
+      </div>
+
+      <style>{`
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes spawningProgress {
+          0% { width: 0%; margin-left: 0%; }
+          50% { width: 60%; margin-left: 20%; }
+          100% { width: 0%; margin-left: 100%; }
+        }
+      `}</style>
+    </div>
   );
 }
 

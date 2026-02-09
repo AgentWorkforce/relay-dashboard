@@ -122,6 +122,9 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}): UseOrches
     }
   }, [apiUrl, enabled]);
 
+  // Track reconnect attempts for the orchestrator
+  const reconnectAttemptsRef = useRef(0);
+
   // WebSocket connection - only connect if enabled
   useEffect(() => {
     // Skip connection if orchestrator is not enabled
@@ -136,6 +139,7 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}): UseOrches
         ws.onopen = () => {
           setIsConnected(true);
           setError(null);
+          reconnectAttemptsRef.current = 0;
         };
 
         ws.onmessage = (event) => {
@@ -170,8 +174,18 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}): UseOrches
           setIsConnected(false);
           wsRef.current = null;
 
-          // Reconnect after delay
-          reconnectTimeoutRef.current = setTimeout(connect, 3000);
+          // Reconnect with backoff and jitter
+          const baseDelay = Math.min(
+            500 * Math.pow(2, reconnectAttemptsRef.current),
+            15000
+          );
+          // Add jitter to prevent thundering herd
+          const delay = Math.round(baseDelay * (0.5 + Math.random() * 0.5));
+          reconnectAttemptsRef.current++;
+
+          console.log(`[WS:Orchestrator] Reconnecting (attempt ${reconnectAttemptsRef.current})...`);
+
+          reconnectTimeoutRef.current = setTimeout(connect, delay);
         };
 
         ws.onerror = (err) => {
@@ -182,15 +196,35 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}): UseOrches
         wsRef.current = ws;
       } catch (err) {
         setError(err instanceof Error ? err : new Error(String(err)));
-        // Retry connection
-        reconnectTimeoutRef.current = setTimeout(connect, 3000);
+        // Retry connection with backoff and jitter
+        const baseDelay = Math.min(
+          500 * Math.pow(2, reconnectAttemptsRef.current),
+          15000
+        );
+        const delay = Math.round(baseDelay * (0.5 + Math.random() * 0.5));
+        reconnectAttemptsRef.current++;
+        reconnectTimeoutRef.current = setTimeout(connect, delay);
       }
     };
 
     // Start with HTTP fetch, then upgrade to WebSocket
     fetchData().then(connect);
 
+    // Visibility change listener: reconnect when tab becomes visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+          console.log('[WS:Orchestrator] Tab visible, reconnecting...');
+          reconnectAttemptsRef.current = 0;
+          connect();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }

@@ -70,6 +70,7 @@ import {
   getSupportedProviders,
 } from '@agent-relay/daemon';
 import { HealthWorkerManager, getHealthPort } from './services/health-worker-manager.js';
+import { MessageBuffer } from './messageBuffer.js';
 
 /**
  * Get the host to bind to.
@@ -390,6 +391,7 @@ interface AgentStatus {
   isSpawned?: boolean;
   team?: string;
   avatarUrl?: string;
+  model?: string;
 }
 
 interface Attachment {
@@ -457,7 +459,7 @@ export async function startDashboard(
     ? { port: portOrOptions, dataDir: dataDirArg!, teamDir: teamDirArg!, dbPath: dbPathArg }
     : portOrOptions;
 
-  const { port, dataDir, teamDir, dbPath, enableSpawner, projectRoot, tmuxSession, onMarkSpawning, onClearSpawning, verbose } = options;
+  const { port, dataDir, teamDir, dbPath, enableSpawner, projectRoot, tmuxSession, onMarkSpawning, onClearSpawning, verbose, spawnManager: externalSpawnManager } = options;
 
   // Debug logging helper - only logs when verbose is true or VERBOSE env var is set
   const isVerbose = verbose || process.env.VERBOSE === 'true';
@@ -654,13 +656,19 @@ export async function startDashboard(
   };
 
   // Initialize spawner if enabled
-  // Use detectWorkspacePath to find the actual repo directory in cloud workspaces
-  const workspacePath = detectWorkspacePath(projectRoot || dataDir);
+  // When projectRoot is explicitly provided (e.g., via --project-root), use it directly.
+  // Only use detectWorkspacePath for cloud workspace auto-detection when no explicit root is given.
+  // This fixes #380: detectWorkspacePath could re-resolve projectRoot incorrectly when
+  // tool directories like ~/.nvm contain package.json markers.
+  const workspacePath = projectRoot || detectWorkspacePath(dataDir);
   console.log(`[dashboard] Workspace path: ${workspacePath}`);
 
-  // Pass dashboard port to spawner so spawned agents can call spawn/release APIs for nested spawning
-  // Also pass spawn tracking callbacks so messages can be queued before HELLO completes
-  const spawner: AgentSpawner | undefined = enableSpawner
+  // When an external SpawnManager is provided (from the daemon), use it for read operations
+  // (logs, worker listing, hasWorker) and route spawn/release through the SDK client.
+  // This solves relay-pty binary resolution issues in npx/global installs.
+  // Fall back to creating a local AgentSpawner only when no SpawnManager is provided.
+  const useExternalSpawnManager = !!externalSpawnManager;
+  const spawner: AgentSpawner | undefined = enableSpawner && !useExternalSpawnManager
     ? new AgentSpawner({
         projectRoot: workspacePath,
         tmuxSession,
@@ -670,8 +678,18 @@ export async function startDashboard(
       })
     : undefined;
 
+  // spawnReader provides read-only access to spawner state.
+  // Uses the external SpawnManager when available (daemon co-located),
+  // otherwise falls back to the local AgentSpawner.
+  const spawnReader = externalSpawnManager || spawner;
+
+  if (useExternalSpawnManager) {
+    console.log('[dashboard] Using daemon SpawnManager for spawn operations (SDK-routed)');
+  }
+
   // Initialize cloud persistence and memory monitoring if enabled (RELAY_CLOUD_ENABLED=true)
-  if (spawner) {
+  // Only needed for local AgentSpawner; daemon's SpawnManager handles its own cloud persistence
+  if (spawner && !useExternalSpawnManager) {
     // Use workspace ID from env or generate from project root
     const workspaceId = process.env.RELAY_WORKSPACE_ID ||
       crypto.createHash('sha256').update(projectRoot || dataDir).digest('hex').slice(0, 36);
@@ -683,29 +701,28 @@ export async function startDashboard(
     }).catch((err) => {
       console.warn('[dashboard] Failed to initialize cloud persistence:', err);
     });
+  }
 
-    // Initialize memory monitoring for cloud deployments
-    // Memory monitoring is enabled by default when cloud is enabled
-    if (process.env.RELAY_CLOUD_ENABLED === 'true' || process.env.RELAY_MEMORY_MONITORING === 'true') {
-      try {
-        const memoryMonitor = getMemoryMonitor({
-          checkIntervalMs: 10000, // Check every 10 seconds
-          enableTrendAnalysis: true,
-          enableProactiveAlerts: true,
-        });
-        memoryMonitor.start();
-        console.log('[dashboard] Memory monitoring enabled');
+  // Initialize memory monitoring for cloud deployments
+  if (spawnReader && (process.env.RELAY_CLOUD_ENABLED === 'true' || process.env.RELAY_MEMORY_MONITORING === 'true')) {
+    try {
+      const memoryMonitor = getMemoryMonitor({
+        checkIntervalMs: 10000, // Check every 10 seconds
+        enableTrendAnalysis: true,
+        enableProactiveAlerts: true,
+      });
+      memoryMonitor.start();
+      console.log('[dashboard] Memory monitoring enabled');
 
-        // Register existing workers with memory monitor
-        const workers = spawner.getActiveWorkers();
-        for (const worker of workers) {
-          if (worker.pid) {
-            memoryMonitor.register(worker.name, worker.pid);
-          }
+      // Register existing workers with memory monitor
+      const workers = spawnReader.getActiveWorkers();
+      for (const worker of workers) {
+        if (worker.pid) {
+          memoryMonitor.register(worker.name, worker.pid);
         }
-      } catch (err) {
-        console.warn('[dashboard] Failed to initialize memory monitoring:', err);
       }
+    } catch (err) {
+      console.warn('[dashboard] Failed to initialize memory monitoring:', err);
     }
   }
 
@@ -756,6 +773,22 @@ export async function startDashboard(
   const fileWatchers = new Map<string, fs.FSWatcher>();
   const fileLastSize = new Map<string, number>();
 
+  // Message buffers for replay on reconnect
+  // Main buffer stores broadcast messages for the main dashboard WebSocket
+  const mainMessageBuffer = new MessageBuffer(500);
+  // Per-agent log buffers store log output for each agent (smaller capacity since per-agent)
+  const agentLogBuffers = new Map<string, MessageBuffer>();
+
+  /** Get or create a log buffer for an agent */
+  const getAgentLogBuffer = (agentName: string): MessageBuffer => {
+    let buffer = agentLogBuffers.get(agentName);
+    if (!buffer) {
+      buffer = new MessageBuffer(200);
+      agentLogBuffers.set(agentName, buffer);
+    }
+    return buffer;
+  };
+
   // Track alive status for ping/pong keepalive on main dashboard connections
   // This prevents TCP/proxy timeouts from killing idle workspace connections
   const mainClientAlive = new WeakMap<WebSocket, boolean>();
@@ -763,9 +796,9 @@ export async function startDashboard(
   // Track alive status for ping/pong keepalive on bridge connections
   const bridgeClientAlive = new WeakMap<WebSocket, boolean>();
 
-  // Ping interval for main dashboard WebSocket connections (30 seconds)
-  // Aligns with heartbeat timeout (5s heartbeat * 6 multiplier = 30s)
-  const MAIN_PING_INTERVAL_MS = 30000;
+  // Ping interval for main dashboard WebSocket connections (15 seconds)
+  // Reduced from 30s to detect disconnects faster and minimize message loss window
+  const MAIN_PING_INTERVAL_MS = 15000;
   const mainPingInterval = setInterval(() => {
     wss.clients.forEach((ws) => {
       if (mainClientAlive.get(ws) === false) {
@@ -780,8 +813,9 @@ export async function startDashboard(
     });
   }, MAIN_PING_INTERVAL_MS);
 
-  // Ping interval for bridge WebSocket connections (30 seconds)
-  const BRIDGE_PING_INTERVAL_MS = 30000;
+  // Ping interval for bridge WebSocket connections (15 seconds)
+  // Reduced from 30s to detect disconnects faster and minimize message loss window
+  const BRIDGE_PING_INTERVAL_MS = 15000;
   const bridgePingInterval = setInterval(() => {
     wssBridge.clients.forEach((ws) => {
       if (bridgeClientAlive.get(ws) === false) {
@@ -985,25 +1019,56 @@ export async function startDashboard(
     app.use(express.static(dashboardDir, { extensions: ['html'] }));
 
     // Fallback for Next.js pages (e.g., /metrics -> /metrics.html)
-    // These are needed when a route exists as both a directory and .html file
-    const sendFileWithFallback = (res: express.Response, filePath: string) => {
+    // These are needed when a route exists as both a directory and .html file.
+    // For /app/* deep links we prefer redirecting to "/" if the export is missing,
+    // so users don’t get stuck on a plain-text error on refresh.
+    const uiMissingMessage =
+      'Dashboard UI file not found. Please reinstall using: curl -fsSL https://raw.githubusercontent.com/AgentWorkforce/relay/main/install.sh | bash';
+
+    const sendFileOr = (
+      res: express.Response,
+      filePath: string,
+      onError: (err: Error) => void
+    ) => {
       res.sendFile(filePath, (err) => {
         if (err && !res.headersSent) {
-          res.status(404).send('Dashboard UI file not found. Please reinstall using: curl -fsSL https://raw.githubusercontent.com/AgentWorkforce/relay/main/install.sh | bash');
+          onError(err);
         }
       });
     };
 
+    const sendFileOrText404 = (res: express.Response, filePath: string, message: string) => {
+      sendFileOr(res, filePath, () => {
+        res.status(404).send(message);
+      });
+    };
+
+    const sendFileOrRedirectRoot = (res: express.Response, filePath: string) => {
+      sendFileOr(res, filePath, () => {
+        // If the app entrypoint isn’t present, try to recover by sending users
+        // to the root page (if it exists). Otherwise keep the install hint.
+        if (fs.existsSync(path.join(dashboardDir, 'index.html'))) {
+          res.redirect(302, '/');
+          return;
+        }
+        res.status(404).send(uiMissingMessage);
+      });
+    };
+
     app.get('/metrics', (req, res) => {
-      sendFileWithFallback(res, path.join(dashboardDir, 'metrics.html'));
+      sendFileOrText404(
+        res,
+        path.join(dashboardDir, 'metrics.html'),
+        uiMissingMessage
+      );
     });
     app.get('/app', (req, res) => {
-      sendFileWithFallback(res, path.join(dashboardDir, 'app.html'));
+      sendFileOrRedirectRoot(res, path.join(dashboardDir, 'app.html'));
     });
     // Catch-all for /app/* routes - serve app.html and let client-side routing handle it
     // Express 5 requires named parameter for wildcards
     app.get('/app/{*path}', (req, res) => {
-      sendFileWithFallback(res, path.join(dashboardDir, 'app.html'));
+      sendFileOrRedirectRoot(res, path.join(dashboardDir, 'app.html'));
     });
   } else {
     // Serve a fallback page when dashboard UI files aren't available
@@ -1412,8 +1477,8 @@ export async function startDashboard(
     }
 
     // Check spawner's active workers (they have accurate team info for spawned agents)
-    if (spawner) {
-      const activeWorkers = spawner.getActiveWorkers();
+    if (spawnReader) {
+      const activeWorkers = spawnReader.getActiveWorkers();
       for (const worker of activeWorkers) {
         if (worker.team === teamName) {
           members.add(worker.name);
@@ -1748,7 +1813,14 @@ export async function startDashboard(
   // Helper to check if an agent name is internal/system (should be hidden from UI)
   // Convention: agent names starting with __ are internal (e.g., __spawner__, __DashboardBridge__)
   const isInternalAgent = (name: string): boolean => {
+    if (name === '__cli_sender__') return false;
     return name.startsWith('__');
+  };
+
+  // Display-name remapping for CLI sender (used across message and history endpoints)
+  const remapAgentName = (name: string): string => {
+    if (name === '__cli_sender__') return 'CLI';
+    return name;
   };
 
   const buildThreadSummaryMap = (rows: StoredMessage[]): Map<string, ThreadMetadata> => {
@@ -1802,6 +1874,7 @@ export async function startDashboard(
       let attachments: Attachment[] | undefined;
       let channel: string | undefined;
       let effectiveFrom = row.from;
+      let effectiveTo = row.to;
 
       if (row.data && typeof row.data === 'object') {
         if ('attachments' in row.data) {
@@ -1817,9 +1890,12 @@ export async function startDashboard(
         }
       }
 
+      effectiveFrom = remapAgentName(effectiveFrom);
+      effectiveTo = remapAgentName(effectiveTo);
+
       return {
         from: effectiveFrom,
-        to: row.to,
+        to: effectiveTo,
         content: row.body,
         timestamp: new Date(row.ts).toISOString(),
         id: row.id,
@@ -2074,15 +2150,23 @@ export async function startDashboard(
       }
     }
 
-    // Mark spawned agents with isSpawned flag and team
-    if (spawner) {
-      const activeWorkers = spawner.getActiveWorkers();
+    // Mark spawned agents with isSpawned flag, team, and model
+    if (spawnReader) {
+      const activeWorkers = spawnReader.getActiveWorkers();
       for (const worker of activeWorkers) {
         const agent = agentsMap.get(worker.name);
         if (agent) {
           agent.isSpawned = true;
           if (worker.team) {
             agent.team = worker.team;
+          }
+          // Extract model from spawn command (e.g., "codex --model gpt-5.2-codex" → "gpt-5.2-codex")
+          if (worker.cli) {
+            // Support both `--model foo` and `--model=foo`
+            const modelMatch = worker.cli.match(/--model[=\s]+(\S+)/);
+            if (modelMatch) {
+              agent.model = modelMatch[1];
+            }
           }
         }
       }
@@ -2189,13 +2273,17 @@ export async function startDashboard(
   const broadcastData = async () => {
     try {
       const data = await getAllData();
-      const payload = JSON.stringify(data);
+      const rawPayload = JSON.stringify(data);
 
       // Guard against empty/invalid payloads
-      if (!payload || payload.length === 0) {
+      if (!rawPayload || rawPayload.length === 0) {
         console.warn('[dashboard] Skipping broadcast - empty payload');
         return;
       }
+
+      // Push into buffer and wrap with sequence ID for replay support
+      const seq = mainMessageBuffer.push('data', rawPayload);
+      const payload = JSON.stringify({ seq, ...data });
 
       wss.clients.forEach(client => {
         // Skip clients that are still being initialized by the connection handler
@@ -2313,6 +2401,11 @@ export async function startDashboard(
       mainClientAlive.set(ws, true);
     });
 
+    // Send current sequence ID so client can track its position
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'sync', sequenceId: mainMessageBuffer.currentId() }));
+    }
+
     // Mark as initializing to prevent broadcastData from sending before we do
     initializingClients.add(ws);
 
@@ -2339,6 +2432,42 @@ export async function startDashboard(
       // Now allow broadcastData to send to this client
       initializingClients.delete(ws);
     }
+
+    // Handle messages from client (replay requests, etc.)
+    ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+
+        // Handle replay request: client sends { type: "replay", lastSequenceId: N }
+        if (msg.type === 'replay' && typeof msg.lastSequenceId === 'number') {
+          const missed = mainMessageBuffer.getAfter(msg.lastSequenceId);
+          const gapMs = missed.length > 0 ? Date.now() - missed[0].timestamp : 0;
+
+          console.log(`[dashboard] Client replaying ${missed.length} missed messages (gap: ${gapMs}ms)`);
+
+          // Send each missed message with its original sequence ID
+          for (const buffered of missed) {
+            if (ws.readyState === WebSocket.OPEN) {
+              try {
+                // Reconstruct the payload with the seq wrapper
+                const original = JSON.parse(buffered.payload);
+                ws.send(JSON.stringify({ seq: buffered.id, ...original }));
+              } catch (err) {
+                console.error('[dashboard] Failed to replay message:', err);
+              }
+            }
+          }
+
+          // Send current sync position after replay
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'sync', sequenceId: mainMessageBuffer.currentId() }));
+          }
+        }
+      } catch (err) {
+        // Non-JSON messages are ignored (binary, etc.)
+        debug(`[dashboard] Unhandled main WebSocket message: ${err}`);
+      }
+    });
 
     ws.on('error', (err) => {
       console.error('[dashboard] WebSocket client error:', err);
@@ -2383,9 +2512,9 @@ export async function startDashboard(
   // Track alive status for ping/pong keepalive on log connections
   const logClientAlive = new WeakMap<WebSocket, boolean>();
 
-  // Ping interval for log WebSocket connections (30 seconds)
-  // This prevents TCP/proxy timeouts from killing idle connections
-  const LOG_PING_INTERVAL_MS = 30000;
+  // Ping interval for log WebSocket connections (15 seconds)
+  // Reduced from 30s to detect disconnects faster and minimize message loss window
+  const LOG_PING_INTERVAL_MS = 15000;
   const logPingInterval = setInterval(() => {
     wssLogs.clients.forEach((ws) => {
       if (logClientAlive.get(ws) === false) {
@@ -2417,6 +2546,11 @@ export async function startDashboard(
     ws.on('pong', () => {
       logClientAlive.set(ws, true);
     });
+
+    // Send sync message with current server timestamp so client can track its position
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'sync', serverTimestamp: Date.now() }));
+    }
 
     // Helper to check if agent is daemon-connected (from agents.json)
     const isDaemonConnected = (agentName: string): boolean => {
@@ -2510,6 +2644,9 @@ export async function startDashboard(
                 timestamp: new Date().toISOString(),
               });
 
+              // Push into per-agent log buffer for replay on reconnect
+              getAgentLogBuffer(agentName).push('output', payload);
+
               for (const client of clients) {
                 if (client.readyState === WebSocket.OPEN) {
                   client.send(payload);
@@ -2529,7 +2666,7 @@ export async function startDashboard(
 
     // Helper to subscribe to an agent (async to handle spawn timing)
     const subscribeToAgent = async (agentName: string) => {
-      let isSpawned = spawner?.hasWorker(agentName) ?? false;
+      let isSpawned = spawnReader?.hasWorker(agentName) ?? false;
       const isDaemon = isDaemonConnected(agentName);
 
       // Check if agent exists (either spawned or daemon-connected)
@@ -2548,7 +2685,7 @@ export async function startDashboard(
       // poll to handle race condition between spawn API returning and
       // WebSocket connection. This is common for setup agents (__setup__*).
       // Longer timeout for CLI auth flows (Cursor, etc.) which can take time to initialize.
-      if (!isSpawned && isDaemon && spawner) {
+      if (!isSpawned && isDaemon && spawnReader) {
         const isSetupAgent = agentName.startsWith('__setup__');
         const maxWaitMs = isSetupAgent ? 90000 : 5000; // 90s for setup agents (CLI auth can be slow), 5s otherwise
         const pollIntervalMs = 100;
@@ -2556,7 +2693,7 @@ export async function startDashboard(
 
         while (Date.now() - startTime < maxWaitMs) {
           await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
-          isSpawned = spawner.hasWorker(agentName);
+          isSpawned = spawnReader.hasWorker(agentName);
           if (isSpawned) {
             console.log(`[dashboard] Agent ${agentName} appeared in spawner after ${Date.now() - startTime}ms`);
             break;
@@ -2577,9 +2714,9 @@ export async function startDashboard(
 
       debug(`[dashboard] Client subscribed to logs for: ${agentName} (spawned: ${isSpawned}, daemon: ${isDaemon})`);
 
-      if (isSpawned && spawner) {
+      if (isSpawned && spawnReader) {
         // Send initial log history for spawned agents (5000 lines to match xterm scrollback capacity)
-        const lines = spawner.getWorkerOutput(agentName, 5000);
+        const lines = spawnReader.getWorkerOutput(agentName, 5000);
         ws.send(JSON.stringify({
           type: 'history',
           agent: agentName,
@@ -2687,8 +2824,8 @@ export async function startDashboard(
           }
 
           // Check if this is a spawned agent (we can only send input to spawned agents)
-          if (spawner?.hasWorker(agentName)) {
-            const success = spawner.sendWorkerInput(agentName, msg.data);
+          if (spawnReader?.hasWorker(agentName)) {
+            const success = spawnReader.sendWorkerInput(agentName, msg.data);
             if (!success) {
               console.warn(`[dashboard] Failed to send input to agent ${agentName}`);
             }
@@ -2699,6 +2836,31 @@ export async function startDashboard(
               agent: agentName,
               error: 'Interactive input not supported for daemon-connected agents',
             }));
+          }
+        }
+
+        // Handle replay request: client sends { type: "replay", agent: "name", lastTimestamp: N }
+        // Logs use timestamps instead of sequence IDs since the data is raw text
+        if (msg.type === 'replay' && typeof msg.agent === 'string' && typeof msg.lastTimestamp === 'number') {
+          const logBuffer = agentLogBuffers.get(msg.agent);
+          if (logBuffer) {
+            const missed = logBuffer.getAfterTimestamp(msg.lastTimestamp);
+            const gapMs = missed.length > 0 ? Date.now() - missed[0].timestamp : 0;
+
+            console.log(`[dashboard] Client replaying ${missed.length} missed log messages for ${msg.agent} (gap: ${gapMs}ms)`);
+
+            // Send replay as a structured response the client expects
+            if (ws.readyState === WebSocket.OPEN) {
+              try {
+                const entries = missed.map(m => ({
+                  content: m.payload,
+                  timestamp: m.timestamp,
+                }));
+                ws.send(JSON.stringify({ type: 'replay', entries }));
+              } catch (err) {
+                console.error('[dashboard] Failed to replay log messages:', err);
+              }
+            }
           }
         }
       } catch (err) {
@@ -2722,6 +2884,7 @@ export async function startDashboard(
             watcher.close();
             fileWatchers.delete(agentName);
             fileLastSize.delete(agentName);
+            agentLogBuffers.delete(agentName);
             console.log(`[dashboard] Stopped watching log file for: ${agentName}`);
           }
         }
@@ -2781,12 +2944,17 @@ export async function startDashboard(
       }
     }
 
-    const payload = JSON.stringify({
+    const logPayload = {
       type: 'output',
       agent: agentName,
       data: output,
       timestamp: new Date().toISOString(),
-    });
+    };
+    const payload = JSON.stringify(logPayload);
+
+    // Push into per-agent log buffer for replay on reconnect
+    // Logs use timestamps instead of sequence IDs since the data is raw text
+    getAgentLogBuffer(agentName).push('output', payload);
 
     for (const client of clients) {
       if (client.readyState === WebSocket.OPEN) {
@@ -2810,8 +2978,8 @@ export async function startDashboard(
     });
   };
 
-  // Helper to broadcast channel messages to all presence clients
-  // This is used by fallback relay clients to forward messages to cloud-connected users
+  // Helper to broadcast channel messages to all connected clients
+  // Broadcasts to both main wss (local mode) and wssPresence (cloud mode)
   const broadcastChannelMessage = (message: {
     type: 'channel_message';
     targetUser: string;
@@ -2824,7 +2992,17 @@ export async function startDashboard(
     mentions?: string[];
     timestamp: string;
   }) => {
-    const payload = JSON.stringify(message);
+    // Push into buffer and wrap with sequence ID for replay support
+    const rawPayload = JSON.stringify(message);
+    const seq = mainMessageBuffer.push('channel_message', rawPayload);
+    const payload = JSON.stringify({ seq, ...message });
+    // Broadcast to main WebSocket clients (local mode)
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(payload);
+      }
+    });
+    // Also broadcast to presence WebSocket clients (cloud mode)
     wssPresence.clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(payload);
@@ -2845,7 +3023,10 @@ export async function startDashboard(
     messageId: string;
     timestamp: string;
   }) => {
-    const payload = JSON.stringify(message);
+    // Push into buffer and wrap with sequence ID for replay support
+    const rawPayload = JSON.stringify(message);
+    const seq = mainMessageBuffer.push('direct_message', rawPayload);
+    const payload = JSON.stringify({ seq, ...message });
 
     // Broadcast to main WebSocket clients (local mode)
     const mainClients = Array.from(wss.clients).filter(c => c.readyState === WebSocket.OPEN);
@@ -3266,8 +3447,8 @@ export async function startDashboard(
       const availableAgents: Array<{ id: string; displayName: string; entityType: 'agent'; status: string }> = [];
 
       // Get spawned agents from spawner
-      if (spawner) {
-        const activeWorkers = spawner.getActiveWorkers();
+      if (spawnReader) {
+        const activeWorkers = spawnReader.getActiveWorkers();
         for (const worker of activeWorkers) {
           availableAgents.push({
             id: worker.name,
@@ -3714,6 +3895,8 @@ export async function startDashboard(
         if (workspaceId && data?._workspaceId && data._workspaceId !== workspaceId) {
           return false;
         }
+        // Filter out internal/system agents (e.g., __system__, __spawner__)
+        if (isInternalAgent(m.from)) return false;
         // Accept message if it has _isChannelMessage flag OR if it's addressed to a channel
         return Boolean(data?._isChannelMessage) || (m.to && m.to.startsWith('#'));
       });
@@ -4540,8 +4723,8 @@ export async function startDashboard(
       }> = [];
 
       // Get metrics from spawner's active workers
-      if (spawner) {
-        const activeWorkers = spawner.getActiveWorkers();
+      if (spawnReader) {
+        const activeWorkers = spawnReader.getActiveWorkers();
         for (const worker of activeWorkers) {
           // Get memory and CPU usage
           let rssBytes = 0;
@@ -4636,8 +4819,8 @@ export async function startDashboard(
       let totalAlerts24h = 0;
 
       // Get spawned agent count
-      if (spawner) {
-        const workers = spawner.getActiveWorkers();
+      if (spawnReader) {
+        const workers = spawnReader.getActiveWorkers();
         agentCount = workers.length;
 
         // Check for high memory usage
@@ -4899,8 +5082,8 @@ export async function startDashboard(
 
       const result = messages.map(m => ({
         id: m.id,
-        from: m.from,
-        to: m.to,
+        from: remapAgentName(m.from),
+        to: remapAgentName(m.to),
         content: m.body,
         timestamp: new Date(m.ts).toISOString(),
         thread: m.thread,
@@ -4944,8 +5127,8 @@ export async function startDashboard(
         // Skip messages from/to internal system agents (e.g., __spawner__)
         if (isInternalAgent(msg.from) || isInternalAgent(msg.to)) continue;
 
-        // Create normalized key (sorted participants)
-        const participants = [msg.from, msg.to].sort();
+        // Create normalized key (sorted participants, with display names)
+        const participants = [remapAgentName(msg.from), remapAgentName(msg.to)].sort();
         const key = participants.join(':');
 
         const existing = conversationMap.get(key);
@@ -5061,7 +5244,7 @@ export async function startDashboard(
    *   - raw: If 'true', return raw output instead of cleaned lines
    */
   app.get('/api/logs/:name', (req, res) => {
-    if (!spawner) {
+    if (!spawnReader) {
       return res.status(503).json({ error: 'Spawner not enabled' });
     }
 
@@ -5070,13 +5253,13 @@ export async function startDashboard(
     const raw = req.query.raw === 'true';
 
     // Check if worker exists
-    if (!spawner.hasWorker(name)) {
+    if (!spawnReader.hasWorker(name)) {
       return res.status(404).json({ error: `Agent ${name} not found` });
     }
 
     try {
       if (raw) {
-        const output = spawner.getWorkerRawOutput(name);
+        const output = spawnReader.getWorkerRawOutput(name);
         res.json({
           name,
           raw: true,
@@ -5084,7 +5267,7 @@ export async function startDashboard(
           timestamp: new Date().toISOString(),
         });
       } else {
-        const lines = spawner.getWorkerOutput(name, limit);
+        const lines = spawnReader.getWorkerOutput(name, limit);
         res.json({
           name,
           raw: false,
@@ -5103,12 +5286,12 @@ export async function startDashboard(
    * GET /api/logs - List all agents with available logs
    */
   app.get('/api/logs', (req, res) => {
-    if (!spawner) {
+    if (!spawnReader) {
       return res.status(503).json({ error: 'Spawner not enabled' });
     }
 
     try {
-      const workers = spawner.getActiveWorkers();
+      const workers = spawnReader.getActiveWorkers();
       const agents = workers.map(w => ({
         name: w.name,
         cli: w.cli,
@@ -5142,7 +5325,7 @@ export async function startDashboard(
    * Body: { name: string, cli?: string, task?: string, team?: string, spawnerName?, cwd?, interactive?, shadowMode?, shadowAgent?, shadowOf?, shadowTriggers?, shadowSpeakOn? }
    */
   app.post('/api/spawn', async (req, res) => {
-    if (!spawner) {
+    if (!spawner && !useExternalSpawnManager) {
       return res.status(503).json({
         success: false,
         error: 'Spawner not enabled. Start dashboard with enableSpawner: true',
@@ -5173,23 +5356,56 @@ export async function startDashboard(
     }
 
     try {
-      const request: SpawnRequest = {
-        name,
-        cli,
-        task,
-        team: team || undefined, // Optional team name
-        spawnerName: spawnerName || undefined, // For policy enforcement
-        cwd: cwd || undefined, // Working directory
-        interactive, // Disables auto-accept for auth setup flows
-        shadowMode,
-        shadowAgent,
-        shadowOf,
-        shadowTriggers,
-        shadowSpeakOn,
-        userId: typeof userId === 'string' ? userId : undefined,
-        includeWorkflowConventions: true, // Cloud opts into ACK/DONE workflow conventions
-      };
-      const result = await spawner.spawn(request);
+      let result: { success: boolean; name: string; pid?: number; error?: string; policyDecision?: unknown };
+
+      if (useExternalSpawnManager) {
+        // Route spawn through SDK → daemon socket → SpawnManager
+        // This ensures relay-pty binary resolution works regardless of install method
+        const client = await getRelayClient('Dashboard');
+        if (!client) {
+          return res.status(503).json({
+            success: false,
+            error: 'Not connected to relay daemon',
+          });
+        }
+        // spawnerName/userId/includeWorkflowConventions need SDK >= 2.2.0 types
+        // Cast removed once SDK is republished with these fields
+        result = await client.spawn({
+          name,
+          cli,
+          task,
+          team: team || undefined,
+          cwd: cwd || undefined,
+          interactive,
+          shadowMode,
+          shadowAgent,
+          shadowOf,
+          shadowTriggers,
+          shadowSpeakOn,
+          spawnerName: spawnerName || undefined,
+          userId: typeof userId === 'string' ? userId : undefined,
+          includeWorkflowConventions: true,
+        } as Parameters<typeof client.spawn>[0]);
+      } else {
+        // Fall back to local AgentSpawner (standalone mode)
+        const request: SpawnRequest = {
+          name,
+          cli,
+          task,
+          team: team || undefined,
+          spawnerName: spawnerName || undefined,
+          cwd: cwd || undefined,
+          interactive,
+          shadowMode,
+          shadowAgent,
+          shadowOf,
+          shadowTriggers,
+          shadowSpeakOn,
+          userId: typeof userId === 'string' ? userId : undefined,
+          includeWorkflowConventions: true,
+        };
+        result = await spawner!.spawn(request);
+      }
 
       if (result.success) {
         // Broadcast update to WebSocket clients
@@ -5221,7 +5437,7 @@ export async function startDashboard(
    * Body: { cli?: string }
    */
   app.post('/api/spawn/architect', async (req, res) => {
-    if (!spawner) {
+    if (!spawner && !useExternalSpawnManager) {
       return res.status(503).json({
         success: false,
         error: 'Spawner not enabled. Start dashboard with enableSpawner: true',
@@ -5231,7 +5447,7 @@ export async function startDashboard(
     const { cli = 'claude' } = req.body;
 
     // Check if Architect already exists
-    const activeWorkers = spawner.getActiveWorkers();
+    const activeWorkers = spawnReader?.getActiveWorkers() || [];
     if (activeWorkers.some(w => w.name.toLowerCase() === 'architect')) {
       return res.status(409).json({
         success: false,
@@ -5315,12 +5531,27 @@ Then output: \`->relay-file:all\`
 Start by greeting the project leads and asking for status updates.`;
 
     try {
-      const result = await spawner.spawn({
-        name: 'Architect',
-        cli,
-        task: architectPrompt,
-        includeWorkflowConventions: true, // Cloud opts into ACK/DONE workflow conventions
-      });
+      let result: { success: boolean; name?: string; pid?: number; error?: string };
+
+      if (useExternalSpawnManager) {
+        const client = await getRelayClient('Dashboard');
+        if (!client) {
+          return res.status(503).json({ success: false, error: 'Not connected to relay daemon' });
+        }
+        result = await client.spawn({
+          name: 'Architect',
+          cli,
+          task: architectPrompt,
+          includeWorkflowConventions: true,
+        } as Parameters<typeof client.spawn>[0]);
+      } else {
+        result = await spawner!.spawn({
+          name: 'Architect',
+          cli,
+          task: architectPrompt,
+          includeWorkflowConventions: true,
+        });
+      }
 
       if (result.success) {
         broadcastData().catch(() => {});
@@ -5361,8 +5592,8 @@ Start by greeting the project leads and asking for status updates.`;
     }>();
 
     // Source 1: Spawner's active workers (authoritative for spawned agents)
-    if (spawner) {
-      for (const worker of spawner.getActiveWorkers()) {
+    if (spawnReader) {
+      for (const worker of spawnReader.getActiveWorkers()) {
         agentsByName.set(worker.name, {
           name: worker.name,
           cli: worker.cli,
@@ -5411,7 +5642,7 @@ Start by greeting the project leads and asking for status updates.`;
       agents,
       // Include source info for debugging
       sources: {
-        spawnerEnabled: !!spawner,
+        spawnerEnabled: !!spawnReader,
         daemonAgentsFile: fs.existsSync(agentsPath),
       },
     });
@@ -5421,7 +5652,7 @@ Start by greeting the project leads and asking for status updates.`;
    * DELETE /api/spawned/:name - Release a spawned agent
    */
   app.delete('/api/spawned/:name', async (req, res) => {
-    if (!spawner) {
+    if (!spawner && !useExternalSpawnManager) {
       return res.status(503).json({
         success: false,
         error: 'Spawner not enabled',
@@ -5431,7 +5662,19 @@ Start by greeting the project leads and asking for status updates.`;
     const { name } = req.params;
 
     try {
-      const released = await spawner.release(name);
+      let released: boolean;
+
+      if (useExternalSpawnManager) {
+        // Route release through SDK → daemon socket → SpawnManager
+        const client = await getRelayClient('Dashboard');
+        if (!client) {
+          return res.status(503).json({ success: false, error: 'Not connected to relay daemon' });
+        }
+        const result = await client.release(name);
+        released = result.success;
+      } else {
+        released = await spawner!.release(name);
+      }
 
       if (released) {
         broadcastData().catch(() => {});
@@ -5466,7 +5709,7 @@ Start by greeting the project leads and asking for status updates.`;
    * This is useful for breaking agents out of stuck loops without terminating them.
    */
   app.post('/api/agents/by-name/:name/interrupt', (req, res) => {
-    if (!spawner) {
+    if (!spawnReader) {
       return res.status(503).json({
         success: false,
         error: 'Spawner not enabled',
@@ -5476,7 +5719,7 @@ Start by greeting the project leads and asking for status updates.`;
     const { name } = req.params;
 
     // Check if agent exists
-    if (!spawner.hasWorker(name)) {
+    if (!spawnReader.hasWorker(name)) {
       return res.status(404).json({
         success: false,
         error: `Agent ${name} not found or not spawned`,
@@ -5486,7 +5729,7 @@ Start by greeting the project leads and asking for status updates.`;
     try {
       // Send ESC ESC sequence to interrupt the agent
       // ESC = 0x1b in hexadecimal
-      const success = spawner.sendWorkerInput(name, '\x1b\x1b');
+      const success = spawnReader.sendWorkerInput(name, '\x1b\x1b');
 
       if (success) {
         console.log(`[api] Sent interrupt (ESC ESC) to agent ${name}`);
@@ -5900,7 +6143,7 @@ Start by greeting the project leads and asking for status updates.`;
    */
   app.get('/api/fleet/servers', async (_req, res) => {
     const servers: FleetServer[] = [];
-    const localAgents = spawner?.getActiveWorkers() || [];
+    const localAgents = spawnReader?.getActiveWorkers() || [];
     const agentStatuses = await loadAgentStatuses();
     let hasBridgeProjects = false;
 
@@ -5989,7 +6232,7 @@ Start by greeting the project leads and asking for status updates.`;
    * GET /api/fleet/stats - Get aggregate fleet statistics
    */
   app.get('/api/fleet/stats', async (_req, res) => {
-    const localAgents = spawner?.getActiveWorkers() || [];
+    const localAgents = spawnReader?.getActiveWorkers() || [];
     const agentStatuses = await loadAgentStatuses();
 
     const totalAgents = localAgents.length;
@@ -6346,8 +6589,9 @@ Start by greeting the project leads and asking for status updates.`;
       console.log(`Dashboard running at http://${host || 'localhost'}:${availablePort} (build: cloud-channels-v2)`);
       console.log(`Monitoring: ${dataDir}`);
 
-      // Set the dashboard port on spawner so spawned agents can use the API for nested spawns
-      if (spawner) {
+      // Set the dashboard port on local spawner so spawned agents can use the API for nested spawns
+      // Not needed when using external SpawnManager (daemon handles this)
+      if (spawner && !useExternalSpawnManager) {
         spawner.setDashboardPort(availablePort);
       }
 

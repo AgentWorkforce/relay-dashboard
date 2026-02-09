@@ -2,7 +2,7 @@
  * Dashboard V2 React Hooks
  */
 
-export { useWebSocket, type UseWebSocketOptions, type UseWebSocketReturn, type DashboardData } from './useWebSocket';
+export { useWebSocket, type UseWebSocketOptions, type UseWebSocketReturn, type DashboardData, type ConnectionState, type WebSocketEvent } from './useWebSocket';
 export { useAgents, type UseAgentsOptions, type UseAgentsReturn, type AgentWithColor } from './useAgents';
 export { useMessages, type UseMessagesOptions, type UseMessagesReturn } from './useMessages';
 export {
@@ -12,7 +12,7 @@ export {
   type OrchestratorAgent,
   type OrchestratorEvent,
 } from './useOrchestrator';
-export { useAgentLogs, type UseAgentLogsOptions, type UseAgentLogsReturn, type LogLine } from './useAgentLogs';
+export { useAgentLogs, type UseAgentLogsOptions, type UseAgentLogsReturn, type LogLine, type LogConnectionState } from './useAgentLogs';
 export {
   useSession,
   type UseSessionOptions,
@@ -44,6 +44,7 @@ export {
   type UseChannelsOptions,
   type UseChannelsReturn,
   type ChannelMessage,
+  type ChannelConnectionState,
 } from './useChannels';
 export {
   useWorkspaceMembers,

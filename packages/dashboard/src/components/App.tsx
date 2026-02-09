@@ -1008,8 +1008,11 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     }));
   }, [messages, selectedChannelId, effectiveActiveWorkspaceId, currentUser?.displayName]);
 
-  // Use local or cloud messages depending on mode
-  const effectiveChannelMessages = effectiveActiveWorkspaceId ? channelMessages : localChannelMessages;
+  // Use API-fetched channel messages when available, fall back to WebSocket-derived local messages.
+  // In local mode, the server filters channel messages (with _isChannelMessage flag) out of the
+  // main WebSocket data payload, so localChannelMessages will be empty for #channel messages.
+  // The API fetch (GET /api/channels/:channel/messages) correctly returns them.
+  const effectiveChannelMessages = channelMessages.length > 0 ? channelMessages : localChannelMessages;
 
   // Extract human users from messages (users who are not agents)
   // This enables @ mentioning other human users in cloud mode
@@ -2774,6 +2777,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
                 compactMode={settings.display.compactMode}
                 onAgentClick={setSelectedAgentProfile}
                 onUserClick={setSelectedUserProfile}
+                onLogsClick={handleLogsClick}
                 onlineUsers={onlineUsers}
               />
             )}
