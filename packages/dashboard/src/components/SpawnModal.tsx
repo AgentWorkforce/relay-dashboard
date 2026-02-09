@@ -50,6 +50,10 @@ export interface SpawnModalProps {
       gemini: string;
     };
   };
+  /** Available workspace repos (cloud mode) */
+  repos?: Array<{ id: string; githubFullName: string }>;
+  /** Currently active repo ID (cloud mode) */
+  activeRepoId?: string;
 }
 
 /** Model options for Claude agents */
@@ -184,6 +188,8 @@ export function SpawnModal({
   isCloudMode = false,
   workspaceId,
   agentDefaults,
+  repos,
+  activeRepoId,
 }: SpawnModalProps) {
   const [selectedTemplate, setSelectedTemplate] = useState(AGENT_TEMPLATES[0]);
   const [name, setName] = useState('');
@@ -193,6 +199,7 @@ export function SpawnModal({
   const [selectedCodexModel, setSelectedCodexModel] = useState<CodexModel>('gpt-5.2-codex');
   const [selectedGeminiModel, setSelectedGeminiModel] = useState<GeminiModel>('gemini-2.5-pro');
   const [cwd, setCwd] = useState('');
+  const [selectedRepoId, setSelectedRepoId] = useState<string | undefined>(activeRepoId);
   const [team, setTeam] = useState('');
   const [isShadow, setIsShadow] = useState(false);
   const [shadowOf, setShadowOf] = useState('');
@@ -324,6 +331,7 @@ export function SpawnModal({
       setSelectedCodexModel(agentDefaults?.defaultModels?.codex ?? 'gpt-5.2-codex');
       setSelectedGeminiModel(agentDefaults?.defaultModels?.gemini ?? 'gemini-2.5-pro');
       setCwd('');
+      setSelectedRepoId(activeRepoId);
       setTeam('');
       setIsShadow(false);
       setShadowOf('');
@@ -372,10 +380,22 @@ export function SpawnModal({
     }
 
     setLocalError(null);
+
+    // Derive cwd: in cloud mode with repos, use selected repo name; otherwise use text input
+    let effectiveCwd: string | undefined;
+    if (isCloudMode && repos && repos.length > 0 && selectedRepoId) {
+      const selectedRepo = repos.find(r => r.id === selectedRepoId);
+      if (selectedRepo) {
+        effectiveCwd = selectedRepo.githubFullName.split('/').pop();
+      }
+    } else {
+      effectiveCwd = cwd.trim() || undefined;
+    }
+
     const success = await onSpawn({
       name: finalName,
       command: command.trim(),
-      cwd: cwd.trim() || undefined,
+      cwd: effectiveCwd,
       team: team.trim() || undefined,
       shadowMode: shadowMode,
       shadowOf: isShadow ? shadowOf : undefined,
@@ -616,21 +636,42 @@ export function SpawnModal({
             </div>
           )}
 
-          {/* Working Directory (optional) */}
-          <div className="mb-5">
-            <label className="block text-sm font-semibold text-text-primary mb-2" htmlFor="agent-cwd">
-              Working Directory <span className="font-normal text-text-muted">(optional)</span>
-            </label>
-            <input
-              id="agent-cwd"
-              type="text"
-              className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-transparent text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted placeholder:text-text-muted"
-              placeholder="Current directory"
-              value={cwd}
-              onChange={(e) => setCwd(e.target.value)}
-              disabled={isSpawning}
-            />
-          </div>
+          {/* Repository (cloud) / Working Directory (local) */}
+          {isCloudMode && repos && repos.length > 0 ? (
+            <div className="mb-5">
+              <label className="block text-sm font-semibold text-text-primary mb-2" htmlFor="agent-repo">
+                Repository
+              </label>
+              <select
+                id="agent-repo"
+                className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-transparent text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
+                value={selectedRepoId || ''}
+                onChange={(e) => setSelectedRepoId(e.target.value)}
+                disabled={isSpawning}
+              >
+                {repos.map((repo) => (
+                  <option key={repo.id} value={repo.id}>
+                    {repo.githubFullName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="mb-5">
+              <label className="block text-sm font-semibold text-text-primary mb-2" htmlFor="agent-cwd">
+                Working Directory <span className="font-normal text-text-muted">(optional)</span>
+              </label>
+              <input
+                id="agent-cwd"
+                type="text"
+                className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-transparent text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted placeholder:text-text-muted"
+                placeholder="Current directory"
+                value={cwd}
+                onChange={(e) => setCwd(e.target.value)}
+                disabled={isSpawning}
+              />
+            </div>
+          )}
 
           {/* Shadow Agent Configuration */}
           <div className="mb-5 p-4 border border-border rounded-lg bg-bg-hover/50">

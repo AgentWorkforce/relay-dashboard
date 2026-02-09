@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import crypto from 'crypto';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { fileURLToPath } from 'url';
 import { createStorageAdapter, type StorageAdapter, type StoredMessage } from '@agent-relay/storage/adapter';
 import { RelayClient, type ClientState, type Envelope, type ChannelMessagePayload } from '@agent-relay/sdk';
@@ -392,6 +392,7 @@ interface AgentStatus {
   team?: string;
   avatarUrl?: string;
   model?: string;
+  cwd?: string;
 }
 
 interface Attachment {
@@ -849,6 +850,10 @@ export async function startDashboard(
     connections: Set<WebSocket>;
   }
   const onlineUsers = new Map<string, UserPresenceState>();
+
+  // Track cwd per spawned agent (name -> cwd)
+  // This is set when /api/spawn is called and included in /api/spawned responses
+  const agentCwdMap = new Map<string, string>();
 
   // Validation helpers for presence
   const isValidUsername = (username: unknown): username is string => {
@@ -2150,7 +2155,7 @@ export async function startDashboard(
       }
     }
 
-    // Mark spawned agents with isSpawned flag, team, and model
+    // Mark spawned agents with isSpawned flag, team, model, and cwd
     if (spawnReader) {
       const activeWorkers = spawnReader.getActiveWorkers();
       for (const worker of activeWorkers) {
@@ -2159,6 +2164,11 @@ export async function startDashboard(
           agent.isSpawned = true;
           if (worker.team) {
             agent.team = worker.team;
+          }
+          // Inject cwd from agentCwdMap (set during /api/spawn)
+          const workerCwd = agentCwdMap.get(worker.name);
+          if (workerCwd) {
+            agent.cwd = workerCwd;
           }
           // Extract model from spawn command (e.g., "codex --model gpt-5.2-codex" → "gpt-5.2-codex")
           if (worker.cli) {
@@ -5355,6 +5365,9 @@ export async function startDashboard(
       });
     }
 
+    // Inherit spawner's cwd if no explicit cwd provided (for nested/agent-to-agent spawns)
+    const effectiveCwd = cwd || (spawnerName ? agentCwdMap.get(spawnerName) : undefined);
+
     try {
       let result: { success: boolean; name: string; pid?: number; error?: string; policyDecision?: unknown };
 
@@ -5375,7 +5388,7 @@ export async function startDashboard(
           cli,
           task,
           team: team || undefined,
-          cwd: cwd || undefined,
+          cwd: effectiveCwd || undefined,
           interactive,
           shadowMode,
           shadowAgent,
@@ -5394,7 +5407,7 @@ export async function startDashboard(
           task,
           team: team || undefined,
           spawnerName: spawnerName || undefined,
-          cwd: cwd || undefined,
+          cwd: effectiveCwd || undefined,
           interactive,
           shadowMode,
           shadowAgent,
@@ -5408,6 +5421,10 @@ export async function startDashboard(
       }
 
       if (result.success) {
+        // Track cwd for this agent so /api/spawned can return it
+        if (effectiveCwd) {
+          agentCwdMap.set(name, effectiveCwd);
+        }
         // Broadcast update to WebSocket clients
         broadcastData().catch(() => {});
         // Broadcast agent_spawned event to activity feed
@@ -5429,6 +5446,61 @@ export async function startDashboard(
         name,
         error: err.message,
       });
+    }
+  });
+
+  /**
+   * POST /api/repos/clone - Clone a repo into the workspace directory
+   * Body: { fullName: "Owner/RepoName" }
+   * Used by cloud API to hot-clone repos added to a running workspace.
+   */
+  app.post('/api/repos/clone', async (req, res) => {
+    const { fullName } = req.body;
+
+    if (!fullName || typeof fullName !== 'string' || !fullName.includes('/')) {
+      return res.status(400).json({ success: false, error: 'fullName is required (e.g., "Owner/RepoName")' });
+    }
+
+    // Validate format: "Owner/RepoName" with safe characters only
+    if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(fullName)) {
+      return res.status(400).json({ success: false, error: 'Invalid repository name format' });
+    }
+
+    const repoName = fullName.split('/').pop()!;
+    const workspaceDir = process.env.WORKSPACE_DIR || path.dirname(projectRoot || dataDir);
+    const targetDir = path.join(workspaceDir, repoName);
+
+    // Idempotent: skip if already cloned
+    if (fs.existsSync(targetDir)) {
+      return res.json({ success: true, message: 'Already cloned', path: targetDir });
+    }
+
+    const githubToken = process.env.GITHUB_TOKEN;
+    if (!githubToken) {
+      return res.status(500).json({ success: false, error: 'GITHUB_TOKEN not available' });
+    }
+
+    const cloneUrl = `https://x-access-token:${githubToken}@github.com/${fullName}.git`;
+
+    try {
+      // Use execFile to avoid shell injection
+      await new Promise<void>((resolve, reject) => {
+        execFile('git', ['clone', cloneUrl, targetDir], { timeout: 120000 }, (error, _stdout, stderr) => {
+          if (error) {
+            reject(new Error(stderr || error.message));
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      // Mark directory as safe for git
+      execFile('git', ['config', '--global', '--add', 'safe.directory', targetDir], () => {});
+
+      res.json({ success: true, path: targetDir });
+    } catch (err: any) {
+      console.error('[api/repos/clone] Clone failed:', err.message);
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -5588,6 +5660,7 @@ Start by greeting the project leads and asking for status updates.`;
       spawnedAt?: number;
       task?: string;
       team?: string;
+      cwd?: string;
       source: 'spawner' | 'daemon';
     }>();
 
@@ -5601,6 +5674,7 @@ Start by greeting the project leads and asking for status updates.`;
           spawnedAt: worker.spawnedAt,
           task: worker.task,
           team: worker.team,
+          cwd: agentCwdMap.get(worker.name),
           source: 'spawner',
         });
       }
@@ -5677,6 +5751,7 @@ Start by greeting the project leads and asking for status updates.`;
       }
 
       if (released) {
+        agentCwdMap.delete(name);
         broadcastData().catch(() => {});
         // Broadcast agent_released event to activity feed
         broadcastPresence({

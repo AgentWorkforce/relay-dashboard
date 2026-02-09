@@ -449,25 +449,31 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   const [showMemberPanel, setShowMemberPanel] = useState(false);
   const [channelMembers, setChannelMembers] = useState<ChannelMember[]>([]);
 
+  const isDuplicateMessage = useCallback((existing: ChannelApiMessage[], message: ChannelApiMessage) => {
+    return existing.some((m) => {
+      if (m.id === message.id) return true;
+      if (m.from !== message.from) return false;
+      if (m.content !== message.content) return false;
+      if (m.threadId !== message.threadId) return false;
+      const timeDiff = Math.abs(new Date(m.timestamp).getTime() - new Date(message.timestamp).getTime());
+      return timeDiff < 2000;
+    });
+  }, []);
+
   const appendChannelMessage = useCallback((channelId: string, message: ChannelApiMessage, options?: { incrementUnread?: boolean }) => {
     const incrementUnread = options?.incrementUnread ?? true;
 
     setChannelMessageMap(prev => {
       const list = prev[channelId] ?? [];
-      const isDuplicate = list.some((m) => {
-        if (m.id === message.id) return true;
-        if (m.from !== message.from) return false;
-        if (m.content !== message.content) return false;
-        if (m.threadId !== message.threadId) return false;
-        const timeDiff = Math.abs(new Date(m.timestamp).getTime() - new Date(message.timestamp).getTime());
-        return timeDiff < 2000;
-      });
-      if (isDuplicate) return prev;
+      if (isDuplicateMessage(list, message)) return prev;
       return { ...prev, [channelId]: [...list, message] };
     });
 
     if (selectedChannelId === channelId) {
-      setChannelMessages(prev => [...prev, message]);
+      setChannelMessages(prev => {
+        if (isDuplicateMessage(prev, message)) return prev;
+        return [...prev, message];
+      });
       setChannelUnreadState(undefined);
     } else if (incrementUnread) {
       setChannelsList(prev => {
@@ -1215,20 +1221,31 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     if (workspaces.length > 0) {
       // If we have repos for the active workspace, show each repo as a project folder
       if (workspaceRepos.length > 1 && effectiveActiveWorkspaceId) {
-        const projectList: Project[] = workspaceRepos.map((repo) => ({
-          id: repo.id,
-          path: repo.githubFullName,
-          name: repo.githubFullName.split('/').pop() || repo.githubFullName,
-          agents: orchestratorAgents
-            .filter((a) => a.workspaceId === effectiveActiveWorkspaceId)
-            .map((a) => ({
+        const workspaceAgents = orchestratorAgents.filter(
+          (a) => a.workspaceId === effectiveActiveWorkspaceId
+        );
+        const projectList: Project[] = workspaceRepos.map((repo) => {
+          const repoName = repo.githubFullName.split('/').pop() || repo.githubFullName;
+          // Filter agents: match by cwd if available, otherwise show under active repo
+          const isActiveRepo = repo.id === currentProject || (!currentProject && repo === workspaceRepos[0]);
+          const repoAgents = workspaceAgents.filter((a) => {
+            if (a.cwd) return a.cwd === repoName;
+            // No cwd data yet — show under the active repo as fallback
+            return isActiveRepo;
+          });
+          return {
+            id: repo.id,
+            path: repo.githubFullName,
+            name: repoName,
+            agents: repoAgents.map((a) => ({
               name: a.name,
               status: a.status === 'running' ? 'online' : 'offline',
               isSpawned: true,
               cli: a.provider,
             })) as Agent[],
-          lead: undefined,
-        }));
+            lead: undefined,
+          };
+        });
         setProjects(projectList);
         // Set first repo as current if none selected
         if (!currentProject || !projectList.find(p => p.id === currentProject)) {
@@ -1343,15 +1360,31 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     const localAgentNames = new Set(projectAgents.map((a) => a.name.toLowerCase()));
     if (localAgentNames.size === 0) return projects;
 
-    // Find the current project (the one whose daemon we're connected to)
-    // This is typically the first project or the one marked as current
+    if (workspaceRepos.length > 1) {
+      // Multi-repo: assign agents to projects by cwd match
+      // Agents without cwd go to the active project only
+      return projects.map((project) => {
+        const repoName = project.name;
+        const isActiveProject = project.id === currentProject;
+        const existingNames = new Set(project.agents.map((a) => a.name.toLowerCase()));
+        const newAgents = projectAgents.filter((a) => {
+          if (existingNames.has(a.name.toLowerCase())) return false;
+          if (a.cwd) return a.cwd === repoName;
+          return isActiveProject; // fallback: show under active project
+        });
+
+        return {
+          ...project,
+          agents: [...project.agents, ...newAgents],
+        };
+      });
+    }
+
+    // Single-repo / bridge mode: merge into current/first project
     return projects.map((project, index) => {
-      // Merge local agents into the current/first project
-      // Local agents should appear in their actual project, not "Local"
       const isCurrentDaemonProject = index === 0 || project.id === currentProject;
 
       if (isCurrentDaemonProject) {
-        // Merge local agents with project agents, avoiding duplicates
         const existingNames = new Set(project.agents.map((a) => a.name.toLowerCase()));
         const newAgents = projectAgents.filter((a) => !existingNames.has(a.name.toLowerCase()));
 
@@ -1363,7 +1396,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
 
       return project;
     });
-  }, [projects, projectAgents, currentProject]);
+  }, [projects, projectAgents, currentProject, workspaceRepos.length]);
 
   // Determine if local agents should be shown separately
   // Only show "Local" folder if we don't have bridge projects to merge them into
@@ -2101,7 +2134,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     try {
       // Use orchestrator if workspaces are available
       if (workspaces.length > 0 && activeWorkspaceId) {
-        await orchestratorSpawnAgent(config.name, undefined, config.command);
+        await orchestratorSpawnAgent(config.name, undefined, config.command, config.cwd);
         return true;
       }
 
@@ -2109,6 +2142,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       const result = await api.spawnAgent({
         name: config.name,
         cli: config.command,
+        cwd: config.cwd,
         team: config.team,
         shadowMode: config.shadowMode,
         shadowOf: config.shadowOf,
@@ -2925,6 +2959,8 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
         isCloudMode={isCloudMode}
         workspaceId={effectiveActiveWorkspaceId ?? undefined}
         agentDefaults={settings.agentDefaults}
+        repos={workspaceRepos}
+        activeRepoId={workspaceRepos.find(r => r.id === currentProject)?.id ?? workspaceRepos[0]?.id}
       />
 
       {/* Add Workspace Modal */}
@@ -3157,6 +3193,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
           settings={settings}
           onUpdateSettings={updateSettings}
           activeWorkspaceId={effectiveActiveWorkspaceId}
+          onReposChanged={refetchWorkspaceRepos}
         />
       )}
 

@@ -52,6 +52,8 @@ export interface RepositoriesPanelProps {
   workspaceRepos?: WorkspaceRepo[];
   /** Callback when a repo is added to the workspace */
   onRepoAdded?: (repoFullName: string) => void;
+  /** Callback when a repo is removed from the workspace */
+  onRepoRemoved?: (repoFullName: string) => void;
   /** CSRF token for mutations */
   csrfToken?: string;
   /** Custom class name */
@@ -123,6 +125,7 @@ export function RepositoriesPanel({
   workspaceId,
   workspaceRepos = [],
   onRepoAdded,
+  onRepoRemoved,
   csrfToken,
   className = '',
 }: RepositoriesPanelProps) {
@@ -142,6 +145,7 @@ export function RepositoriesPanel({
 
   // Action states
   const [addingRepo, setAddingRepo] = useState<string | null>(null);
+  const [removingRepo, setRemovingRepo] = useState<string | null>(null);
   const [checkingAccess, setCheckingAccess] = useState<Set<string>>(new Set());
 
   // GitHub OAuth state (for initial connection when not connected)
@@ -327,54 +331,53 @@ export function RepositoriesPanel({
       // Create Nango instance with the session token
       const nangoInstance = new Nango({ connectSessionToken: sessionData.sessionToken });
 
-      // Use github-app-oauth for GitHub App installation
-      const result = await nangoInstance.auth('github-app-oauth');
-      if (result && 'connectionId' in result) {
-        // Poll for completion
-        const pollForRepos = async (attempts = 0): Promise<boolean> => {
-          if (attempts > 30) {
-            throw new Error('Connection timed out. Please try again.');
-          }
-
-          try {
-            const statusRes = await fetch(`/api/auth/nango/repo-status/${result.connectionId}`, {
-              credentials: 'include',
-            });
-            const statusData = await statusRes.json();
-
-            if (statusData.pendingApproval) {
-              setError('Waiting for organization admin approval. Please try again later.');
-              return false;
-            } else if (statusData.ready) {
-              return true;
-            }
-
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            return pollForRepos(attempts + 1);
-          } catch {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            return pollForRepos(attempts + 1);
-          }
-        };
-
-        const success = await pollForRepos();
-        if (success) {
-          setReconnectSuccessful(true);
-          setIsReconnecting(false);
+      // Open the GitHub App installation popup (fire-and-forget).
+      // The popup may not close automatically for GitHub App OAuth flows,
+      // so we don't await the result. Instead, poll for repo access directly.
+      nangoInstance.auth('github-app-oauth').catch((err: unknown) => {
+        const authErr = err as Error & { type?: string };
+        // Only log non-cancellation errors; user closing popup is expected
+        if (authErr.type !== 'user_cancelled' && !authErr.message?.includes('closed')) {
+          console.error('GitHub App auth background error:', authErr);
         }
-      } else {
-        throw new Error('No connection ID returned');
+      });
+
+      // Poll check-github-app-access for the specific repo being added.
+      // The webhook will sync the repo to the DB, and this endpoint checks
+      // whether the GitHub App installation now includes the target repo.
+      const [owner, repo] = repoFullName.split('/');
+      const pollForAccess = async (attempts = 0): Promise<boolean> => {
+        if (attempts > 60) {
+          throw new Error('Connection timed out. Please try again.');
+        }
+
+        try {
+          const accessRes = await fetch(`/api/repos/check-github-app-access/${owner}/${repo}`, {
+            credentials: 'include',
+          });
+          const accessData = await accessRes.json();
+
+          if (accessData.hasAccess) {
+            return true;
+          }
+        } catch {
+          // Network error - continue polling
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return pollForAccess(attempts + 1);
+      };
+
+      const success = await pollForAccess();
+      if (success) {
+        setReconnectSuccessful(true);
+        setIsReconnecting(false);
       }
     } catch (err: unknown) {
       const error = err as Error & { type?: string };
       console.error('GitHub App reconnect error:', error);
-
-      if (error.type === 'user_cancelled' || error.message?.includes('closed')) {
-        setPendingRepoForAdd(null);
-      } else {
-        setError(error.message || 'Failed to reconnect GitHub');
-        setPendingRepoForAdd(null);
-      }
+      setError(error.message || 'Failed to reconnect GitHub');
+      setPendingRepoForAdd(null);
       setIsReconnecting(false);
     }
   }, []);
@@ -424,6 +427,44 @@ export function RepositoriesPanel({
       setAddingRepo(null);
     }
   }, [workspaceId, csrfToken, onRepoAdded]);
+
+  // Remove repo from workspace
+  const handleRemoveRepo = useCallback(async (repo: RepoWithStatus) => {
+    // Find the workspace repo record to get its DB id
+    const wsRepo = workspaceRepos.find(
+      r => r.fullName.toLowerCase() === repo.fullName.toLowerCase()
+    );
+    if (!wsRepo) return;
+
+    setRemovingRepo(repo.fullName);
+    setError(null);
+
+    try {
+      const headers: Record<string, string> = {};
+      if (csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken;
+      }
+
+      const response = await fetch(`/api/workspaces/${workspaceId}/repos/${wsRepo.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to remove repository');
+      }
+
+      onRepoRemoved?.(repo.fullName);
+    } catch (err) {
+      console.error('Error removing repo from workspace:', err);
+      setError(err instanceof Error ? err.message : 'Failed to remove repository');
+    } finally {
+      setRemovingRepo(null);
+    }
+  }, [workspaceId, workspaceRepos, csrfToken, onRepoRemoved]);
 
   // Handle button click - check access and either add or reconnect
   const handleRepoAction = useCallback(async (repo: RepoWithStatus) => {
@@ -689,10 +730,29 @@ export function RepositoriesPanel({
         {/* Action button */}
         <div className="flex-shrink-0 ml-4">
           {repo.isInWorkspace ? (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-success bg-success/10 border border-success/30 rounded-lg">
-              <CheckIcon className="w-4 h-4" />
-              In Workspace
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-success bg-success/10 border border-success/30 rounded-lg">
+                <CheckIcon className="w-4 h-4" />
+                In Workspace
+              </span>
+              <button
+                onClick={() => handleRemoveRepo(repo)}
+                disabled={removingRepo === repo.fullName}
+                className="p-1.5 text-text-muted hover:text-error hover:bg-error/10 rounded-md transition-colors disabled:opacity-50"
+                title="Remove from workspace"
+              >
+                {removingRepo === repo.fullName ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
+              </button>
+            </div>
           ) : (
             <button
               onClick={() => handleRepoAction(repo)}

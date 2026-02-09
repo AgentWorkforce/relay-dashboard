@@ -17,6 +17,7 @@ export interface WorkspaceSettingsPanelProps {
   workspaceId: string;
   csrfToken?: string;
   onClose?: () => void;
+  onReposChanged?: () => void;
 }
 
 interface WorkspaceDetails {
@@ -139,6 +140,7 @@ export function WorkspaceSettingsPanel({
   workspaceId,
   csrfToken,
   onClose,
+  onReposChanged,
 }: WorkspaceSettingsPanelProps) {
   const [workspace, setWorkspace] = useState<WorkspaceDetails | null>(null);
   const [availableRepos, setAvailableRepos] = useState<AvailableRepo[]>([]);
@@ -877,13 +879,23 @@ export function WorkspaceSettingsPanel({
             <RepositoriesPanel
               workspaceId={workspaceId}
               workspaceRepos={workspace.repositories}
-              onRepoAdded={(repoFullName) => {
+              onRepoAdded={() => {
                 // Refresh workspace data after adding a repo
                 cloudApi.getWorkspaceDetails(workspaceId).then(result => {
                   if (result.success) {
                     setWorkspace(result.data);
                   }
                 });
+                onReposChanged?.();
+              }}
+              onRepoRemoved={() => {
+                // Refresh workspace data after removing a repo
+                cloudApi.getWorkspaceDetails(workspaceId).then(result => {
+                  if (result.success) {
+                    setWorkspace(result.data);
+                  }
+                });
+                onReposChanged?.();
               }}
               csrfToken={csrfToken}
               className="bg-bg-tertiary rounded-xl border border-border-subtle overflow-hidden"
