@@ -92,10 +92,10 @@ describe('SpawnModal', () => {
       });
     });
 
-    it('defaults to first repo when no activeRepoId', () => {
+    it('defaults to All Repositories when no activeRepoId and multiple repos', () => {
       renderSpawnModal({ isCloudMode: true, repos: mockRepos });
       const select = screen.getByLabelText('Repository') as HTMLSelectElement;
-      expect(select.value).toBe('repo-1');
+      expect(select.value).toBe('__all__');
     });
 
     it('derives cwd from selected repo githubFullName on submit', async () => {

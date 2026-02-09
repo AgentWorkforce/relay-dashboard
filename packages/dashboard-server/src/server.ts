@@ -2165,8 +2165,9 @@ export async function startDashboard(
           if (worker.team) {
             agent.team = worker.team;
           }
-          // Inject cwd from agentCwdMap (set during /api/spawn)
-          const workerCwd = agentCwdMap.get(worker.name);
+          // Inject cwd from agentCwdMap (set during /api/spawn) or from worker info
+          // (set by SpawnManager for relay-protocol spawns that bypass /api/spawn)
+          const workerCwd = agentCwdMap.get(worker.name) || (worker as any).cwd;
           if (workerCwd) {
             agent.cwd = workerCwd;
           }
@@ -5342,6 +5343,21 @@ export async function startDashboard(
     res.json({ name, online });
   });
 
+  /**
+   * PUT /api/agents/:name/cwd - Register an agent's working directory
+   * Used by relay-pty-orchestrator after daemon socket spawns (which bypass /api/spawn).
+   */
+  app.put('/api/agents/:name/cwd', (req, res) => {
+    const { name } = req.params;
+    const { cwd } = req.body || {};
+    if (!cwd || typeof cwd !== 'string') {
+      return res.status(400).json({ error: 'Missing required field: cwd' });
+    }
+    agentCwdMap.set(name, cwd);
+    broadcastData().catch(() => {});
+    res.json({ success: true, name, cwd });
+  });
+
   // ===== Agent Spawn API =====
 
   /**
@@ -5690,7 +5706,7 @@ Start by greeting the project leads and asking for status updates.`;
           spawnedAt: worker.spawnedAt,
           task: worker.task,
           team: worker.team,
-          cwd: agentCwdMap.get(worker.name),
+          cwd: agentCwdMap.get(worker.name) || (worker as any).cwd,
           source: 'spawner',
         });
       }
