@@ -20,7 +20,31 @@ on:
           - patch
           - minor
           - major
+          - prerelease
+          - preminor
+          - premajor
         default: "patch"
+      preid:
+        description: "Prerelease identifier (used with pre* version types)"
+        required: false
+        type: choice
+        options:
+          - beta
+          - alpha
+          - rc
+          - next
+        default: "beta"
+      tag:
+        description: "NPM dist-tag (use beta/alpha/next for prereleases, latest for stable)"
+        required: false
+        type: choice
+        options:
+          - latest
+          - beta
+          - alpha
+          - rc
+          - next
+        default: "latest"
       custom_version:
         description: "Custom version (optional, overrides version type)"
         required: false
@@ -50,6 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       new_version: ${{ steps.bump.outputs.new_version }}
+      is_prerelease: ${{ steps.bump.outputs.is_prerelease }}
 
     steps:
       - uses: actions/checkout@v4
@@ -71,12 +96,16 @@ jobs:
         run: |
           CUSTOM_VERSION="${{ github.event.inputs.custom_version }}"
           VERSION_TYPE="${{ github.event.inputs.version }}"
+          PREID="${{ github.event.inputs.preid || 'beta' }}"
           CURRENT_VERSION=$(node -p "require('./package.json').version")
           echo "Current version: $CURRENT_VERSION"
 
           if [ -n "$CUSTOM_VERSION" ]; then
             echo "Setting version to custom value: $CUSTOM_VERSION"
             npm version "$CUSTOM_VERSION" --no-git-tag-version --allow-same-version
+          elif [[ "$VERSION_TYPE" == pre* ]]; then
+            echo "Bumping version: $VERSION_TYPE with preid=$PREID"
+            npm version "$VERSION_TYPE" --preid="$PREID" --no-git-tag-version
           else
             echo "Bumping version: $VERSION_TYPE"
             npm version "$VERSION_TYPE" --no-git-tag-version
@@ -85,6 +114,15 @@ jobs:
           NEW_VERSION=$(node -p "require('./package.json').version")
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "New version: $NEW_VERSION"
+
+          # Detect prerelease (version contains a hyphen, e.g. 2.0.66-beta.0)
+          if [[ "$NEW_VERSION" == *"-"* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "Prerelease detected: $NEW_VERSION"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "Stable release: $NEW_VERSION"
+          fi
 
           # Sync all package versions
           node -e "
@@ -155,6 +193,18 @@ jobs:
           name: build-output
           path: .
 
+      - name: Validate tag for prerelease
+        if: startsWith(github.event.inputs.version, 'pre') && (github.event.inputs.tag == 'latest' || github.event.inputs.tag == '')
+        run: |
+          echo "::error::Prerelease versions must not use the 'latest' dist-tag. Please set tag to 'beta', 'alpha', 'rc', or 'next'."
+          exit 1
+
+      - name: Validate tag for custom prerelease version
+        if: contains(needs.build.outputs.new_version, '-') && (github.event.inputs.tag == 'latest' || github.event.inputs.tag == '')
+        run: |
+          echo "::error::Custom version '${{ needs.build.outputs.new_version }}' is a prerelease and must not use the 'latest' dist-tag. Please set tag to 'beta', 'alpha', 'rc', or 'next'."
+          exit 1
+
       - name: Update npm for OIDC support
         run: npm install -g npm@latest
 
@@ -171,14 +221,14 @@ jobs:
       - name: Publish @agent-relay/dashboard
         if: github.event.inputs.dry_run != 'true' && (github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard')
         working-directory: packages/dashboard
-        run: npm publish --provenance --access public --ignore-scripts
+        run: npm publish --provenance --access public --ignore-scripts --tag ${{ github.event.inputs.tag || 'latest' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @agent-relay/dashboard-server
         if: github.event.inputs.dry_run != 'true' && (github.event.inputs.package == 'all' || github.event.inputs.package == 'dashboard-server')
         working-directory: packages/dashboard-server
-        run: npm publish --provenance --access public --ignore-scripts
+        run: npm publish --provenance --access public --ignore-scripts --tag ${{ github.event.inputs.tag || 'latest' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -319,17 +369,24 @@ jobs:
           git config user.email "actions@github.com"
 
           NEW_VERSION="${{ needs.build.outputs.new_version }}"
+          IS_PRERELEASE="${{ needs.build.outputs.is_prerelease }}"
 
           git add package.json package-lock.json packages/*/package.json
           if ! git diff --staged --quiet; then
-            git commit -m "chore(release): v${NEW_VERSION}"
-            git push origin HEAD:main
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              git commit -m "chore(prerelease): v${NEW_VERSION}"
+              git push origin HEAD:staging --force
+            else
+              git commit -m "chore(release): v${NEW_VERSION}"
+              git push origin HEAD:main
+            fi
           fi
 
           git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
           git push origin "v${NEW_VERSION}"
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (stable)
+        if: needs.build.outputs.is_prerelease != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.build.outputs.new_version }}
@@ -377,6 +434,36 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Create GitHub Release (prerelease)
+        if: needs.build.outputs.is_prerelease == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build.outputs.new_version }}
+          name: v${{ needs.build.outputs.new_version }} (prerelease)
+          prerelease: true
+          body: |
+            ## @agent-relay/dashboard v${{ needs.build.outputs.new_version }} (prerelease)
+
+            > **This is a prerelease.** `npm install @agent-relay/dashboard-server` still returns the latest stable version.
+
+            ### Installation
+
+            ```bash
+            npm install -g @agent-relay/dashboard-server@${{ needs.build.outputs.new_version }}
+            # or via dist-tag:
+            npm install -g @agent-relay/dashboard-server@${{ github.event.inputs.tag || 'beta' }}
+            ```
+
+            ### Next Steps
+
+            1. Deploy to staging: update relay-cloud staging with this version
+            2. Test on staging environment
+            3. If good, publish a stable release with `tag: latest`
+          files: release-assets/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   summary:
     name: Summary
     needs: [build, publish, build-standalone, create-release]
@@ -390,8 +477,18 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version**: \`${{ needs.build.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Package**: \`${{ github.event.inputs.package }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Dist-tag**: \`${{ github.event.inputs.tag || 'latest' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Prerelease**: \`${{ needs.build.outputs.is_prerelease }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Dry Run**: \`${{ github.event.inputs.dry_run }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.build.outputs.is_prerelease }}" = "true" ]; then
+            echo "> **Prerelease** — published under \`${{ github.event.inputs.tag || 'beta' }}\` dist-tag. \`npm install\` still returns the latest stable version." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Next:** Deploy to staging via relay-cloud Deploy Staging workflow." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "### Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
