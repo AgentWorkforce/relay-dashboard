@@ -5,9 +5,17 @@
  * Handles Claude (terminal), Codex (CLI-assisted), and other providers.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { TerminalProviderSetup } from './TerminalProviderSetup';
 import { ProviderAuthFlow } from './ProviderAuthFlow';
+
+// Map provider IDs to CLI-friendly names for the `agent-relay auth` command
+const PROVIDER_CLI_NAMES: Record<string, string> = {
+  anthropic: 'claude',
+  cursor: 'cursor',
+  codex: 'codex',
+  google: 'gemini',
+};
 
 export interface ProviderInfo {
   id: string;
@@ -66,6 +74,17 @@ export function ProviderConnectionList({
   const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
   const [connectionMode, setConnectionMode] = useState<'select' | 'terminal' | 'oauth'>('select');
   const [error, setError] = useState<string | null>(null);
+  const [copiedCliCommand, setCopiedCliCommand] = useState<string | null>(null);
+
+  const copyCliCommand = useCallback((providerId: string) => {
+    const cliName = PROVIDER_CLI_NAMES[providerId];
+    if (!cliName) return;
+    const command = `agent-relay auth ${cliName} --workspace ${workspaceId}`;
+    navigator.clipboard.writeText(command).then(() => {
+      setCopiedCliCommand(providerId);
+      setTimeout(() => setCopiedCliCommand(null), 2000);
+    }).catch(() => { /* clipboard access denied */ });
+  }, [workspaceId]);
 
   const handleConnectProvider = (provider: ProviderInfo) => {
     const authConfig = PROVIDER_AUTH_CONFIG[provider.id];
@@ -222,8 +241,8 @@ export function ProviderConnectionList({
           const isTerminal = authConfig?.authMethod === 'terminal';
           const isOAuth = authConfig?.authMethod === 'oauth';
 
-          // Expanded card for Claude/Codex when showDetailedInfo is true
-          if (showDetailedInfo && (provider.id === 'anthropic' || provider.id === 'codex')) {
+          // Expanded card for Claude/Codex/Cursor when showDetailedInfo is true
+          if (showDetailedInfo && (provider.id === 'anthropic' || provider.id === 'codex' || provider.id === 'cursor')) {
             return (
               <div
                 key={provider.id}
@@ -280,6 +299,43 @@ export function ProviderConnectionList({
                       </svg>
                       Connect with {provider.displayName}
                     </button>
+
+                    {/* CLI command alternative */}
+                    {PROVIDER_CLI_NAMES[provider.id] && (
+                      <>
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 border-t border-border-subtle" />
+                          <span className="text-xs text-text-muted">or</span>
+                          <div className="flex-1 border-t border-border-subtle" />
+                        </div>
+
+                        <div className="relative">
+                          <div className="p-3 bg-bg-card rounded-lg font-mono text-sm text-text-secondary pr-12">
+                            <div><span className="text-accent-cyan">agent-relay auth {PROVIDER_CLI_NAMES[provider.id]}</span></div>
+                            <div className="pl-4"><span className="text-text-muted">--workspace</span> {workspaceId}</div>
+                          </div>
+                          <button
+                            onClick={() => copyCliCommand(provider.id)}
+                            className="absolute top-2 right-2 p-1.5 text-text-muted hover:text-white bg-bg-tertiary rounded-md border border-border-subtle hover:border-accent-cyan/50 transition-all"
+                            title="Copy command"
+                          >
+                            {copiedCliCommand === provider.id ? (
+                              <svg className="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" strokeWidth={2} />
+                                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" strokeWidth={2} />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                        <p className="text-xs text-text-muted">
+                          Run this in your terminal to connect via SSH (no browser terminal needed)
+                        </p>
+                      </>
+                    )}
                   </>
                 )}
               </div>
