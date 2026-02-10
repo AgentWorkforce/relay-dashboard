@@ -874,4 +874,140 @@ export const cloudApi = {
       method: 'POST',
     });
   },
+
+  // ===== Slack Integration API =====
+
+  /**
+   * Get Slack workspace connections for the current user
+   */
+  async getSlackConnections() {
+    return cloudFetch<{
+      connections: Array<{
+        id: string;
+        teamId: string;
+        teamName: string;
+        connectionId: string;
+        status: string;
+        connectedAt: string;
+      }>;
+    }>('/api/slack/connections');
+  },
+
+  /**
+   * Create a Nango connect session for Slack OAuth
+   */
+  async createSlackOAuthSession() {
+    return cloudFetch<{
+      sessionToken: string;
+      connectionId: string;
+    }>('/api/slack/oauth/session');
+  },
+
+  /**
+   * Poll for Slack OAuth completion
+   */
+  async checkSlackOAuthStatus(connectionId: string) {
+    return cloudFetch<{
+      ready: boolean;
+      connection?: {
+        id: string;
+        teamId: string;
+        teamName: string;
+        connectionId: string;
+        status: string;
+        connectedAt: string;
+      };
+    }>(`/api/slack/oauth/status/${encodeURIComponent(connectionId)}`);
+  },
+
+  /**
+   * Disconnect a Slack workspace
+   */
+  async disconnectSlackWorkspace(id: string) {
+    return cloudFetch<{ success: boolean }>(`/api/slack/connections/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Get Slack workspace connection details
+   */
+  async getSlackWorkspace(connectionId: string) {
+    return cloudFetch<{
+      id: string;
+      teamId: string;
+      teamName: string;
+      connectionId: string;
+      status: string;
+      connectedAt: string;
+      channelCount?: number;
+      conversationCount?: number;
+    }>(`/api/slack/workspace/${encodeURIComponent(connectionId)}`);
+  },
+
+  /**
+   * Get Slack channels for a workspace connection
+   */
+  async getSlackChannels(connectionId: string) {
+    return cloudFetch<{
+      channels: Array<{
+        id: string;
+        channelId: string;
+        channelName: string;
+        workspaceConnectionId: string;
+        allowedRepos?: string[];
+        defaultRepo?: string;
+      }>;
+    }>(`/api/slack/workspace/${encodeURIComponent(connectionId)}/channels`);
+  },
+
+  /**
+   * Get a Slack conversation state
+   */
+  async getSlackConversation(conversationId: string) {
+    return cloudFetch<{
+      id: string;
+      channelId: string;
+      threadTs: string;
+      state: string;
+      prdContent?: string;
+      agents?: Array<{
+        id: string;
+        name: string;
+        status: string;
+        taskDescription?: string;
+      }>;
+      createdAt?: string;
+      updatedAt?: string;
+    }>(`/api/slack/conversation/${encodeURIComponent(conversationId)}`);
+  },
+
+  /**
+   * List conversations for a workspace
+   */
+  async getSlackConversations(connectionId: string) {
+    return cloudFetch<{
+      conversations: Array<{
+        id: string;
+        channelId: string;
+        threadTs: string;
+        state: string;
+        createdAt?: string;
+        updatedAt?: string;
+      }>;
+    }>(`/api/slack/conversations?connectionId=${encodeURIComponent(connectionId)}`);
+  },
+
+  /**
+   * Send a test message to a Slack workspace
+   */
+  async sendSlackTestMessage(connectionId: string) {
+    return cloudFetch<{
+      success: boolean;
+      message?: string;
+    }>('/api/slack/test-message', {
+      method: 'POST',
+      body: JSON.stringify({ connectionId }),
+    });
+  },
 };
