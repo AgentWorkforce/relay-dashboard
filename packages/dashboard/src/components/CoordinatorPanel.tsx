@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { getCsrfToken } from '../lib/cloudApi';
 import type { Project } from '../types';
 
 export interface RepositoryInfo {
@@ -68,6 +69,11 @@ export function CoordinatorPanel({
   const [addingReposToGroupId, setAddingReposToGroupId] = useState<string | null>(null);
   const [reposToAdd, setReposToAdd] = useState<Set<string>>(new Set());
 
+  const csrfHeaders = (): Record<string, string> => {
+    const token = getCsrfToken();
+    return token ? { 'X-CSRF-Token': token } : {};
+  };
+
   // Fetch project groups on open
   useEffect(() => {
     if (isOpen && isCloudMode) {
@@ -103,7 +109,7 @@ export function CoordinatorPanel({
     try {
       const response = await fetch('/api/project-groups', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
         body: JSON.stringify({
           name: newGroupName.trim(),
           description: newGroupDescription.trim() || undefined,
@@ -138,7 +144,7 @@ export function CoordinatorPanel({
     try {
       const response = await fetch(`/api/project-groups/${groupId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
         body: JSON.stringify(updates),
       });
 
@@ -163,7 +169,7 @@ export function CoordinatorPanel({
     setError(null);
     try {
       const endpoint = `/api/project-groups/${groupId}/coordinator/${enable ? 'enable' : 'disable'}`;
-      const response = await fetch(endpoint, { method: 'POST' });
+      const response = await fetch(endpoint, { method: 'POST', headers: csrfHeaders() });
 
       if (response.ok) {
         const data = await response.json();
@@ -183,7 +189,11 @@ export function CoordinatorPanel({
         );
       } else {
         const errorData = await response.json().catch(() => ({}));
-        setError(errorData.error || `Failed to ${enable ? 'enable' : 'disable'} coordinator`);
+        if (response.status === 402 && errorData.upgrade) {
+          setError(`${errorData.error}. Go to Settings > Billing to upgrade.`);
+        } else {
+          setError(errorData.error || `Failed to ${enable ? 'enable' : 'disable'} coordinator`);
+        }
       }
     } catch (_err) {
       setError(`Failed to ${enable ? 'enable' : 'disable'} coordinator`);
@@ -201,6 +211,7 @@ export function CoordinatorPanel({
 
       const response = await fetch(`/api/project-groups/${groupId}`, {
         method: 'DELETE',
+        headers: csrfHeaders(),
       });
 
       if (response.ok) {
@@ -222,6 +233,7 @@ export function CoordinatorPanel({
     try {
       const response = await fetch(`/api/project-groups/${groupId}/repositories/${repoId}`, {
         method: 'DELETE',
+        headers: csrfHeaders(),
       });
 
       if (response.ok) {
@@ -259,7 +271,7 @@ export function CoordinatorPanel({
     try {
       const response = await fetch(`/api/project-groups/${groupId}/repositories`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
         body: JSON.stringify({ repositoryIds: repoIds }),
       });
 
@@ -310,7 +322,7 @@ export function CoordinatorPanel({
     try {
       const response = await fetch('/api/spawn/architect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
         body: JSON.stringify({ cli: selectedCli }),
       });
 

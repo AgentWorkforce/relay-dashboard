@@ -386,7 +386,10 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
 
   // In non-cloud mode, provide a fallback workspace ID for local/mock mode
   // This ensures channels API calls work even without an orchestrator workspace
-  const effectiveActiveWorkspaceId = isCloudMode ? activeCloudWorkspaceId : (activeWorkspaceId ?? 'default');
+  // In cloud mode, never use 'default' - it's not a valid UUID and will cause DB errors
+  const effectiveActiveWorkspaceId = isCloudMode
+    ? activeCloudWorkspaceId  // null if no workspace selected in cloud mode
+    : (activeWorkspaceId ?? 'default');
   const effectiveIsLoading = isCloudMode ? isLoadingCloudWorkspaces : isOrchestratorLoading;
 
   // Sync the active workspace ID with the api module for cloud mode proxying
@@ -446,25 +449,31 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   const [showMemberPanel, setShowMemberPanel] = useState(false);
   const [channelMembers, setChannelMembers] = useState<ChannelMember[]>([]);
 
+  const isDuplicateMessage = useCallback((existing: ChannelApiMessage[], message: ChannelApiMessage) => {
+    return existing.some((m) => {
+      if (m.id === message.id) return true;
+      if (m.from !== message.from) return false;
+      if (m.content !== message.content) return false;
+      if (m.threadId !== message.threadId) return false;
+      const timeDiff = Math.abs(new Date(m.timestamp).getTime() - new Date(message.timestamp).getTime());
+      return timeDiff < 2000;
+    });
+  }, []);
+
   const appendChannelMessage = useCallback((channelId: string, message: ChannelApiMessage, options?: { incrementUnread?: boolean }) => {
     const incrementUnread = options?.incrementUnread ?? true;
 
     setChannelMessageMap(prev => {
       const list = prev[channelId] ?? [];
-      const isDuplicate = list.some((m) => {
-        if (m.id === message.id) return true;
-        if (m.from !== message.from) return false;
-        if (m.content !== message.content) return false;
-        if (m.threadId !== message.threadId) return false;
-        const timeDiff = Math.abs(new Date(m.timestamp).getTime() - new Date(message.timestamp).getTime());
-        return timeDiff < 2000;
-      });
-      if (isDuplicate) return prev;
+      if (isDuplicateMessage(list, message)) return prev;
       return { ...prev, [channelId]: [...list, message] };
     });
 
     if (selectedChannelId === channelId) {
-      setChannelMessages(prev => [...prev, message]);
+      setChannelMessages(prev => {
+        if (isDuplicateMessage(prev, message)) return prev;
+        return [...prev, message];
+      });
       setChannelUnreadState(undefined);
     } else if (incrementUnread) {
       setChannelsList(prev => {
@@ -1212,24 +1221,24 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     if (workspaces.length > 0) {
       // If we have repos for the active workspace, show each repo as a project folder
       if (workspaceRepos.length > 1 && effectiveActiveWorkspaceId) {
-        const projectList: Project[] = workspaceRepos.map((repo) => ({
-          id: repo.id,
-          path: repo.githubFullName,
-          name: repo.githubFullName.split('/').pop() || repo.githubFullName,
-          agents: orchestratorAgents
-            .filter((a) => a.workspaceId === effectiveActiveWorkspaceId)
-            .map((a) => ({
-              name: a.name,
-              status: a.status === 'running' ? 'online' : 'offline',
-              isSpawned: true,
-              cli: a.provider,
-            })) as Agent[],
-          lead: undefined,
-        }));
-        setProjects(projectList);
+        // Create empty project shells from workspace repos.
+        // Agent placement is handled entirely by mergedProjects using daemon WebSocket data
+        // (which has accurate real-time cwd from agentCwdMap). This avoids duplication
+        // between orchestratorAgents and projectAgents having stale/conflicting cwd values.
+        const repoProjects: Project[] = workspaceRepos.map((repo) => {
+          const repoName = repo.githubFullName.split('/').pop() || repo.githubFullName;
+          return {
+            id: repo.id,
+            path: repo.githubFullName,
+            name: repoName,
+            agents: [] as Agent[],
+            lead: undefined,
+          };
+        });
+        setProjects(repoProjects);
         // Set first repo as current if none selected
-        if (!currentProject || !projectList.find(p => p.id === currentProject)) {
-          setCurrentProject(projectList[0]?.id);
+        if (!currentProject || !repoProjects.find(p => p.id === currentProject)) {
+          setCurrentProject(repoProjects[0]?.id);
         }
       } else {
         // Single repo or no repos fetched yet - show workspace as single project
@@ -1279,12 +1288,16 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
             id: p.id,
             path: p.path,
             name: p.name || p.path.split('/').pop(),
-            agents: (p.agents || []).map((a) => ({
-              name: a.name,
-              status: a.status === 'online' || a.status === 'active' ? 'online' : 'offline',
-              currentTask: a.task,
-              cli: a.cli,
-            })) as Agent[],
+            agents: (p.agents || [])
+              // Filter out human users (cli === 'dashboard') from project agents
+              // Humans should appear in Direct Messages, not under projects
+              .filter((a) => a.cli !== 'dashboard')
+              .map((a) => ({
+                name: a.name,
+                status: a.status === 'online' || a.status === 'active' ? 'online' : 'offline',
+                currentTask: a.task,
+                cli: a.cli,
+              })) as Agent[],
             lead: p.lead,
           }));
           setProjects(projectList);
@@ -1307,11 +1320,16 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   const BRIDGE_AGENT_NAMES = ['architect'];
 
   // Separate bridge-level agents from regular project agents
+  // Filter out human users - they should appear in Direct Messages, not merged into projects
   const { bridgeAgents, projectAgents } = useMemo(() => {
     const bridge: Agent[] = [];
     const project: Agent[] = [];
 
     for (const agent of agents) {
+      // Skip human users - they shouldn't be merged into projects
+      if (agent.isHuman || agent.cli === 'dashboard') {
+        continue;
+      }
       if (BRIDGE_AGENT_NAMES.includes(agent.name.toLowerCase())) {
         bridge.push(agent);
       } else {
@@ -1327,19 +1345,48 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   const mergedProjects = useMemo(() => {
     if (projects.length === 0) return projects;
 
-    // Get local agent names (excluding bridge agents)
-    const localAgentNames = new Set(projectAgents.map((a) => a.name.toLowerCase()));
-    if (localAgentNames.size === 0) return projects;
+    if (projectAgents.length === 0) return projects;
 
-    // Find the current project (the one whose daemon we're connected to)
-    // This is typically the first project or the one marked as current
+    if (workspaceRepos.length > 1) {
+      // Multi-repo: assign agents to projects by cwd match
+      // Agents without cwd sit outside any repo folder (workspace-level)
+      const repoNames = new Set(projects.map(p => p.name));
+      const repoProjects = projects.map((project) => {
+        const repoName = project.name;
+        const matchingAgents = projectAgents.filter((a) => a.cwd === repoName);
+        return {
+          ...project,
+          agents: [...project.agents, ...matchingAgents],
+        };
+      });
+
+      // Collect workspace-level agents into a virtual "Workspace" project:
+      // - Agents without cwd (spawned at workspace root or relay-protocol spawned)
+      // - Agents with cwd that doesn't match any repo (prevents orphaned agents)
+      const placedAgentNames = new Set(repoProjects.flatMap(p => p.agents.map(a => a.name.toLowerCase())));
+      const workspaceAgents = projectAgents.filter((a) => {
+        if (placedAgentNames.has(a.name.toLowerCase())) return false;
+        return !a.cwd || !repoNames.has(a.cwd);
+      });
+
+      if (workspaceAgents.length > 0) {
+        const workspaceProject: Project = {
+          id: '__workspace__',
+          path: '/workspace',
+          name: 'Workspace',
+          agents: workspaceAgents,
+        };
+        return [workspaceProject, ...repoProjects];
+      }
+
+      return repoProjects;
+    }
+
+    // Single-repo / bridge mode: merge into current/first project
     return projects.map((project, index) => {
-      // Merge local agents into the current/first project
-      // Local agents should appear in their actual project, not "Local"
       const isCurrentDaemonProject = index === 0 || project.id === currentProject;
 
       if (isCurrentDaemonProject) {
-        // Merge local agents with project agents, avoiding duplicates
         const existingNames = new Set(project.agents.map((a) => a.name.toLowerCase()));
         const newAgents = projectAgents.filter((a) => !existingNames.has(a.name.toLowerCase()));
 
@@ -1351,7 +1398,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
 
       return project;
     });
-  }, [projects, projectAgents, currentProject]);
+  }, [projects, projectAgents, currentProject, workspaceRepos.length]);
 
   // Determine if local agents should be shown separately
   // Only show "Local" folder if we don't have bridge projects to merge them into
@@ -1369,7 +1416,8 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     };
 
     // Human users should always be shown in sidebar for DM access
-    const humanUsers = filterHumansByWorkspace(projectAgents).filter(a => a.isHuman);
+    // Source from unfiltered `agents` since projectAgents filters out humans
+    const humanUsers = filterHumansByWorkspace(agents).filter(a => a.isHuman);
 
     if (mergedProjects.length > 0) {
       // Don't show AI agents separately - they're merged into projects
@@ -1377,8 +1425,8 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       return humanUsers;
     }
     // Return all agents (AI + human), with human users filtered by workspace membership
-    return filterHumansByWorkspace(projectAgents);
-  }, [mergedProjects, projectAgents, isCloudMode, memberUsernames]);
+    return [...filterHumansByWorkspace(projectAgents), ...humanUsers];
+  }, [mergedProjects, projectAgents, agents, isCloudMode, memberUsernames]);
 
   // Handle workspace selection
   const handleWorkspaceSelect = useCallback(async (workspace: Workspace) => {
@@ -2089,7 +2137,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     try {
       // Use orchestrator if workspaces are available
       if (workspaces.length > 0 && activeWorkspaceId) {
-        await orchestratorSpawnAgent(config.name, undefined, config.command);
+        await orchestratorSpawnAgent(config.name, undefined, config.command, config.cwd);
         return true;
       }
 
@@ -2097,6 +2145,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       const result = await api.spawnAgent({
         name: config.name,
         cli: config.command,
+        cwd: config.cwd,
         team: config.team,
         shadowMode: config.shadowMode,
         shadowOf: config.shadowOf,
@@ -2514,7 +2563,17 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
             workspaces={effectiveWorkspaces}
             activeWorkspaceId={effectiveActiveWorkspaceId ?? undefined}
             onSelect={handleEffectiveWorkspaceSelect}
-            onAddWorkspace={() => setIsAddWorkspaceOpen(true)}
+            onAddWorkspace={() => {
+              if (isCloudMode) {
+                // In cloud mode, redirect to app homepage for workspace management
+                // Clear the saved workspace ID and add query param to force showing picker
+                localStorage.removeItem('agentrelay_workspace_id');
+                window.location.href = '/app?select=true';
+              } else {
+                // In local mode, show the add workspace modal
+                setIsAddWorkspaceOpen(true);
+              }
+            }}
             onWorkspaceSettings={handleWorkspaceSettingsClick}
             isLoading={effectiveIsLoading}
           />
@@ -2606,8 +2665,6 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
           hasActiveTrajectory={trajectoryStatus?.active}
           onFleetClick={() => setIsFleetViewActive(!isFleetViewActive)}
           isFleetViewActive={isFleetViewActive}
-          onCoordinatorClick={handleCoordinatorClick}
-          hasMultipleProjects={mergedProjects.length > 1}
         />
       </div>
 
@@ -2628,7 +2685,6 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
           onSettingsClick={handleSettingsClick}
           onHistoryClick={handleHistoryClick}
           onNewConversationClick={handleNewConversationClick}
-          onCoordinatorClick={handleCoordinatorClick}
           onFleetClick={() => setIsFleetViewActive(!isFleetViewActive)}
           isFleetViewActive={isFleetViewActive}
           onTrajectoryClick={() => setIsTrajectoryOpen(true)}
@@ -2903,6 +2959,8 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
         isCloudMode={isCloudMode}
         workspaceId={effectiveActiveWorkspaceId ?? undefined}
         agentDefaults={settings.agentDefaults}
+        repos={workspaceRepos}
+        activeRepoId={workspaceRepos.find(r => r.id === currentProject)?.id ?? workspaceRepos[0]?.id}
       />
 
       {/* Add Workspace Modal */}
@@ -3135,6 +3193,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
           settings={settings}
           onUpdateSettings={updateSettings}
           activeWorkspaceId={effectiveActiveWorkspaceId}
+          onReposChanged={refetchWorkspaceRepos}
         />
       )}
 

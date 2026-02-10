@@ -63,11 +63,17 @@ export interface ProjectListProps {
   currentProject?: string;
   selectedAgent?: string;
   searchQuery?: string;
+  /** Array of pinned agent names */
+  pinnedAgents?: string[];
+  /** Whether max pins has been reached */
+  isMaxPinned?: boolean;
   onProjectSelect?: (project: Project) => void;
   onAgentSelect?: (agent: Agent, project?: Project) => void;
   onReleaseClick?: (agent: Agent) => void;
   onLogsClick?: (agent: Agent) => void;
   onProfileClick?: (agent: Agent) => void;
+  /** Handler for pin/unpin toggle */
+  onPinToggle?: (agent: Agent) => void;
   compact?: boolean;
 }
 
@@ -78,21 +84,30 @@ export function ProjectList({
   currentProject,
   selectedAgent,
   searchQuery = '',
+  pinnedAgents = [],
+  isMaxPinned = false,
   onProjectSelect,
   onAgentSelect,
   onReleaseClick,
   onLogsClick,
   onProfileClick,
+  onPinToggle,
   compact = false,
 }: ProjectListProps) {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     () => new Set(projects.map((p) => p.id))
   );
 
-  // Filter out system agents (setup agents and Dashboard)
+  // Filter out system agents (setup agents and Dashboard) and human users
   // These should not appear in the sidebar but can still send/receive messages
+  // Human users (isHuman or cli === 'dashboard') should appear in Direct Messages, not projects
   const filterSystemAgents = (agents: Agent[]) =>
-    agents.filter(a => !a.name.startsWith('__setup__') && a.name !== 'Dashboard');
+    agents.filter(a =>
+      !a.name.startsWith('__setup__') &&
+      a.name !== 'Dashboard' &&
+      !a.isHuman &&
+      a.cli !== 'dashboard'
+    );
 
   // Filter projects and agents based on search query
   const filteredData = useMemo(() => {
@@ -197,10 +212,13 @@ export function ProjectList({
           agents={filteredData.bridgeAgents}
           selectedAgent={selectedAgent}
           compact={compact}
+          pinnedAgents={pinnedAgents}
+          isMaxPinned={isMaxPinned}
           onAgentSelect={(agent) => onAgentSelect?.(agent)}
           onReleaseClick={onReleaseClick}
           onLogsClick={onLogsClick}
           onProfileClick={onProfileClick}
+          onPinToggle={onPinToggle}
         />
       )}
 
@@ -217,10 +235,14 @@ export function ProjectList({
           isCurrentProject={true}
           selectedAgent={selectedAgent}
           compact={compact}
+          pinnedAgents={pinnedAgents}
+          isMaxPinned={isMaxPinned}
           onToggle={() => toggleProject('__local__')}
           onAgentSelect={(agent) => onAgentSelect?.(agent)}
           onReleaseClick={onReleaseClick}
           onLogsClick={onLogsClick}
+          onProfileClick={onProfileClick}
+          onPinToggle={onPinToggle}
         />
       )}
 
@@ -234,11 +256,15 @@ export function ProjectList({
           selectedAgent={selectedAgent}
           compact={compact}
           isBridgeMode={isInBridgeMode}
+          pinnedAgents={pinnedAgents}
+          isMaxPinned={isMaxPinned}
           onToggle={() => toggleProject(project.id)}
           onProjectSelect={() => onProjectSelect?.(project)}
           onAgentSelect={(agent) => onAgentSelect?.(agent, project)}
           onReleaseClick={onReleaseClick}
           onLogsClick={onLogsClick}
+          onProfileClick={onProfileClick}
+          onPinToggle={onPinToggle}
         />
       ))}
     </div>
@@ -253,12 +279,15 @@ interface ProjectSectionProps {
   compact?: boolean;
   /** Is this project part of a multi-project bridge setup */
   isBridgeMode?: boolean;
+  pinnedAgents?: string[];
+  isMaxPinned?: boolean;
   onToggle: () => void;
   onProjectSelect?: () => void;
   onAgentSelect?: (agent: Agent) => void;
   onReleaseClick?: (agent: Agent) => void;
   onLogsClick?: (agent: Agent) => void;
   onProfileClick?: (agent: Agent) => void;
+  onPinToggle?: (agent: Agent) => void;
 }
 
 interface TeamGroup {
@@ -273,12 +302,15 @@ function ProjectSection({
   selectedAgent,
   compact,
   isBridgeMode = false,
+  pinnedAgents = [],
+  isMaxPinned = false,
   onToggle,
   onProjectSelect,
   onAgentSelect,
   onReleaseClick,
   onLogsClick,
   onProfileClick,
+  onPinToggle,
 }: ProjectSectionProps) {
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
 
@@ -432,10 +464,13 @@ function ProjectSection({
                       isSelected={agent.name === selectedAgent}
                       compact={compact}
                       displayNameOverride={stripTeamPrefix(agent.name, team.name)}
+                      isPinned={pinnedAgents.includes(agent.name)}
+                      isMaxPinned={isMaxPinned}
                       onClick={onAgentSelect}
                       onReleaseClick={onReleaseClick}
                       onLogsClick={onLogsClick}
                       onProfileClick={onProfileClick}
+                      onPinToggle={onPinToggle}
                     />
                   ))}
                 </div>
@@ -450,10 +485,13 @@ function ProjectSection({
               agent={agent}
               isSelected={agent.name === selectedAgent}
               compact={compact}
+              isPinned={pinnedAgents.includes(agent.name)}
+              isMaxPinned={isMaxPinned}
               onClick={onAgentSelect}
               onReleaseClick={onReleaseClick}
               onLogsClick={onLogsClick}
               onProfileClick={onProfileClick}
+              onPinToggle={onPinToggle}
             />
           ))}
         </div>
@@ -469,20 +507,26 @@ interface BridgeSectionProps {
   agents: Agent[];
   selectedAgent?: string;
   compact?: boolean;
+  pinnedAgents?: string[];
+  isMaxPinned?: boolean;
   onAgentSelect?: (agent: Agent) => void;
   onReleaseClick?: (agent: Agent) => void;
   onLogsClick?: (agent: Agent) => void;
   onProfileClick?: (agent: Agent) => void;
+  onPinToggle?: (agent: Agent) => void;
 }
 
 function BridgeSection({
   agents,
   selectedAgent,
   compact,
+  pinnedAgents = [],
+  isMaxPinned = false,
   onAgentSelect,
   onReleaseClick,
   onLogsClick,
   onProfileClick,
+  onPinToggle,
 }: BridgeSectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -509,10 +553,13 @@ function BridgeSection({
               agent={agent}
               isSelected={agent.name === selectedAgent}
               compact={compact}
+              isPinned={pinnedAgents.includes(agent.name)}
+              isMaxPinned={isMaxPinned}
               onClick={onAgentSelect}
               onReleaseClick={onReleaseClick}
               onLogsClick={onLogsClick}
               onProfileClick={onProfileClick}
+              onPinToggle={onPinToggle}
             />
           ))}
         </div>
