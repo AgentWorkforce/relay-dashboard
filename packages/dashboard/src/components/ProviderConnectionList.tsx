@@ -39,14 +39,14 @@ const PROVIDER_AUTH_CONFIG: Record<string, {
   requiresUrlCopy?: boolean;
   supportsDeviceFlow?: boolean;
 }> = {
-  anthropic: { authMethod: 'terminal' },
+  anthropic: { authMethod: 'oauth', requiresUrlCopy: true },
   codex: { authMethod: 'oauth', requiresUrlCopy: true, supportsDeviceFlow: true },
   openai: { authMethod: 'oauth', requiresUrlCopy: true, supportsDeviceFlow: true },
   // Gemini uses terminal - CLI shows interactive menu for OAuth vs API key
   google: { authMethod: 'terminal' },
   opencode: { authMethod: 'terminal' },
   droid: { authMethod: 'terminal' },
-  cursor: { authMethod: 'terminal' },
+  cursor: { authMethod: 'oauth', requiresUrlCopy: true },
 };
 
 export interface ProviderConnectionListProps {
