@@ -155,7 +155,8 @@ export function ProviderAuthFlow({
 
       try {
         // Poll workspace auth status (via SSH tunnel approach)
-        const res = await fetch(`/api/auth/codex-helper/auth-status/${cliAuthWorkspaceId}`, {
+        // Pass provider so the cloud checks the correct provider's auth status
+        const res = await fetch(`/api/auth/codex-helper/auth-status/${cliAuthWorkspaceId}?provider=${backendProviderId}`, {
           credentials: 'include',
         });
 
@@ -184,7 +185,7 @@ export function ProviderAuthFlow({
     };
 
     poll();
-  }, []);
+  }, [backendProviderId]);
 
   // Fetch CLI session for Codex - provides a command the user can run locally
   // For workspace-based flow, returns SSH tunnel command
