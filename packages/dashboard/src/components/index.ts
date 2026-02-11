@@ -61,6 +61,14 @@ export {
   type IntegrationPermission,
   type AgentPolicyRule,
 } from './IntegrationPolicyEditor';
+export {
+  AuditLogViewer,
+  type AuditLogViewerProps,
+} from './AuditLogViewer';
+export {
+  ApprovalRequestPanel,
+  type ApprovalRequestPanelProps,
+} from './ApprovalRequestPanel';
 
 // Terminal Components
 export { XTermLogViewer, type XTermLogViewerProps } from './XTermLogViewer';

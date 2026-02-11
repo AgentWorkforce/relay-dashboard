@@ -878,4 +878,70 @@ export const cloudApi = {
       method: 'POST',
     });
   },
+
+  // ===== Audit Log API =====
+
+  /**
+   * Get integration audit logs for a workspace
+   */
+  async getAuditLogs(workspaceId: string, params: Record<string, string> = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const url = `/api/workspaces/${encodeURIComponent(workspaceId)}/audit${queryString ? `?${queryString}` : ''}`;
+    return cloudFetch<{
+      entries: Array<{
+        id: string;
+        provider: string;
+        agentName: string | null;
+        taskId: string | null;
+        method: string;
+        endpoint: string;
+        statusCode: number;
+        responseTimeMs: number;
+        createdAt: string;
+      }>;
+      cursor: string | null;
+      hasMore: boolean;
+    }>(url);
+  },
+
+  // ===== Approval Request API =====
+
+  /**
+   * Get integration approval requests for a workspace
+   */
+  async getApprovalRequests(workspaceId: string) {
+    return cloudFetch<{
+      requests: Array<{
+        id: string;
+        provider: string;
+        requestedBy: string;
+        status: 'pending' | 'approved' | 'denied' | 'expired';
+        scopes: string[];
+        reason: string | null;
+        approvedBy: string | null;
+        createdAt: string;
+        expiresAt: string | null;
+      }>;
+    }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/approval-requests`);
+  },
+
+  /**
+   * Approve an integration access request
+   */
+  async approveRequest(workspaceId: string, requestId: string) {
+    return cloudFetch<{ success: boolean; message: string }>(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/approval-requests/${encodeURIComponent(requestId)}/approve`,
+      { method: 'POST' }
+    );
+  },
+
+  /**
+   * Deny an integration access request
+   */
+  async denyRequest(workspaceId: string, requestId: string) {
+    return cloudFetch<{ success: boolean; message: string }>(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/approval-requests/${encodeURIComponent(requestId)}/deny`,
+      { method: 'POST' }
+    );
+  },
 };
