@@ -2183,6 +2183,15 @@ export async function startDashboard(
       }
     }
 
+    // Inject cwd from agentCwdMap for agents not in spawner's active workers
+    // (e.g., agents that connected before spawner tracked them, or after restarts)
+    for (const [name, cwd] of agentCwdMap) {
+      const agent = agentsMap.get(name);
+      if (agent && !agent.cwd) {
+        agent.cwd = cwd;
+      }
+    }
+
     // Also check workers.json for externally-spawned workers (e.g., from agentswarm)
     // These workers have log files but weren't spawned by the dashboard's spawner
     const workersJsonPath = path.join(teamDir, 'workers.json');

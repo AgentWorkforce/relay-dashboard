@@ -1217,8 +1217,11 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   const isFleetAvailable = Boolean(data?.fleet?.servers?.length) || workspaces.length > 0;
 
   // Convert workspaces/repos to projects for unified navigation
+  // In cloud mode, useOrchestrator is disabled so `workspaces` is empty.
+  // Use effectiveWorkspaces which unifies orchestrator and cloud workspaces.
+  const hasWorkspaces = effectiveWorkspaces.length > 0;
   useEffect(() => {
-    if (workspaces.length > 0) {
+    if (hasWorkspaces) {
       // If we have repos for the active workspace, show each repo as a project folder
       if (workspaceRepos.length > 1 && effectiveActiveWorkspaceId) {
         // Create empty project shells from workspace repos.
@@ -1240,8 +1243,10 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
         if (!currentProject || !repoProjects.find(p => p.id === currentProject)) {
           setCurrentProject(repoProjects[0]?.id);
         }
-      } else {
+      } else if (workspaces.length > 0) {
         // Single repo or no repos fetched yet - show workspace as single project
+        // Only use orchestrator workspaces here (not cloud workspaces) since this path
+        // maps workspace objects directly to projects with embedded agents
         const projectList: Project[] = workspaces.map((workspace) => ({
           id: workspace.id,
           path: workspace.path,
@@ -1253,18 +1258,34 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
               status: a.status === 'running' ? 'online' : 'offline',
               isSpawned: true,
               cli: a.provider,
+              cwd: a.cwd,
             })) as Agent[],
           lead: undefined,
         }));
         setProjects(projectList);
         setCurrentProject(activeWorkspaceId);
+      } else if (isCloudMode && effectiveActiveWorkspaceId) {
+        // Cloud mode with single repo or no repos yet - create a single project
+        // from the active cloud workspace
+        const activeWs = effectiveWorkspaces.find(w => w.id === effectiveActiveWorkspaceId);
+        if (activeWs) {
+          const projectList: Project[] = [{
+            id: activeWs.id,
+            path: activeWs.path,
+            name: activeWs.name,
+            agents: [] as Agent[],
+            lead: undefined,
+          }];
+          setProjects(projectList);
+          setCurrentProject(activeWs.id);
+        }
       }
     }
-  }, [workspaces, orchestratorAgents, activeWorkspaceId, workspaceRepos, effectiveActiveWorkspaceId, currentProject]);
+  }, [hasWorkspaces, workspaces, orchestratorAgents, activeWorkspaceId, workspaceRepos, effectiveActiveWorkspaceId, currentProject, isCloudMode, effectiveWorkspaces]);
 
   // Fetch bridge/project data for multi-project mode
   useEffect(() => {
-    if (workspaces.length > 0) return; // Skip if using orchestrator
+    if (hasWorkspaces) return; // Skip if using orchestrator or cloud workspaces
 
     const fetchProjects = async () => {
       const result = await api.getBridgeData();
@@ -1314,7 +1335,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     // Poll for updates
     const interval = setInterval(fetchProjects, 5000);
     return () => clearInterval(interval);
-  }, [workspaces.length, currentProject]);
+  }, [hasWorkspaces, currentProject]);
 
   // Bridge-level agents (like Architect) that should be shown separately
   const BRIDGE_AGENT_NAMES = ['architect'];
@@ -1343,17 +1364,39 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   // Merge local daemon agents into their project when we have bridge projects
   // This prevents agents from appearing under "Local" instead of their project folder
   const mergedProjects = useMemo(() => {
-    if (projects.length === 0) return projects;
-
-    if (projectAgents.length === 0) return projects;
+    if (projects.length === 0) {
+      return projects;
+    }
 
     if (workspaceRepos.length > 1) {
+        console.log(projectAgents)
+        console.log(orchestratorAgents)
       // Multi-repo: assign agents to projects by cwd match
       // Agents without cwd sit outside any repo folder (workspace-level)
+      // Combine projectAgents (WebSocket) with orchestratorAgents (polling) to cover
+      // both data sources - WebSocket agents have cwd from getAllData(), orchestrator
+      // agents have cwd from /api/spawned polling.
+      const allAgents: Agent[] = [...projectAgents];
+      const seenNames = new Set(projectAgents.map(a => a.name.toLowerCase()));
+      for (const oa of orchestratorAgents) {
+        if (!seenNames.has(oa.name.toLowerCase())) {
+          seenNames.add(oa.name.toLowerCase());
+          allAgents.push({
+            name: oa.name,
+            status: oa.status === 'running' ? 'online' : 'offline',
+            isSpawned: true,
+            cli: oa.provider,
+            cwd: oa.cwd,
+          } as Agent);
+        }
+      }
+
+      if (allAgents.length === 0) return projects;
+
       const repoNames = new Set(projects.map(p => p.name));
       const repoProjects = projects.map((project) => {
         const repoName = project.name;
-        const matchingAgents = projectAgents.filter((a) => a.cwd === repoName);
+        const matchingAgents = allAgents.filter((a) => a.cwd === repoName);
         return {
           ...project,
           agents: [...project.agents, ...matchingAgents],
@@ -1364,7 +1407,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       // - Agents without cwd (spawned at workspace root or relay-protocol spawned)
       // - Agents with cwd that doesn't match any repo (prevents orphaned agents)
       const placedAgentNames = new Set(repoProjects.flatMap(p => p.agents.map(a => a.name.toLowerCase())));
-      const workspaceAgents = projectAgents.filter((a) => {
+      const workspaceAgents = allAgents.filter((a) => {
         if (placedAgentNames.has(a.name.toLowerCase())) return false;
         return !a.cwd || !repoNames.has(a.cwd);
       });
@@ -1382,6 +1425,8 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       return repoProjects;
     }
 
+    if (projectAgents.length === 0) return projects;
+
     // Single-repo / bridge mode: merge into current/first project
     return projects.map((project, index) => {
       const isCurrentDaemonProject = index === 0 || project.id === currentProject;
@@ -1398,7 +1443,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
 
       return project;
     });
-  }, [projects, projectAgents, currentProject, workspaceRepos.length]);
+  }, [projects, projectAgents, orchestratorAgents, currentProject, workspaceRepos.length]);
 
   // Determine if local agents should be shown separately
   // Only show "Local" folder if we don't have bridge projects to merge them into
