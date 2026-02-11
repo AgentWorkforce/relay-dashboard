@@ -241,7 +241,7 @@ export function AgentCard({
                 <ProfileIcon />
               </button>
             )}
-            {agent.isSpawned && onLogsClick && (
+            {onLogsClick && (
               <button
                 className="relative bg-transparent border border-transparent text-text-dim p-1.5 cursor-pointer
                            flex items-center justify-center rounded-md transition-all duration-200
@@ -426,7 +426,7 @@ export function AgentCard({
               <ProfileIcon />
             </button>
           )}
-          {agent.isSpawned && onLogsClick && (
+          {onLogsClick && (
             <button
               className="bg-accent-cyan/10 text-accent-cyan border border-accent-cyan/30 rounded-md py-1.5 px-2.5 cursor-pointer flex items-center justify-center gap-1 transition-all duration-200 hover:bg-accent-cyan/20 hover:scale-105 active:scale-[0.98]"
               onClick={handleLogsClick}
