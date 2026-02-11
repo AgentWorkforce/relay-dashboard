@@ -7,10 +7,14 @@
 
 // @vitest-environment jsdom
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/react';
 import { AgentCard } from './AgentCard';
 import type { Agent } from '../types';
+
+afterEach(() => {
+  cleanup();
+});
 
 function makeAgent(name: string, overrides: Partial<Agent> = {}): Agent {
   return {
@@ -89,8 +93,14 @@ describe('AgentCard', () => {
       expect(screen.getByTitle('View profile')).toBeTruthy();
     });
 
-    it('renders logs button for spawned agents', () => {
-      const agent = makeAgent('backend-api', { isSpawned: true });
+    it('renders logs button when onLogsClick provided', () => {
+      const agent = makeAgent('backend-api');
+      render(<AgentCard agent={agent} compact onLogsClick={vi.fn()} />);
+      expect(screen.getByTitle('View logs')).toBeTruthy();
+    });
+
+    it('renders logs button even for non-spawned agents', () => {
+      const agent = makeAgent('backend-api', { isSpawned: false });
       render(<AgentCard agent={agent} compact onLogsClick={vi.fn()} />);
       expect(screen.getByTitle('View logs')).toBeTruthy();
     });
@@ -101,17 +111,15 @@ describe('AgentCard', () => {
       expect(screen.getByTitle('Kill agent')).toBeTruthy();
     });
 
-    it('does not render logs/release for non-spawned agents', () => {
+    it('does not render release for non-spawned agents', () => {
       const agent = makeAgent('backend-api', { isSpawned: false });
       render(
         <AgentCard
           agent={agent}
           compact
-          onLogsClick={vi.fn()}
           onReleaseClick={vi.fn()}
         />
       );
-      expect(screen.queryByTitle('View logs')).toBeNull();
       expect(screen.queryByTitle('Kill agent')).toBeNull();
     });
   });
