@@ -26,6 +26,8 @@ import {
   mockInvoices,
   mockWorkspaces,
   mockUser,
+  mockRepos,
+  mockProviders,
 } from './fixtures.js';
 
 /**
@@ -747,126 +749,398 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
     });
   });
 
-  // ===== Cloud/Auth =====
+  // ===== Cloud Auth (cloud-native paths) =====
 
-  app.get('/api/cloud/session', (_req: Request, res: Response) => {
-    log('GET /api/cloud/session');
+  app.get('/api/auth/session', (_req: Request, res: Response) => {
+    log('GET /api/auth/session');
+    res.set('X-CSRF-Token', 'mock-csrf-token');
     res.json({
       authenticated: true,
-      user: mockUser,
+      user: {
+        id: mockUser.id,
+        githubUsername: mockUser.githubUsername,
+        email: mockUser.email,
+        avatarUrl: mockUser.avatarUrl,
+        plan: mockUser.plan,
+      },
+      connectedProviders: mockUser.connectedProviders,
     });
   });
 
-  app.get('/api/cloud/workspaces', (_req: Request, res: Response) => {
-    log('GET /api/cloud/workspaces');
+  app.get('/api/auth/me', (_req: Request, res: Response) => {
+    log('GET /api/auth/me');
+    res.json(mockUser);
+  });
+
+  app.post('/api/auth/logout', (_req: Request, res: Response) => {
+    log('POST /api/auth/logout');
+    res.json({ success: true });
+  });
+
+  // Nango auth stubs (return plausible data for UI flow)
+  app.get('/api/auth/nango/login-session', (_req: Request, res: Response) => {
+    log('GET /api/auth/nango/login-session');
+    res.json({ sessionToken: 'mock-nango-session', tempUserId: 'mock-temp-user' });
+  });
+
+  app.get('/api/auth/nango/login-status/:connectionId', (_req: Request, res: Response) => {
+    log('GET /api/auth/nango/login-status');
+    res.json({ ready: true, user: { id: mockUser.id, githubUsername: mockUser.githubUsername, email: mockUser.email, plan: mockUser.plan } });
+  });
+
+  app.get('/api/auth/nango/repo-session', (_req: Request, res: Response) => {
+    log('GET /api/auth/nango/repo-session');
+    res.json({ sessionToken: 'mock-nango-repo-session' });
+  });
+
+  app.get('/api/auth/nango/repo-status/:connectionId', (_req: Request, res: Response) => {
+    log('GET /api/auth/nango/repo-status');
+    res.json({ ready: true, repos: mockRepos });
+  });
+
+  // ===== Workspaces (cloud-native paths) =====
+
+  app.get('/api/workspaces/accessible', (_req: Request, res: Response) => {
+    log('GET /api/workspaces/accessible');
     res.json({
       workspaces: mockWorkspaces,
+      summary: {
+        owned: mockWorkspaces.length,
+        member: 0,
+        contributor: 0,
+        total: mockWorkspaces.length,
+      },
     });
   });
 
-  app.get('/api/cloud/workspaces/summary', (_req: Request, res: Response) => {
-    log('GET /api/cloud/workspaces/summary');
+  app.get('/api/workspaces/summary', (_req: Request, res: Response) => {
+    log('GET /api/workspaces/summary');
+    const running = mockWorkspaces.filter(w => w.status === 'running').length;
+    const stopped = mockWorkspaces.filter(w => w.status === 'stopped').length;
     res.json({
       workspaces: mockWorkspaces.map(ws => ({
         id: ws.id,
         name: ws.name,
         status: ws.status,
+        publicUrl: ws.publicUrl,
+        isStopped: ws.status === 'stopped',
+        isRunning: ws.status === 'running',
+        isProvisioning: ws.status === 'provisioning',
+        hasError: ws.status === 'error',
       })),
+      summary: { total: mockWorkspaces.length, running, stopped, provisioning: 0, error: 0 },
+      overallStatus: running > 0 ? 'ready' : 'stopped',
     });
+  });
+
+  app.get('/api/workspaces/primary', (_req: Request, res: Response) => {
+    log('GET /api/workspaces/primary');
+    const primary = mockWorkspaces[0];
+    res.json({
+      exists: true,
+      workspace: {
+        id: primary.id,
+        name: primary.name,
+        status: primary.status,
+        publicUrl: primary.publicUrl,
+        isStopped: primary.status === 'stopped',
+        isRunning: primary.status === 'running',
+        isProvisioning: false,
+        hasError: false,
+        config: { providers: primary.providers || [], repositories: primary.repositories || [] },
+      },
+      statusMessage: primary.status === 'running' ? 'Workspace is running' : 'Workspace is stopped',
+    });
+  });
+
+  app.post('/api/workspaces/quick', (req: Request, res: Response) => {
+    const { repositoryFullName } = req.body || {};
+    log(`POST /api/workspaces/quick - ${repositoryFullName}`);
+    res.json({
+      workspaceId: `ws_new_${Date.now()}`,
+      name: repositoryFullName || 'New Workspace',
+    });
+  });
+
+  app.post('/api/workspaces', (req: Request, res: Response) => {
+    const { name } = req.body || {};
+    log(`POST /api/workspaces - ${name}`);
+    res.json({ id: `ws_new_${Date.now()}`, name: name || 'New Workspace', slug: (name || 'new-workspace').toLowerCase().replace(/\s+/g, '-') });
+  });
+
+  app.get('/api/workspaces/:id/status', (req: Request, res: Response) => {
+    const { id } = req.params;
+    log(`GET /api/workspaces/${id}/status`);
+    const workspace = mockWorkspaces.find(ws => ws.id === id);
+    res.json({ status: workspace?.status || 'running' });
+  });
+
+  app.get('/api/workspaces/:id/members', (req: Request, res: Response) => {
+    const { id } = req.params;
+    log(`GET /api/workspaces/${id}/members`);
+    res.json({
+      members: [{
+        id: 'member_1',
+        userId: mockUser.id,
+        role: 'owner',
+        isPending: false,
+        user: { githubUsername: mockUser.githubUsername, email: mockUser.email, avatarUrl: mockUser.avatarUrl },
+      }],
+    });
+  });
+
+  app.get('/api/workspaces/:id/repo-collaborators', (req: Request, res: Response) => {
+    const { id } = req.params;
+    log(`GET /api/workspaces/${id}/repo-collaborators`);
+    res.json({ collaborators: [], totalRepos: mockRepos.length });
+  });
+
+  app.post('/api/workspaces/:id/members', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { githubUsername, role } = req.body || {};
+    log(`POST /api/workspaces/${id}/members - ${githubUsername}`);
+    res.json({ success: true, member: { id: `member_${Date.now()}`, userId: `user_${Date.now()}`, role: role || 'member', isPending: true } });
+  });
+
+  app.patch('/api/workspaces/:id/members/:memberId', (req: Request, res: Response) => {
+    const { id, memberId } = req.params;
+    const { role } = req.body || {};
+    log(`PATCH /api/workspaces/${id}/members/${memberId}`);
+    res.json({ success: true, role });
+  });
+
+  app.delete('/api/workspaces/:id/members/:memberId', (req: Request, res: Response) => {
+    const { id, memberId } = req.params;
+    log(`DELETE /api/workspaces/${id}/members/${memberId}`);
+    res.json({ success: true });
+  });
+
+  app.post('/api/workspaces/:id/wakeup', (req: Request, res: Response) => {
+    const { id } = req.params;
+    log(`POST /api/workspaces/${id}/wakeup`);
+    res.json({ status: 'running', wasRestarted: true, message: 'Workspace started (mock)' });
+  });
+
+  app.post('/api/workspaces/:id/restart', (req: Request, res: Response) => {
+    const { id } = req.params;
+    log(`POST /api/workspaces/${id}/restart`);
+    res.json({ success: true, message: 'Workspace restarted (mock)' });
+  });
+
+  app.post('/api/workspaces/:id/stop', (req: Request, res: Response) => {
+    const { id } = req.params;
+    log(`POST /api/workspaces/${id}/stop`);
+    res.json({ success: true, message: 'Workspace stopped (mock)' });
+  });
+
+  app.delete('/api/workspaces/:id', (req: Request, res: Response) => {
+    const { id } = req.params;
+    log(`DELETE /api/workspaces/${id}`);
+    res.json({ success: true, message: 'Workspace deleted (mock)' });
+  });
+
+  app.post('/api/workspaces/:id/repos', (req: Request, res: Response) => {
+    const { id } = req.params;
+    log(`POST /api/workspaces/${id}/repos`);
+    res.json({ success: true, message: 'Repos added (mock)' });
+  });
+
+  app.post('/api/workspaces/:id/domain', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { domain } = req.body || {};
+    log(`POST /api/workspaces/${id}/domain - ${domain}`);
+    res.json({ success: true, domain, status: 'pending', instructions: { type: 'CNAME', name: domain, value: 'proxy.agentrelay.dev', ttl: 300 }, verifyEndpoint: `/api/workspaces/${id}/domain/verify`, message: 'Add DNS record' });
+  });
+
+  app.post('/api/workspaces/:id/domain/verify', (req: Request, res: Response) => {
+    const { id } = req.params;
+    log(`POST /api/workspaces/${id}/domain/verify`);
+    res.json({ success: true, status: 'verified' });
+  });
+
+  app.delete('/api/workspaces/:id/domain', (req: Request, res: Response) => {
+    const { id } = req.params;
+    log(`DELETE /api/workspaces/${id}/domain`);
+    res.json({ success: true, message: 'Domain removed (mock)' });
+  });
+
+  // Workspace details - must come after specific sub-routes to avoid matching them
+  app.get('/api/workspaces/:id', (req: Request, res: Response) => {
+    const { id } = req.params;
+    log(`GET /api/workspaces/${id}`);
+    const workspace = mockWorkspaces.find(ws => ws.id === id);
+    if (workspace) {
+      res.json({
+        ...workspace,
+        computeProvider: 'mock',
+        config: { providers: workspace.providers || [], repositories: workspace.repositories || [] },
+        repositories: (workspace.repositories || []).map((r, i) => ({
+          id: `repo_${i}`,
+          fullName: r,
+          syncStatus: 'synced',
+          lastSyncedAt: new Date(Date.now() - 3600000).toISOString(),
+        })),
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
+      res.status(404).json({ error: 'Workspace not found' });
+    }
+  });
+
+  // ===== Providers (cloud-native) =====
+
+  app.get('/api/providers', (_req: Request, res: Response) => {
+    log('GET /api/providers');
+    res.json({ providers: mockProviders });
+  });
+
+  app.delete('/api/providers/:provider', (req: Request, res: Response) => {
+    const { provider } = req.params;
+    log(`DELETE /api/providers/${provider}`);
+    res.json({ success: true });
+  });
+
+  // ===== GitHub App (cloud-native) =====
+
+  app.get('/api/github-app/repos', (_req: Request, res: Response) => {
+    log('GET /api/github-app/repos');
+    res.json({ repositories: mockRepos });
+  });
+
+  app.post('/api/repos/:repoId/sync', (req: Request, res: Response) => {
+    const { repoId } = req.params;
+    log(`POST /api/repos/${repoId}/sync`);
+    res.json({ message: 'Sync started (mock)', syncStatus: 'syncing' });
+  });
+
+  // ===== Invites =====
+
+  app.get('/api/invites', (_req: Request, res: Response) => {
+    log('GET /api/invites');
+    res.json({ invites: [] });
+  });
+
+  app.post('/api/invites/:inviteId/accept', (req: Request, res: Response) => {
+    const { inviteId } = req.params;
+    log(`POST /api/invites/${inviteId}/accept`);
+    res.json({ success: true, workspaceId: mockWorkspaces[0].id });
+  });
+
+  app.post('/api/invites/:inviteId/decline', (req: Request, res: Response) => {
+    const { inviteId } = req.params;
+    log(`POST /api/invites/${inviteId}/decline`);
+    res.json({ success: true });
+  });
+
+  // ===== Billing (cloud-native) =====
+
+  app.get('/api/billing/plans', (_req: Request, res: Response) => {
+    log('GET /api/billing/plans');
+    res.json({ plans: mockBillingPlans, publishableKey: 'pk_mock_key' });
+  });
+
+  app.get('/api/billing/subscription', (_req: Request, res: Response) => {
+    log('GET /api/billing/subscription');
+    res.json({
+      tier: mockSubscription.tier,
+      subscription: mockSubscription,
+      customer: {
+        id: 'cus_mock1',
+        email: mockUser.email,
+        name: mockUser.displayName,
+        paymentMethods: [{ id: 'pm_mock1', type: 'card', last4: '4242', brand: 'visa', isDefault: true }],
+        invoices: mockInvoices,
+      },
+    });
+  });
+
+  app.get('/api/billing/invoices', (_req: Request, res: Response) => {
+    log('GET /api/billing/invoices');
+    res.json({ invoices: mockInvoices });
+  });
+
+  app.post('/api/billing/checkout', (req: Request, res: Response) => {
+    const { tier, interval } = req.body || {};
+    log(`POST /api/billing/checkout - ${tier} (${interval})`);
+    res.json({ sessionId: 'cs_mock1', checkoutUrl: '#mock-checkout' });
+  });
+
+  app.post('/api/billing/portal', (_req: Request, res: Response) => {
+    log('POST /api/billing/portal');
+    res.json({ sessionId: 'bps_mock1', portalUrl: '#mock-portal' });
+  });
+
+  app.post('/api/billing/change', (req: Request, res: Response) => {
+    const { tier } = req.body || {};
+    log(`POST /api/billing/change - ${tier}`);
+    res.json({ subscription: { tier, status: 'active' } });
+  });
+
+  app.post('/api/billing/cancel', (_req: Request, res: Response) => {
+    log('POST /api/billing/cancel');
+    res.json({
+      subscription: { cancelAtPeriodEnd: true, currentPeriodEnd: mockSubscription.currentPeriodEnd },
+      message: 'Subscription will be canceled at the end of the billing period',
+    });
+  });
+
+  app.post('/api/billing/resume', (_req: Request, res: Response) => {
+    log('POST /api/billing/resume');
+    res.json({
+      subscription: { cancelAtPeriodEnd: false },
+      message: 'Subscription has been resumed',
+    });
+  });
+
+  // ===== Legacy Cloud paths (keep for backwards compat) =====
+
+  app.get('/api/cloud/session', (_req: Request, res: Response) => {
+    log('GET /api/cloud/session');
+    res.json({ authenticated: true, user: mockUser });
+  });
+
+  app.get('/api/cloud/workspaces', (_req: Request, res: Response) => {
+    log('GET /api/cloud/workspaces');
+    res.json({ workspaces: mockWorkspaces });
+  });
+
+  app.get('/api/cloud/workspaces/summary', (_req: Request, res: Response) => {
+    log('GET /api/cloud/workspaces/summary');
+    res.json({ workspaces: mockWorkspaces.map(ws => ({ id: ws.id, name: ws.name, status: ws.status })) });
   });
 
   app.get('/api/cloud/workspaces/:id', (req: Request, res: Response) => {
     const { id } = req.params;
     log(`GET /api/cloud/workspaces/${id}`);
     const workspace = mockWorkspaces.find(ws => ws.id === id);
-    if (workspace) {
-      res.json(workspace);
-    } else {
-      res.status(404).json({ error: 'Workspace not found' });
-    }
+    if (workspace) { res.json(workspace); } else { res.status(404).json({ error: 'Workspace not found' }); }
   });
 
   app.get('/api/cloud/workspaces/:id/settings', (req: Request, res: Response) => {
     const { id } = req.params;
     log(`GET /api/cloud/workspaces/${id}/settings`);
-    res.json({
-      workspace: mockWorkspaces.find(ws => ws.id === id) || mockWorkspaces[0],
-      repos: [],
-      providers: [],
-      domains: [],
-    });
+    res.json({ workspace: mockWorkspaces.find(ws => ws.id === id) || mockWorkspaces[0], repos: mockRepos, providers: mockProviders, domains: [] });
   });
 
   app.get('/api/cloud/workspaces/:id/team', (req: Request, res: Response) => {
     const { id } = req.params;
     log(`GET /api/cloud/workspaces/${id}/team`);
-    res.json({
-      members: [
-        {
-          id: mockUser.id,
-          email: mockUser.email,
-          displayName: mockUser.displayName,
-          role: 'owner',
-          joinedAt: mockUser.createdAt,
-        },
-      ],
-      invitations: [],
-    });
+    res.json({ members: [{ id: mockUser.id, email: mockUser.email, displayName: mockUser.displayName, role: 'owner', joinedAt: mockUser.createdAt }], invitations: [] });
   });
-
-  // ===== Billing =====
 
   app.get('/api/cloud/billing/plans', (_req: Request, res: Response) => {
     log('GET /api/cloud/billing/plans');
-    res.json({
-      plans: mockBillingPlans,
-    });
+    res.json({ plans: mockBillingPlans });
   });
 
   app.get('/api/cloud/billing/subscription', (_req: Request, res: Response) => {
     log('GET /api/cloud/billing/subscription');
-    res.json({
-      tier: mockSubscription.tier,
-      subscription: mockSubscription,
-    });
+    res.json({ tier: mockSubscription.tier, subscription: mockSubscription });
   });
 
   app.get('/api/cloud/billing/invoices', (_req: Request, res: Response) => {
     log('GET /api/cloud/billing/invoices');
-    res.json({
-      invoices: mockInvoices,
-    });
-  });
-
-  app.post('/api/cloud/billing/checkout', (req: Request, res: Response) => {
-    const { tier, interval } = req.body || {};
-    log(`POST /api/cloud/billing/checkout - ${tier} (${interval})`);
-    res.json({
-      checkoutUrl: '#mock-checkout',
-    });
-  });
-
-  app.post('/api/cloud/billing/portal', (_req: Request, res: Response) => {
-    log('POST /api/cloud/billing/portal');
-    res.json({
-      portalUrl: '#mock-portal',
-    });
-  });
-
-  app.post('/api/cloud/billing/cancel', (_req: Request, res: Response) => {
-    log('POST /api/cloud/billing/cancel');
-    res.json({
-      success: true,
-      message: 'Subscription will be canceled at the end of the billing period',
-    });
-  });
-
-  app.post('/api/cloud/billing/resume', (_req: Request, res: Response) => {
-    log('POST /api/cloud/billing/resume');
-    res.json({
-      success: true,
-      message: 'Subscription has been resumed',
-    });
+    res.json({ invoices: mockInvoices });
   });
 
   // ===== Usage =====
@@ -887,19 +1161,20 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
     });
   });
 
-  // ===== Workspaces =====
+  // ===== Workspace Proxy (cloud mode) =====
+  // In cloud mode, non-cloud-native API requests are routed through
+  // /api/workspaces/:id/proxy/<path> — re-route them to mock handlers.
 
-  app.get('/api/workspaces/primary', (_req: Request, res: Response) => {
-    log('GET /api/workspaces/primary');
-    // Return the first mock workspace as the primary workspace
-    const primaryWorkspace = mockWorkspaces[0] || {
-      id: 'mock-workspace',
-      name: 'Mock Workspace',
-      status: 'running',
-    };
-    res.json({
-      success: true,
-      workspace: primaryWorkspace,
+  app.all('/api/workspaces/:workspaceId/proxy/{*proxyPath}', (req: Request, res: Response) => {
+    const proxyPath = (req.params as Record<string, string>).proxyPath || (req.params as Record<string, string>)['0'] || '';
+    const mockPath = `/api/${proxyPath}`;
+    log(`PROXY ${req.method} ${req.originalUrl} -> ${mockPath}`);
+
+    // Re-write the URL and re-dispatch through Express router
+    req.url = mockPath;
+    (app as unknown as { handle(req: Request, res: Response, next: () => void): void }).handle(req, res, () => {
+      // If no route matched, return 404
+      res.status(404).json({ error: `Mock proxy: no handler for ${req.method} ${mockPath}` });
     });
   });
 
