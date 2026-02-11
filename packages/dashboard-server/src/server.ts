@@ -5514,12 +5514,10 @@ export async function startDashboard(
       return res.json({ success: true, message: 'Already cloned', path: targetDir });
     }
 
-    const githubToken = process.env.GITHUB_TOKEN;
-    if (!githubToken) {
-      return res.status(500).json({ success: false, error: 'GITHUB_TOKEN not available' });
-    }
-
-    const cloneUrl = `https://x-access-token:${githubToken}@github.com/${fullName}.git`;
+    // Use plain HTTPS URL - git credential helper handles authentication.
+    // The credential helper (git-credential-relay) fetches per-repo tokens from
+    // the cloud API, which correctly resolves installation tokens for private repos.
+    const cloneUrl = `https://github.com/${fullName}.git`;
 
     try {
       // Use execFile to avoid shell injection
@@ -5538,8 +5536,7 @@ export async function startDashboard(
 
       res.json({ success: true, path: targetDir });
     } catch (err: any) {
-      // Sanitize error message to avoid leaking GITHUB_TOKEN embedded in the clone URL
-      const safeMessage = (err.message || 'Clone failed').replace(/https:\/\/[^@]+@/g, 'https://***@');
+      const safeMessage = (err.message || 'Clone failed');
       console.error('[api/repos/clone] Clone failed:', safeMessage);
       res.status(500).json({ success: false, error: safeMessage });
     }
