@@ -1369,8 +1369,6 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     }
 
     if (workspaceRepos.length > 1) {
-        console.log(projectAgents)
-        console.log(orchestratorAgents)
       // Multi-repo: assign agents to projects by cwd match
       // Agents without cwd sit outside any repo folder (workspace-level)
       // Combine projectAgents (WebSocket) with orchestratorAgents (polling) to cover
