@@ -47,6 +47,21 @@ export {
   type WorkspaceProviderProps,
 } from './WorkspaceContext';
 
+// Integration Components (Unified Agent Auth)
+export {
+  IntegrationConnect,
+  type IntegrationConnectProps,
+  type IntegrationProvider,
+  type ProviderCategory,
+  type ProviderTier,
+} from './IntegrationConnect';
+export {
+  IntegrationPolicyEditor,
+  type IntegrationPolicyEditorProps,
+  type IntegrationPermission,
+  type AgentPolicyRule,
+} from './IntegrationPolicyEditor';
+
 // Terminal Components
 export { XTermLogViewer, type XTermLogViewerProps } from './XTermLogViewer';
 export { XTermInteractive, type XTermInteractiveProps } from './XTermInteractive';

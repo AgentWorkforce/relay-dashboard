@@ -12,6 +12,7 @@ import { cloudApi } from '../../lib/cloudApi';
 import { ProviderAuthFlow } from '../ProviderAuthFlow';
 import { TerminalProviderSetup } from '../TerminalProviderSetup';
 import { RepositoriesPanel } from '../RepositoriesPanel';
+import { IntegrationConnect } from '../IntegrationConnect';
 
 export interface WorkspaceSettingsPanelProps {
   workspaceId: string;
@@ -146,7 +147,7 @@ export function WorkspaceSettingsPanel({
   const [availableRepos, setAvailableRepos] = useState<AvailableRepo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'general' | 'providers' | 'repos' | 'github-access' | 'domain' | 'danger'>('general');
+  const [activeSection, setActiveSection] = useState<'general' | 'providers' | 'integrations' | 'repos' | 'github-access' | 'domain' | 'danger'>('general');
 
   // Provider connection state
   const [providerStatus, setProviderStatus] = useState<Record<string, boolean>>({});
@@ -503,6 +504,7 @@ export function WorkspaceSettingsPanel({
   const sections = [
     { id: 'general', label: 'General', icon: <SettingsGearIcon /> },
     { id: 'providers', label: 'AI Providers', icon: <ProviderIcon /> },
+    { id: 'integrations', label: 'Integrations', icon: <IntegrationIcon /> },
     { id: 'repos', label: 'Repositories', icon: <RepoIcon /> },
     { id: 'domain', label: 'Domain', icon: <GlobeIcon /> },
     { id: 'danger', label: 'Danger', icon: <AlertIcon /> },
@@ -907,6 +909,37 @@ export function WorkspaceSettingsPanel({
           </div>
         )}
 
+        {/* Integrations Section */}
+        {activeSection === 'integrations' && (
+          <div className="space-y-6">
+            <SectionHeader
+              title="External Integrations"
+              subtitle="Connect external services for agents to use (GitHub, Slack, Linear, etc.)"
+            />
+            <div className="p-5 bg-gradient-to-r from-accent-cyan/10 to-accent-purple/10 border border-accent-cyan/20 rounded-xl">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-accent-cyan/20 flex items-center justify-center">
+                  <IntegrationIcon className="text-accent-cyan" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-text-primary">Unified Agent Auth</h4>
+                  <p className="text-xs text-text-secondary">
+                    Agents can access connected integrations via the proxy API. Configure access policies per agent.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <IntegrationConnect
+              workspaceId={workspaceId}
+              csrfToken={csrfToken}
+              onConnectionChange={(providerId, connected) => {
+                // Could trigger a refresh or update local state
+                console.log(`Integration ${providerId} ${connected ? 'connected' : 'disconnected'}`);
+              }}
+            />
+          </div>
+        )}
+
         {/* Custom Domain Section */}
         {activeSection === 'domain' && (
           <div className="space-y-8">
@@ -1172,6 +1205,15 @@ function RepoIcon({ className = '' }: { className?: string }) {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-text-muted ${className}`}>
       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
+function IntegrationIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </svg>
   );
 }
