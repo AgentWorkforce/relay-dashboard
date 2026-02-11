@@ -36,10 +36,7 @@ export interface ProviderAuthFlowProps {
 
 type AuthStatus = 'idle' | 'starting' | 'waiting' | 'submitting' | 'success' | 'error';
 
-// Provider ID mapping for backend
-const PROVIDER_ID_MAP: Record<string, string> = {
-  codex: 'openai',
-};
+// Backend accepts canonical provider names directly (codex, anthropic, google, etc.)
 
 export function ProviderAuthFlow({
   provider,
@@ -67,10 +64,10 @@ export function ProviderAuthFlow({
   const cliPollingRef = useRef(false);
   const completingRef = useRef(false); // Prevent double-calling handleComplete
 
-  const backendProviderId = PROVIDER_ID_MAP[provider.id] || provider.id;
+  const backendProviderId = provider.id;
 
   // Determine if this is the Codex flow (needs to be defined early for use in startAuth)
-  const isCodexFlow = provider.requiresUrlCopy || provider.id === 'codex' || backendProviderId === 'openai';
+  const isCodexFlow = provider.requiresUrlCopy || provider.id === 'codex';
 
   // Start the OAuth flow
   const startAuth = useCallback(async () => {
@@ -507,7 +504,7 @@ export function ProviderAuthFlow({
   }, [startAuth, status]);
 
   // Determine if this is Claude flow (isCodexFlow defined earlier)
-  const isClaudeFlow = provider.id === 'anthropic' || backendProviderId === 'anthropic';
+  const isClaudeFlow = provider.id === 'anthropic';
 
   return (
     <div className="space-y-4">

@@ -474,23 +474,107 @@ export const mockInvoices = [
 
 export const mockWorkspaces = [
   {
-    id: 'ws_mock1',
+    id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
     name: 'Development',
     status: 'running',
+    publicUrl: 'http://localhost:3889',
+    providers: ['anthropic', 'codex'],
+    repositories: ['demo-user/webapp', 'demo-user/api-service'],
+    accessType: 'owner' as const,
+    permission: 'admin' as const,
     createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
   },
   {
-    id: 'ws_mock2',
+    id: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
     name: 'Production',
     status: 'stopped',
+    providers: ['anthropic'],
+    repositories: ['demo-user/webapp'],
+    accessType: 'owner' as const,
+    permission: 'admin' as const,
     createdAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
   },
 ];
 
 export const mockUser = {
   id: 'user_mock1',
+  githubUsername: 'demo-user',
   email: 'demo@agent-relay.com',
   displayName: 'Demo User',
   avatarUrl: null,
+  plan: 'pro',
+  connectedProviders: [
+    { provider: 'anthropic', email: 'demo@agent-relay.com', connectedAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString() },
+  ],
+  pendingInvites: 0,
+  onboardingCompleted: true,
   createdAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
 };
+
+// ===== GitHub Repos =====
+
+export const mockRepos = [
+  {
+    id: 'repo_1',
+    fullName: 'demo-user/webapp',
+    isPrivate: false,
+    defaultBranch: 'main',
+    syncStatus: 'synced',
+    hasNangoConnection: true,
+    lastSyncedAt: new Date(Date.now() - 3600000).toISOString(),
+  },
+  {
+    id: 'repo_2',
+    fullName: 'demo-user/api-service',
+    isPrivate: true,
+    defaultBranch: 'main',
+    syncStatus: 'synced',
+    hasNangoConnection: true,
+    lastSyncedAt: new Date(Date.now() - 7200000).toISOString(),
+  },
+  {
+    id: 'repo_3',
+    fullName: 'demo-user/docs',
+    isPrivate: false,
+    defaultBranch: 'main',
+    syncStatus: 'pending',
+    hasNangoConnection: true,
+  },
+];
+
+// ===== Providers =====
+
+export const mockProviders = [
+  {
+    id: 'anthropic',
+    name: 'Anthropic',
+    displayName: 'Claude',
+    description: 'Claude AI by Anthropic',
+    color: '#D97757',
+    authStrategy: 'api_key',
+    cliCommand: 'claude',
+    isConnected: true,
+    connectedAs: 'demo@agent-relay.com',
+    connectedAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'codex',
+    name: 'OpenAI',
+    displayName: 'Codex',
+    description: 'Codex CLI by OpenAI',
+    color: '#10A37F',
+    authStrategy: 'device_flow',
+    cliCommand: 'codex login',
+    isConnected: false,
+  },
+  {
+    id: 'google',
+    name: 'Google',
+    displayName: 'Gemini',
+    description: 'Gemini by Google',
+    color: '#4285F4',
+    authStrategy: 'oauth',
+    cliCommand: 'gemini',
+    isConnected: false,
+  },
+];
