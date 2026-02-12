@@ -1229,6 +1229,8 @@ export async function startDashboard(
 
       // Set up direct message handler to forward messages to presence WebSocket
       // This enables agents to send replies that appear in the dashboard UI
+      // Note: the relay daemon already persists messages authoritatively, so we
+      // only need to broadcast the real-time event here (no storage.saveMessage).
       client.onMessage = (from: string, payload: unknown, messageId: string) => {
         const body = typeof payload === 'object' && payload !== null && 'body' in payload
           ? (payload as { body: string }).body
@@ -1243,29 +1245,9 @@ export async function startDashboard(
 
         const timestamp = new Date().toISOString();
 
-        // Persist the message to storage so it survives page refresh
-        if (storage) {
-          storage.saveMessage({
-            id: messageId || `dm-${crypto.randomUUID()}`,
-            ts: Date.now(),
-            from,
-            to: senderName,
-            topic: undefined,
-            kind: 'message',
-            body,
-            data: {
-              fromAvatarUrl,
-              fromEntityType,
-            },
-            status: 'unread',
-            is_urgent: false,
-            is_broadcast: false,
-          }).catch((err) => {
-            console.error('[dashboard] Failed to persist direct message', err);
-          });
-        }
-
-        // Broadcast to presence WebSocket clients so cloud/dashboard can display the message
+        // Broadcast real-time event so the dashboard UI updates immediately.
+        // Pass id (= messageId) so the client has a stable identifier and
+        // doesn't need to fabricate one from Date.now().
         broadcastDirectMessage({
           type: 'direct_message',
           targetUser: senderName,
@@ -1273,6 +1255,7 @@ export async function startDashboard(
           fromAvatarUrl,
           fromEntityType,
           body,
+          id: messageId,
           messageId,
           timestamp,
         });
@@ -3067,7 +3050,6 @@ export async function startDashboard(
 
   // Helper to broadcast direct messages to all connected clients
   // This enables agent replies to appear in the dashboard UI
-  // Broadcasts to both main wss (local mode) and wssPresence (cloud mode)
   const broadcastDirectMessage = (message: {
     type: 'direct_message';
     targetUser: string;
@@ -3075,6 +3057,7 @@ export async function startDashboard(
     fromAvatarUrl?: string;
     fromEntityType?: 'user' | 'agent';
     body: string;
+    id: string;
     messageId: string;
     timestamp: string;
   }) => {
@@ -3092,15 +3075,20 @@ export async function startDashboard(
       }
     });
 
-    // Also broadcast to presence WebSocket clients (cloud mode)
-    const presenceClients = Array.from(wssPresence.clients).filter(c => c.readyState === WebSocket.OPEN);
-    if (presenceClients.length > 0) {
-      debug(`[dashboard] Broadcasting direct_message to ${presenceClients.length} presence clients`);
-      wssPresence.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(payload);
-        }
-      });
+    // Only broadcast to presence WS if UserBridge does NOT have a session for
+    // the target user. When UserBridge is active it already delivers the DM
+    // directly to the user's WebSocket(s), so broadcasting here would duplicate.
+    const targetHandledByBridge = userBridge?.isUserRegistered(message.targetUser) ?? false;
+    if (!targetHandledByBridge) {
+      const presenceClients = Array.from(wssPresence.clients).filter(c => c.readyState === WebSocket.OPEN);
+      if (presenceClients.length > 0) {
+        debug(`[dashboard] Broadcasting direct_message to ${presenceClients.length} presence clients (no bridge session)`);
+        wssPresence.clients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(payload);
+          }
+        });
+      }
     }
   };
 
