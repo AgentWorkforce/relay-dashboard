@@ -2460,7 +2460,7 @@ export async function startDashboard(
 
       // If team data is temporarily unavailable, send empty-but-valid structure
       // so the client at least renders (better than sending nothing on first connect)
-      const safeData = data ?? { agents: [], messages: [], activity: [], sessions: [], summaries: [] };
+      const safeData = data ?? { agents: [], users: [], messages: [], activity: [], sessions: [], summaries: [] };
       const payload = JSON.stringify(safeData);
 
       // Guard against empty/invalid payloads
@@ -3397,7 +3397,10 @@ export async function startDashboard(
   });
 
   app.get('/api/data', (req, res) => {
-    getAllData().then((data) => res.json(data)).catch((err) => {
+    getAllData().then((data) => {
+      const safeData = data ?? { agents: [], users: [], messages: [], activity: [], sessions: [], summaries: [] };
+      res.json(safeData);
+    }).catch((err) => {
       console.error('Failed to fetch dashboard data', err);
       res.status(500).json({ error: 'Failed to load data' });
     });
