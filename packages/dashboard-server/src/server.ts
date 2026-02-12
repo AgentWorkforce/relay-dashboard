@@ -2071,15 +2071,17 @@ export async function startDashboard(
               existing.status = 'online';
               if (user.avatarUrl) existing.avatarUrl = user.avatarUrl;
             } else {
-              const now = new Date().toISOString();
+              // Use stable timestamps from the user/file data, not new Date(),
+              // so getAllData() produces deterministic output for dedup comparison
+              const stableTimestamp = user.lastSeen || user.connectedAt || new Date(remoteData.updatedAt).toISOString();
               agentsMap.set(user.name, {
                 name: user.name,
                 role: 'User',
                 cli: 'dashboard',
                 messageCount: 0,
                 status: 'online',
-                lastSeen: now,
-                lastActive: now,
+                lastSeen: stableTimestamp,
+                lastActive: stableTimestamp,
                 needsAttention: false,
                 avatarUrl: user.avatarUrl,
               });
@@ -2276,19 +2278,22 @@ export async function startDashboard(
       });
 
     // Separate AI agents from human users
+    // Sort by name for deterministic JSON serialization (enables dedup comparison)
     const filteredAgents = validEntries
       .filter(agent => agent.cli !== 'dashboard')
       .map(agent => ({
         ...agent,
         isHuman: false,
-      }));
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     const humanUsers = validEntries
       .filter(agent => agent.cli === 'dashboard')
       .map(agent => ({
         ...agent,
         isHuman: true,
-      }));
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     return {
       agents: filteredAgents,
@@ -6688,12 +6693,15 @@ Start by greeting the project leads and asking for status updates.`;
     return {};
   }
 
-  // Watch for changes
+  // Watch for changes - poll as a safety net for DB-backed storage mode.
+  // Real-time updates are already handled by explicit broadcastData() calls
+  // at every data mutation point (message send, spawn, release, cwd update, etc.).
+  // This interval only catches external/indirect changes (presence, DB edits).
   if (storage) {
     setInterval(() => {
       broadcastData().catch((err) => console.error('Broadcast failed', err));
       broadcastBridgeData().catch((err) => console.error('Bridge broadcast failed', err));
-    }, 1000);
+    }, 5000);
   } else {
     let fsWait: NodeJS.Timeout | null = null;
     let bridgeFsWait: NodeJS.Timeout | null = null;
