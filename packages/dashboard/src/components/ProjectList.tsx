@@ -197,6 +197,7 @@ export function ProjectList({
 
   const totalAgents =
     filteredData.localAgents.length +
+    filteredData.bridgeAgents.length +
     filteredData.projects.reduce((sum, p) => sum + p.agents.length, 0);
 
   if (totalAgents === 0 && projects.length === 0 && localAgents.length === 0) {
