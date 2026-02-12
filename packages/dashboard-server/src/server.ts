@@ -2304,6 +2304,8 @@ export async function startDashboard(
   // This prevents race conditions where broadcastData sends before initial data is sent
   const initializingClients = new WeakSet<WebSocket>();
 
+  let lastBroadcastPayload = '';
+
   const broadcastData = async () => {
     try {
       const data = await getAllData();
@@ -2314,6 +2316,12 @@ export async function startDashboard(
         console.warn('[dashboard] Skipping broadcast - empty payload');
         return;
       }
+
+      // Skip broadcast if data hasn't changed since last send
+      if (rawPayload === lastBroadcastPayload) {
+        return;
+      }
+      lastBroadcastPayload = rawPayload;
 
       // Push into buffer and wrap with sequence ID for replay support
       const seq = mainMessageBuffer.push('data', rawPayload);
@@ -2398,6 +2406,8 @@ export async function startDashboard(
     return { projects: [], messages: [], connected: false };
   };
 
+  let lastBridgeBroadcastPayload = '';
+
   const broadcastBridgeData = async () => {
     try {
       const data = await getBridgeData();
@@ -2408,6 +2418,12 @@ export async function startDashboard(
         console.warn('[dashboard] Skipping bridge broadcast - empty payload');
         return;
       }
+
+      // Skip broadcast if data hasn't changed since last send
+      if (payload === lastBridgeBroadcastPayload) {
+        return;
+      }
+      lastBridgeBroadcastPayload = payload;
 
       wssBridge.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
