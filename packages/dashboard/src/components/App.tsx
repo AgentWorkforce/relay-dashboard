@@ -429,8 +429,10 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   );
 
   // Channel state: selectedChannelId must be declared before callbacks that use it
-  // Default to Activity feed on load
-  const [selectedChannelId, setSelectedChannelId] = useState<string | undefined>(ACTIVITY_FEED_ID);
+  // Local mode defaults to #general, cloud mode defaults to Activity feed
+  const [selectedChannelId, setSelectedChannelId] = useState<string | undefined>(
+    isCloudMode ? ACTIVITY_FEED_ID : '#general'
+  );
 
   // Activity feed state - unified timeline of workspace events
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
@@ -634,11 +636,16 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   });
 
   // Keep local username for channel API calls
+  // Clear stale username from previous cloud/mock sessions when in local mode
   useEffect(() => {
-    if (typeof window !== 'undefined' && currentUser?.displayName) {
-      localStorage.setItem('relay_username', currentUser.displayName);
+    if (typeof window !== 'undefined') {
+      if (currentUser?.displayName) {
+        localStorage.setItem('relay_username', currentUser.displayName);
+      } else if (!isCloudMode) {
+        localStorage.removeItem('relay_username');
+      }
     }
-  }, [currentUser?.displayName]);
+  }, [currentUser?.displayName, isCloudMode]);
 
   // Filter online users by workspace membership (cloud mode only)
   const { memberUsernames } = useWorkspaceMembers({
@@ -669,7 +676,10 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   }, [data?.summaries]);
 
   // View mode state: 'local' (agents), 'fleet' (multi-server), 'channels' (channel messaging)
-  const [viewMode, setViewMode] = useState<'local' | 'fleet' | 'channels'>('local');
+  // Local mode defaults to channels view (showing #general), cloud mode defaults to local
+  const [viewMode, setViewMode] = useState<'local' | 'fleet' | 'channels'>(
+    isCloudMode ? 'local' : 'channels'
+  );
 
   // Channel state for V1 channels UI
   const [channelsList, setChannelsList] = useState<Channel[]>([]);
