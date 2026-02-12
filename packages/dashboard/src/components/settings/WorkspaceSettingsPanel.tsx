@@ -166,9 +166,9 @@ export function WorkspaceSettingsPanel({
   const [useDeviceFlow, setUseDeviceFlow] = useState<Record<string, boolean>>({});
   // Use terminal-based setup (default for Claude, Cursor, and Gemini - Codex uses CLI helper flow)
   const [useTerminalSetup, setUseTerminalSetup] = useState<Record<string, boolean>>({
-    anthropic: true, // Default to terminal for Claude
-    cursor: true,    // Default to terminal for Cursor
-    google: true,    // Default to terminal for Gemini - allows choosing OAuth or API key
+    anthropic: false, // CLI-assisted SSH tunnel flow for Claude
+    cursor: false,    // CLI-assisted SSH tunnel flow for Cursor
+    google: true,     // Default to terminal for Gemini - allows choosing OAuth or API key
   });
 
   // CLI command copy state
@@ -796,14 +796,13 @@ export function WorkspaceSettingsPanel({
                         </div>
                       ) : provider.supportsOAuth ? (
                         <div className="space-y-3">
-                          {/* CLI info for Codex */}
-                          {provider.id === 'codex' && (
+                          {/* CLI info for providers using SSH tunnel auth */}
+                          {['codex', 'anthropic', 'cursor'].includes(provider.id) && (
                             <div className="p-3 bg-accent-cyan/10 border border-accent-cyan/30 rounded-lg">
                               <p className="text-sm text-accent-cyan font-medium mb-1">CLI-assisted authentication</p>
                               <p className="text-xs text-accent-cyan/80">
-                                Codex auth uses a CLI command to capture the OAuth callback locally.
-                                Click the button below and we&apos;ll show you a command with a unique session token
-                                to run in your terminal before signing in with OpenAI.
+                                Click the button below to get a CLI command with a unique session token.
+                                Run it on your local machine to authenticate with {provider.displayName} via a secure SSH tunnel.
                               </p>
                             </div>
                           )}
