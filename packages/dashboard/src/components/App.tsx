@@ -466,13 +466,19 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     setChannelMessageMap(prev => {
       const list = prev[channelId] ?? [];
       if (isDuplicateMessage(list, message)) return prev;
-      return { ...prev, [channelId]: [...list, message] };
+      const updated = [...list, message].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+      return { ...prev, [channelId]: updated };
     });
 
     if (selectedChannelId === channelId) {
       setChannelMessages(prev => {
         if (isDuplicateMessage(prev, message)) return prev;
-        return [...prev, message];
+        const updated = [...prev, message].sort(
+          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+        return updated;
       });
       setChannelUnreadState(undefined);
     } else if (incrementUnread) {
