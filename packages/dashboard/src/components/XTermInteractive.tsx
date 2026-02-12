@@ -106,7 +106,13 @@ export function XTermInteractive({
     fitAddonRef.current = fitAddon;
 
     // Handle user input - send to WebSocket
+    // Suppress input when user has text selected (e.g., copying OAuth URL)
     terminal.onData((data) => {
+      // Don't send input if user has text selected (likely copying a URL)
+      const selection = terminal.getSelection();
+      if (selection && selection.length > 0) {
+        return; // User is selecting/copying text, don't send input
+      }
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({
           type: 'input',

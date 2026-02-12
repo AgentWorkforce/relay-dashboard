@@ -96,10 +96,6 @@ export interface SidebarProps {
   onFleetClick?: () => void;
   /** Mobile nav: Whether fleet view is active */
   isFleetViewActive?: boolean;
-  /** Mobile nav: Coordinator toggle */
-  onCoordinatorClick?: () => void;
-  /** Mobile nav: Whether multiple projects are connected (shows coordinator) */
-  hasMultipleProjects?: boolean;
 }
 
 export function Sidebar({
@@ -143,8 +139,6 @@ export function Sidebar({
   hasActiveTrajectory,
   onFleetClick,
   isFleetViewActive,
-  onCoordinatorClick,
-  hasMultipleProjects,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<SidebarTab>(() => {
@@ -556,11 +550,14 @@ export function Sidebar({
             currentProject={currentProject}
             selectedAgent={selectedAgent}
             searchQuery={searchQuery}
+            pinnedAgents={pinnedAgents}
+            isMaxPinned={isMaxPinned}
             onProjectSelect={onProjectSelect}
             onAgentSelect={onAgentSelect}
             onReleaseClick={onReleaseClick}
             onLogsClick={onLogsClick}
             onProfileClick={onProfileClick}
+            onPinToggle={(agent) => togglePin(agent.name)}
             compact={true}
           />
         ) : (
@@ -673,18 +670,6 @@ export function Sidebar({
               )}
             </button>
           )}
-          {hasMultipleProjects && onCoordinatorClick && (
-            <button
-              className="flex items-center gap-2 p-2.5 bg-bg-tertiary border border-border-subtle rounded-lg text-text-secondary text-sm transition-all duration-150 hover:bg-bg-hover hover:text-accent-purple"
-              onClick={() => {
-                onCoordinatorClick();
-                onClose?.();
-              }}
-            >
-              <CoordinatorIcon />
-              <span>Coordinator</span>
-            </button>
-          )}
           <a
             href="/metrics"
             className="flex items-center gap-2 p-2.5 bg-bg-tertiary border border-border-subtle rounded-lg text-text-secondary text-sm transition-all duration-150 hover:bg-bg-hover hover:text-accent-orange no-underline"
@@ -705,7 +690,7 @@ export function Sidebar({
           <PlusIcon />
           Spawn Agent
         </button>
-        <button
+<button
           className="w-full py-2 sm:py-2.5 px-3 sm:px-4 bg-bg-tertiary text-text-secondary text-sm cursor-pointer flex items-center justify-center gap-2 rounded-lg border border-border-subtle transition-all duration-150 hover:bg-bg-hover hover:text-text-primary hover:border-border-subtle active:bg-bg-hover"
           onClick={onSettingsClick}
         >
@@ -894,21 +879,6 @@ function TrajectoryIcon() {
   );
 }
 
-function CoordinatorIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3" />
-      <circle cx="5" cy="5" r="2" />
-      <circle cx="19" cy="5" r="2" />
-      <circle cx="5" cy="19" r="2" />
-      <circle cx="19" cy="19" r="2" />
-      <line x1="9.5" y1="9.5" x2="6.5" y2="6.5" />
-      <line x1="14.5" y1="9.5" x2="17.5" y2="6.5" />
-      <line x1="9.5" y1="14.5" x2="6.5" y2="17.5" />
-      <line x1="14.5" y1="14.5" x2="17.5" y2="17.5" />
-    </svg>
-  );
-}
 
 function MetricsIcon() {
   return (

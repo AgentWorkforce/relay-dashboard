@@ -11,7 +11,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { cloudApi } from '../../lib/cloudApi';
 import { ProviderAuthFlow } from '../ProviderAuthFlow';
 import { TerminalProviderSetup } from '../TerminalProviderSetup';
-import { RepoAccessPanel } from '../RepoAccessPanel';
+import { RepositoriesPanel } from '../RepositoriesPanel';
 
 // Map provider IDs to CLI-friendly names for the `agent-relay auth` command
 const PROVIDER_CLI_NAMES: Record<string, string> = {
@@ -25,6 +25,7 @@ export interface WorkspaceSettingsPanelProps {
   workspaceId: string;
   csrfToken?: string;
   onClose?: () => void;
+  onReposChanged?: () => void;
 }
 
 interface WorkspaceDetails {
@@ -92,7 +93,7 @@ const AI_PROVIDERS: AIProvider[] = [
   },
   {
     id: 'codex',
-    name: 'openai', // Must be lowercase to match backend validation
+    name: 'codex', // Must match backend provider key
     displayName: 'Codex',
     description: 'Codex - OpenAI coding assistant',
     color: '#10A37F',
@@ -147,6 +148,7 @@ export function WorkspaceSettingsPanel({
   workspaceId,
   csrfToken,
   onClose,
+  onReposChanged,
 }: WorkspaceSettingsPanelProps) {
   const [workspace, setWorkspace] = useState<WorkspaceDetails | null>(null);
   const [availableRepos, setAvailableRepos] = useState<AvailableRepo[]>([]);
@@ -201,6 +203,12 @@ export function WorkspaceSettingsPanel({
 
   // Load workspace details
   useEffect(() => {
+    // Skip loading if workspaceId is invalid (not a UUID)
+    if (!workspaceId || workspaceId === 'default' || !/^[0-9a-f-]{36}$/i.test(workspaceId)) {
+      setIsLoading(false);
+      return;
+    }
+
     async function loadWorkspace() {
       setIsLoading(true);
       setError(null);
@@ -226,18 +234,13 @@ export function WorkspaceSettingsPanel({
 
       // Mark connected providers for this workspace
       if (providersResult.success) {
-        // Map backend IDs to frontend IDs for consistency
-        const BACKEND_TO_FRONTEND_MAP: Record<string, string> = {
-          openai: 'codex', // Backend stores 'openai', frontend uses 'codex'
-        };
         const connected: Record<string, boolean> = {};
         providersResult.data.providers.forEach((p) => {
           if (p.isConnected) {
             connected[p.id] = true;
-            // Also mark the frontend ID as connected if there's a mapping
-            const frontendId = BACKEND_TO_FRONTEND_MAP[p.id];
-            if (frontendId) {
-              connected[frontendId] = true;
+            // Map backend 'openai' to frontend 'codex' for consistency
+            if (p.id === 'openai') {
+              connected['codex'] = true;
             }
           }
         });
@@ -522,7 +525,6 @@ export function WorkspaceSettingsPanel({
     { id: 'general', label: 'General', icon: <SettingsGearIcon /> },
     { id: 'providers', label: 'AI Providers', icon: <ProviderIcon /> },
     { id: 'repos', label: 'Repositories', icon: <RepoIcon /> },
-    { id: 'github-access', label: 'GitHub Access', icon: <GitHubIcon /> },
     { id: 'domain', label: 'Domain', icon: <GlobeIcon /> },
     { id: 'danger', label: 'Danger', icon: <AlertIcon /> },
   ];
@@ -925,131 +927,31 @@ export function WorkspaceSettingsPanel({
 
         {/* Repositories Section */}
         {activeSection === 'repos' && (
-          <div className="space-y-8">
-            <SectionHeader
-              title="Connected Repositories"
-              subtitle="Repositories linked to this workspace"
-            />
-
-            <div className="space-y-3">
-              {workspace.repositories.length > 0 ? (
-                workspace.repositories.map((repo) => (
-                  <div
-                    key={repo.id}
-                    className="flex items-center justify-between p-4 bg-bg-tertiary rounded-lg border border-border-subtle"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-bg-card flex items-center justify-center">
-                        <RepoIcon />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-text-primary">{repo.fullName}</p>
-                        <p className="text-xs text-text-muted">
-                          {repo.lastSyncedAt
-                            ? `Synced ${new Date(repo.lastSyncedAt).toLocaleDateString()}`
-                            : 'Not synced'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => handleSyncRepo(repo.id)}
-                        disabled={syncingRepoId === repo.id || workspace.status !== 'running'}
-                        className="px-3 py-1.5 bg-accent-cyan/10 border border-accent-cyan/30 text-accent-cyan rounded-lg text-xs font-semibold hover:bg-accent-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
-                        title={workspace.status !== 'running' ? 'Workspace must be running to sync' : 'Sync repository'}
-                      >
-                        {syncingRepoId === repo.id ? (
-                          <>
-                            <SyncIcon spinning />
-                            Syncing...
-                          </>
-                        ) : (
-                          <>
-                            <SyncIcon />
-                            Sync
-                          </>
-                        )}
-                      </button>
-                      <StatusBadge status={repo.syncStatus} />
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="p-6 bg-bg-tertiary rounded-lg border border-border-subtle border-dashed text-center">
-                  <RepoIcon className="w-8 h-8 mx-auto mb-3 text-text-muted" />
-                  <p className="text-sm text-text-muted">No repositories connected</p>
-                </div>
-              )}
-            </div>
-
-            {unassignedRepos.length > 0 && (
-              <>
-                <SectionHeader
-                  title="Available Repositories"
-                  subtitle="Add more repositories to this workspace"
-                />
-                <div className="space-y-3">
-                  {unassignedRepos.map((repo) => (
-                    <div
-                      key={repo.id}
-                      className="flex items-center justify-between p-4 bg-bg-tertiary rounded-lg border border-border-subtle hover:border-accent-cyan/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-bg-card flex items-center justify-center">
-                          <RepoIcon />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-text-primary">{repo.fullName}</p>
-                          <p className="text-xs text-text-muted">
-                            {repo.isPrivate ? 'Private' : 'Public'}
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleAddRepo(repo.id)}
-                        className="px-4 py-2 bg-accent-cyan/10 border border-accent-cyan/30 text-accent-cyan rounded-lg text-xs font-semibold hover:bg-accent-cyan/20 transition-colors"
-                      >
-                        Add to Workspace
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* GitHub Access Section */}
-        {activeSection === 'github-access' && (
           <div className="space-y-6">
             <SectionHeader
-              title="GitHub Repository Access"
-              subtitle="Repositories you have access to via your GitHub account"
+              title="Repositories"
+              subtitle="Manage repositories for this workspace"
             />
-            <RepoAccessPanel
-              workspaces={
-                workspace && workspace.repositories?.length > 0
-                  ? [{
-                      id: workspace.id,
-                      name: workspace.name,
-                      repositoryFullName: workspace.repositories[0].fullName,
-                      status: workspace.status as 'provisioning' | 'running' | 'stopped' | 'error',
-                    }]
-                  : []
-              }
-              onWorkspaceCreated={(workspaceId, repoFullName) => {
-                // Refresh workspace data after creating
+            <RepositoriesPanel
+              workspaceId={workspaceId}
+              workspaceRepos={workspace.repositories}
+              onRepoAdded={() => {
+                // Refresh workspace data after adding a repo
                 cloudApi.getWorkspaceDetails(workspaceId).then(result => {
                   if (result.success) {
                     setWorkspace(result.data);
                   }
                 });
+                onReposChanged?.();
               }}
-              onOpenWorkspace={(workspaceId) => {
-                // Navigate to workspace or close settings
-                if (onClose) {
-                  onClose();
-                }
+              onRepoRemoved={() => {
+                // Refresh workspace data after removing a repo
+                cloudApi.getWorkspaceDetails(workspaceId).then(result => {
+                  if (result.success) {
+                    setWorkspace(result.data);
+                  }
+                });
+                onReposChanged?.();
               }}
               csrfToken={csrfToken}
               className="bg-bg-tertiary rounded-xl border border-border-subtle overflow-hidden"

@@ -193,6 +193,18 @@ jobs:
           name: build-output
           path: .
 
+      - name: Validate tag for prerelease
+        if: startsWith(github.event.inputs.version, 'pre') && (github.event.inputs.tag == 'latest' || github.event.inputs.tag == '')
+        run: |
+          echo "::error::Prerelease versions must not use the 'latest' dist-tag. Please set tag to 'beta', 'alpha', 'rc', or 'next'."
+          exit 1
+
+      - name: Validate tag for custom prerelease version
+        if: contains(needs.build.outputs.new_version, '-') && (github.event.inputs.tag == 'latest' || github.event.inputs.tag == '')
+        run: |
+          echo "::error::Custom version '${{ needs.build.outputs.new_version }}' is a prerelease and must not use the 'latest' dist-tag. Please set tag to 'beta', 'alpha', 'rc', or 'next'."
+          exit 1
+
       - name: Update npm for OIDC support
         run: npm install -g npm@latest
 
@@ -363,7 +375,7 @@ jobs:
           if ! git diff --staged --quiet; then
             if [ "$IS_PRERELEASE" = "true" ]; then
               git commit -m "chore(prerelease): v${NEW_VERSION}"
-              git push origin HEAD:staging
+              git push origin HEAD:staging --force
             else
               git commit -m "chore(release): v${NEW_VERSION}"
               git push origin HEAD:main

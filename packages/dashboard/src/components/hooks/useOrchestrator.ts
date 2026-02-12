@@ -16,6 +16,7 @@ export interface OrchestratorAgent {
   status: 'running' | 'idle' | 'crashed' | 'restarting' | 'stopped';
   pid?: number;
   task?: string;
+  cwd?: string;
   spawnedAt: Date;
   restartCount: number;
 }
@@ -55,7 +56,7 @@ export interface UseOrchestratorResult {
   /** Remove a workspace */
   removeWorkspace: (workspaceId: string) => Promise<void>;
   /** Spawn an agent */
-  spawnAgent: (name: string, task?: string, provider?: string) => Promise<OrchestratorAgent>;
+  spawnAgent: (name: string, task?: string, provider?: string, cwd?: string) => Promise<OrchestratorAgent>;
   /** Stop an agent */
   stopAgent: (agentName: string) => Promise<void>;
   /** Refresh data */
@@ -107,9 +108,11 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}): UseOrches
         const agentsResponse = await fetch(`${apiUrl}/workspaces/${data.activeWorkspaceId}/agents`);
         if (agentsResponse.ok) {
           const agentsData = await agentsResponse.json();
+          const wsId = agentsData.workspaceId || data.activeWorkspaceId;
           setAgents(
             agentsData.agents.map((a: OrchestratorAgent) => ({
               ...a,
+              workspaceId: a.workspaceId || wsId,
               spawnedAt: new Date(a.spawnedAt),
             }))
           );
@@ -155,9 +158,11 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}): UseOrches
                 }))
               );
               setActiveWorkspaceId(message.data.activeWorkspaceId);
+              const initWsId = message.data.activeWorkspaceId;
               setAgents(
                 message.data.agents?.map((a: OrchestratorAgent) => ({
                   ...a,
+                  workspaceId: a.workspaceId || initWsId,
                   spawnedAt: new Date(a.spawnedAt),
                 })) || []
               );
@@ -257,9 +262,14 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}): UseOrches
         setActiveWorkspaceId((event.data as { currentId: string }).currentId);
         break;
 
-      case 'agent:spawned':
-        setAgents((prev) => [...prev, event.data as OrchestratorAgent]);
+      case 'agent:spawned': {
+        const spawnedAgent = event.data as OrchestratorAgent;
+        setAgents((prev) => [...prev, {
+          ...spawnedAgent,
+          workspaceId: spawnedAgent.workspaceId || event.workspaceId || activeWorkspaceId || '',
+        }]);
         break;
+      }
 
       case 'agent:stopped':
       case 'agent:crashed':
@@ -276,7 +286,7 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}): UseOrches
         );
         break;
     }
-  }, []);
+  }, [activeWorkspaceId]);
 
   // Switch workspace
   const switchWorkspace = useCallback(
@@ -339,7 +349,7 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}): UseOrches
 
   // Spawn agent
   const spawnAgent = useCallback(
-    async (name: string, task?: string, provider?: string): Promise<OrchestratorAgent> => {
+    async (name: string, task?: string, provider?: string, cwd?: string): Promise<OrchestratorAgent> => {
       if (!activeWorkspaceId) {
         throw new Error('No active workspace');
       }
@@ -347,7 +357,7 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}): UseOrches
       const response = await fetch(`${apiUrl}/workspaces/${activeWorkspaceId}/agents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, task, provider }),
+        body: JSON.stringify({ name, task, provider, cwd }),
       });
 
       if (!response.ok) {
@@ -355,7 +365,23 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}): UseOrches
         throw new Error(error.error || 'Failed to spawn agent');
       }
 
-      return response.json();
+      const result = await response.json();
+
+      // Refetch agents to get cwd data from /api/spawned
+      const agentsResponse = await fetch(`${apiUrl}/workspaces/${activeWorkspaceId}/agents`);
+      if (agentsResponse.ok) {
+        const agentsData = await agentsResponse.json();
+        const refetchWsId = agentsData.workspaceId || activeWorkspaceId;
+        setAgents(
+          agentsData.agents.map((a: OrchestratorAgent) => ({
+            ...a,
+            workspaceId: a.workspaceId || refetchWsId,
+            spawnedAt: new Date(a.spawnedAt),
+          }))
+        );
+      }
+
+      return result;
     },
     [apiUrl, activeWorkspaceId]
   );

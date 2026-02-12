@@ -36,10 +36,7 @@ export interface ProviderAuthFlowProps {
 
 type AuthStatus = 'idle' | 'starting' | 'waiting' | 'submitting' | 'success' | 'error';
 
-// Provider ID mapping for backend
-const PROVIDER_ID_MAP: Record<string, string> = {
-  codex: 'openai',
-};
+// Backend accepts canonical provider names directly (codex, anthropic, google, etc.)
 
 export function ProviderAuthFlow({
   provider,
@@ -67,7 +64,7 @@ export function ProviderAuthFlow({
   const cliPollingRef = useRef(false);
   const completingRef = useRef(false); // Prevent double-calling handleComplete
 
-  const backendProviderId = PROVIDER_ID_MAP[provider.id] || provider.id;
+  const backendProviderId = provider.id;
 
   // Determine if this is the CLI auth flow (SSH tunnel for OAuth callback)
   // Applies to Codex, Claude, Cursor - any provider with requiresUrlCopy

@@ -34,7 +34,7 @@ interface Repository {
   hasNangoConnection: boolean;
 }
 
-type PageState = 'loading' | 'local' | 'select-workspace' | 'no-workspaces' | 'provisioning' | 'connect-provider' | 'connecting' | 'connected' | 'error';
+type PageState = 'loading' | 'local' | 'select-workspace' | 'no-workspaces' | 'provisioning' | 'connect-provider' | 'connecting' | 'connected' | 'error' | 'create-workspace';
 
 interface ProvisioningInfo {
   workspaceId: string;
@@ -145,6 +145,35 @@ export default function DashboardPageClient() {
         const runningWorkspaces = (workspacesData.workspaces || []).filter(
           (w: Workspace) => w.status === 'running' && w.publicUrl
         );
+
+        // Check if user explicitly wants to see workspace picker (from "Add Workspace" button)
+        const urlParams = typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search)
+          : null;
+        const forceShowPicker = urlParams?.get('select') === 'true';
+
+        // If user explicitly requested the picker, show it and clean up URL
+        if (forceShowPicker) {
+          // Remove query param from URL without reload
+          window.history.replaceState({}, '', '/app');
+          setState('select-workspace');
+          return;
+        }
+
+        // Check for previously connected workspace (stored in localStorage)
+        // This enables seamless reconnection on page reload
+        const savedWorkspaceId = typeof window !== 'undefined'
+          ? localStorage.getItem('agentrelay_workspace_id')
+          : null;
+
+        if (savedWorkspaceId) {
+          const savedWorkspace = runningWorkspaces.find((w: Workspace) => w.id === savedWorkspaceId);
+          if (savedWorkspace) {
+            // Auto-reconnect to previously selected workspace
+            connectToWorkspace(savedWorkspace);
+            return;
+          }
+        }
 
         if (runningWorkspaces.length === 1) {
           // Auto-connect to the only running workspace
@@ -495,6 +524,118 @@ export default function DashboardPageClient() {
     );
   }
 
+  // Create workspace state - show repo selection
+  if (state === 'create-workspace') {
+    // Filter out repos that already have workspaces
+    // Workspace names are like "Workspace for Owner/repo" or just the repo fullName
+    const workspaceRepoFullNames = new Set(
+      workspaces.flatMap(w => {
+        const names: string[] = [];
+        // Check repositories array first
+        if (w.repositories && w.repositories.length > 0) {
+          w.repositories.forEach(r => names.push(r.toLowerCase()));
+        }
+        // Also extract from workspace name (format: "Workspace for Owner/repo" or "Owner/repo")
+        const match = w.name.match(/(?:Workspace for\s+)?(.+\/.+)/i);
+        if (match) {
+          names.push(match[1].toLowerCase());
+        }
+        return names;
+      })
+    );
+
+    const availableRepos = repos.filter(repo => {
+      return !workspaceRepoFullNames.has(repo.fullName.toLowerCase());
+    });
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#0a0a0f] via-[#0d1117] to-[#0a0a0f] flex flex-col items-center justify-center p-4">
+        {/* Background grid */}
+        <div className="fixed inset-0 opacity-10 pointer-events-none">
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `linear-gradient(rgba(0, 217, 255, 0.1) 1px, transparent 1px),
+                               linear-gradient(90deg, rgba(0, 217, 255, 0.1) 1px, transparent 1px)`,
+              backgroundSize: '50px 50px',
+            }}
+          />
+        </div>
+
+        <div className="relative z-10 w-full max-w-2xl">
+          {/* Logo */}
+          <div className="flex flex-col items-center mb-8">
+            <LogoIcon size={48} withGlow={true} />
+            <h1 className="mt-4 text-2xl font-bold text-white">Create Workspace</h1>
+            <p className="mt-2 text-text-muted">
+              Select a repository to create a workspace
+            </p>
+          </div>
+
+          {error && (
+            <div className="mb-4 p-4 bg-error/10 border border-error/20 rounded-xl">
+              <p className="text-error">{error}</p>
+            </div>
+          )}
+
+          <div className="bg-bg-primary/80 backdrop-blur-sm border border-border-subtle rounded-2xl p-6">
+            {/* Back button */}
+            <button
+              onClick={() => setState('select-workspace')}
+              className="mb-4 flex items-center gap-2 text-text-muted hover:text-white transition-colors text-sm"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Back to workspaces
+            </button>
+
+            <h2 className="text-lg font-semibold text-white mb-4">Available Repositories</h2>
+            <p className="text-text-muted mb-6 text-sm">
+              These are repositories the GitHub App has access to that don&apos;t have a workspace yet.
+            </p>
+
+            {availableRepos.length > 0 ? (
+              <div className="space-y-3">
+                {availableRepos.map((repo) => (
+                  <button
+                    key={repo.id}
+                    onClick={() => handleCreateWorkspace(repo.fullName)}
+                    className="w-full flex items-center gap-3 p-4 bg-bg-tertiary rounded-xl border border-border-subtle hover:border-accent-cyan/50 transition-colors text-left"
+                  >
+                    <svg className="w-5 h-5 text-text-muted flex-shrink-0" fill="currentColor" viewBox="0 0 16 16">
+                      <path d="M2 2.5A2.5 2.5 0 014.5 0h8.75a.75.75 0 01.75.75v12.5a.75.75 0 01-.75.75h-2.5a.75.75 0 110-1.5h1.75v-2h-8a1 1 0 00-.714 1.7.75.75 0 01-1.072 1.05A2.495 2.495 0 012 11.5v-9zm10.5-1V9h-8c-.356 0-.694.074-1 .208V2.5a1 1 0 011-1h8z" />
+                    </svg>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-medium truncate">{repo.fullName}</p>
+                      <p className="text-text-muted text-sm">{repo.isPrivate ? 'Private' : 'Public'}</p>
+                    </div>
+                    <svg className="w-5 h-5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-text-muted mb-4">All connected repositories already have workspaces.</p>
+                <a
+                  href="/connect-repos"
+                  className="inline-flex items-center gap-2 py-3 px-6 bg-gradient-to-r from-accent-cyan to-[#00b8d9] text-bg-deep font-semibold rounded-xl hover:shadow-glow-cyan transition-all"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+                  </svg>
+                  Connect More Repositories
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Workspace selection / no workspaces UI
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0f] via-[#0d1117] to-[#0a0a0f] flex flex-col items-center justify-center p-4">
@@ -576,22 +717,48 @@ export default function DashboardPageClient() {
               ))}
             </div>
 
-            {repos.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-border-subtle">
-                <p className="text-text-muted text-sm mb-3">Or create a new workspace:</p>
-                <div className="flex gap-2 flex-wrap">
-                  {repos.slice(0, 3).map((repo) => (
-                    <button
-                      key={repo.id}
-                      onClick={() => handleCreateWorkspace(repo.fullName)}
-                      className="py-2 px-3 bg-bg-card border border-border-subtle rounded-lg text-sm text-text-muted hover:text-white hover:border-accent-cyan/50 transition-colors"
-                    >
-                      + {repo.fullName.split('/')[1]}
-                    </button>
-                  ))}
+            {/* Show Create button only if there are repos without workspaces */}
+            {(() => {
+              // Filter out repos that already have workspaces
+              // Workspace names are like "Workspace for Owner/repo" or just the repo fullName
+              // Extract the repo fullName from workspace name or repositories array
+              const workspaceRepoFullNames = new Set(
+                workspaces.flatMap(w => {
+                  const names: string[] = [];
+                  // Check repositories array first
+                  if (w.repositories && w.repositories.length > 0) {
+                    w.repositories.forEach(r => names.push(r.toLowerCase()));
+                  }
+                  // Also extract from workspace name (format: "Workspace for Owner/repo" or "Owner/repo")
+                  const match = w.name.match(/(?:Workspace for\s+)?(.+\/.+)/i);
+                  if (match) {
+                    names.push(match[1].toLowerCase());
+                  }
+                  return names;
+                })
+              );
+
+              const availableRepos = repos.filter(repo => {
+                return !workspaceRepoFullNames.has(repo.fullName.toLowerCase());
+              });
+
+              if (availableRepos.length === 0) return null;
+
+              return (
+                <div className="mt-6 pt-6 border-t border-border-subtle">
+                  <p className="text-text-muted text-sm mb-3">Or create a new workspace:</p>
+                  <button
+                    onClick={() => setState('create-workspace')}
+                    className="py-2 px-4 bg-bg-card border border-border-subtle rounded-lg text-sm text-white hover:border-accent-cyan/50 transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Create
+                  </button>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         )}
 

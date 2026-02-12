@@ -1,6 +1,6 @@
 {
   "name": "relay-dashboard-monorepo",
-  "version": "2.0.65",
+  "version": "2.0.69",
   "private": true,
   "description": "Monorepo for Agent Relay dashboard packages",
   "workspaces": [
@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev -w @agent-relay/dashboard\" \"npm run dev -w @agent-relay/dashboard-server\"",
     "dev:mock": "concurrently \"npm run dev -w @agent-relay/dashboard\" \"npm run dev:mock -w @agent-relay/dashboard-server\"",
+    "dev:mock:cloud": "concurrently \"NEXT_PUBLIC_FORCE_CLOUD_MODE=true npm run dev -w @agent-relay/dashboard\" \"npm run dev:mock -w @agent-relay/dashboard-server\"",
     "build": "npm run build -w @agent-relay/dashboard-server && npm run build -w @agent-relay/dashboard && rm -rf packages/dashboard-server/out && cp -r packages/dashboard/out packages/dashboard-server/out",
     "start": "concurrently \"npm run start -w @agent-relay/dashboard\" \"npm run start -w @agent-relay/dashboard-server\"",
     "start:mock": "concurrently \"npm run start -w @agent-relay/dashboard\" \"npm run start:mock -w @agent-relay/dashboard-server\"",
@@ -36,5 +37,10 @@
   "license": "Apache-2.0",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@agent-relay/bridge": "^2.1.23",
+    "@agent-relay/utils": "^2.1.23",
+    "@agent-relay/wrapper": "^2.1.23"
   }
 }

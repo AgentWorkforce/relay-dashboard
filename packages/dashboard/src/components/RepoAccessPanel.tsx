@@ -12,6 +12,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Nango from '@nangohq/frontend';
 
+interface GitHubAppAccessResult {
+  hasAccess: boolean;
+  needsReconnect: boolean;
+  reason?: string;
+  message?: string;
+  connectionId?: string;
+}
+
 interface AccessibleRepo {
   id: number;
   fullName: string;
@@ -75,11 +83,19 @@ export function RepoAccessPanel({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'with-workspace' | 'without-workspace'>('all');
 
-  // GitHub OAuth state
+  // GitHub OAuth state (for initial connection when not connected)
   const nangoRef = useRef<InstanceType<typeof Nango> | null>(null);
   const [isNangoReady, setIsNangoReady] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+
+  // GitHub App reconnect state (for adding repos to existing installation)
+  const nangoAppRef = useRef<InstanceType<typeof Nango> | null>(null);
+  const [isNangoAppReady, setIsNangoAppReady] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [checkingAppAccess, setCheckingAppAccess] = useState<string | null>(null);
+  const [pendingRepoForWorkspace, setPendingRepoForWorkspace] = useState<string | null>(null);
+  const [reconnectSuccessful, setReconnectSuccessful] = useState(false);
 
   // Create a map of repo full names to workspace IDs for quick lookup
   const repoToWorkspace = new Map<string, Workspace>();
@@ -152,6 +168,194 @@ export function RepoAccessPanel({
     return () => { mounted = false; };
   }, [isGitHubNotConnected]);
 
+  // Initialize Nango for GitHub App reconnect (proactively, when repos are loaded)
+  useEffect(() => {
+    if (loadingState !== 'loaded' || repos.length === 0) return;
+
+    let mounted = true;
+
+    const initNangoApp = async () => {
+      try {
+        // Get Nango session token for GitHub App repo connection
+        const response = await fetch('/api/auth/nango/repo-session', {
+          credentials: 'include',
+        });
+        const data = await response.json();
+
+        if (!mounted) return;
+
+        if (response.ok && data.sessionToken) {
+          nangoAppRef.current = new Nango({ connectSessionToken: data.sessionToken });
+          setIsNangoAppReady(true);
+        }
+      } catch (err) {
+        console.error('Failed to initialize Nango for GitHub App:', err);
+      }
+    };
+
+    initNangoApp();
+    return () => { mounted = false; };
+  }, [loadingState, repos.length]);
+
+  // Check if GitHub App has access to a specific repo
+  const checkGitHubAppAccess = useCallback(async (repoFullName: string): Promise<GitHubAppAccessResult> => {
+    console.log('[RepoAccessPanel] checkGitHubAppAccess called for:', repoFullName);
+    const [owner, repo] = repoFullName.split('/');
+    if (!owner || !repo) {
+      return { hasAccess: false, needsReconnect: false, message: 'Invalid repository name' };
+    }
+
+    try {
+      console.log('[RepoAccessPanel] Fetching /api/repos/check-github-app-access/' + owner + '/' + repo);
+      const response = await fetch(`/api/repos/check-github-app-access/${owner}/${repo}`, {
+        credentials: 'include',
+      });
+      const data = await response.json();
+      console.log('[RepoAccessPanel] Response:', data);
+
+      if (!response.ok) {
+        return { hasAccess: false, needsReconnect: true, message: data.error || 'Failed to check access' };
+      }
+
+      return data as GitHubAppAccessResult;
+    } catch (err) {
+      console.error('Error checking GitHub App access:', err);
+      return { hasAccess: false, needsReconnect: true, message: 'Failed to check access' };
+    }
+  }, []);
+
+  // Handle GitHub App reconnect to add a repo
+  const handleReconnectGitHubApp = useCallback(async (repoFullName: string) => {
+    setIsReconnecting(true);
+    setPendingRepoForWorkspace(repoFullName);
+    setReconnectSuccessful(false);
+    setError(null);
+
+    try {
+      // First, try to get a reconnect session (for existing connections)
+      // This uses the Nango reconnect flow to update the existing GitHub App installation
+      let sessionResponse = await fetch('/api/auth/nango/repo-reconnect-session', {
+        credentials: 'include',
+      });
+      let sessionData = await sessionResponse.json();
+
+      // If no existing connection, fall back to regular connect flow
+      if (!sessionResponse.ok || sessionData.code === 'NO_EXISTING_CONNECTION') {
+        sessionResponse = await fetch('/api/auth/nango/repo-session', {
+          credentials: 'include',
+        });
+        sessionData = await sessionResponse.json();
+      }
+
+      if (!sessionResponse.ok || !sessionData.sessionToken) {
+        setError('Failed to initialize GitHub connection. Please refresh the page.');
+        setIsReconnecting(false);
+        setPendingRepoForWorkspace(null);
+        return;
+      }
+
+      // Create Nango instance with the session token
+      const nangoInstance = new Nango({ connectSessionToken: sessionData.sessionToken });
+      nangoAppRef.current = nangoInstance;
+      setIsNangoAppReady(true);
+
+      // Use github-app-oauth for GitHub App installation
+      const result = await nangoInstance.auth('github-app-oauth');
+      if (result && 'connectionId' in result) {
+        // Poll for completion
+        const pollForRepos = async (attempts = 0): Promise<boolean> => {
+          console.log(`[RepoAccessPanel] Polling for repos, attempt ${attempts}, connectionId=${result.connectionId}`);
+          if (attempts > 30) {
+            throw new Error('Connection timed out. Please try again.');
+          }
+
+          try {
+            const statusRes = await fetch(`/api/auth/nango/repo-status/${result.connectionId}`, {
+              credentials: 'include',
+            });
+            const statusData = await statusRes.json();
+            console.log(`[RepoAccessPanel] Poll response:`, statusData);
+
+            if (statusData.pendingApproval) {
+              setError('Waiting for organization admin approval. Please try again later.');
+              return false;
+            } else if (statusData.ready) {
+              console.log('[RepoAccessPanel] Repos ready!');
+              return true;
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            return pollForRepos(attempts + 1);
+          } catch (err) {
+            console.error('[RepoAccessPanel] Poll error:', err);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            return pollForRepos(attempts + 1);
+          }
+        };
+
+        const success = await pollForRepos();
+        if (success) {
+          // Refresh the repos list
+          await fetchRepos();
+          // Signal that reconnect was successful - effect will handle workspace creation
+          setReconnectSuccessful(true);
+          setIsReconnecting(false);
+        }
+      } else {
+        throw new Error('No connection ID returned');
+      }
+    } catch (err: unknown) {
+      const error = err as Error & { type?: string };
+      console.error('GitHub App reconnect error:', error);
+
+      // Don't show error for user-cancelled auth
+      if (error.type === 'user_cancelled' || error.message?.includes('closed')) {
+        setPendingRepoForWorkspace(null);
+      } else {
+        setError(error.message || 'Failed to reconnect GitHub');
+        setPendingRepoForWorkspace(null);
+      }
+      setIsReconnecting(false);
+    }
+  }, [fetchRepos]);
+
+  // Effect to create workspace after successful reconnect
+  useEffect(() => {
+    if (reconnectSuccessful && pendingRepoForWorkspace && !isReconnecting) {
+      const repoName = pendingRepoForWorkspace;
+      // Clear the flags
+      setReconnectSuccessful(false);
+      setPendingRepoForWorkspace(null);
+      // Create the workspace (skip access check since we just reconnected)
+      (async () => {
+        setCreatingWorkspace(repoName);
+        setError(null);
+        try {
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (csrfToken) {
+            headers['X-CSRF-Token'] = csrfToken;
+          }
+          const response = await fetch('/api/workspaces/quick', {
+            method: 'POST',
+            credentials: 'include',
+            headers,
+            body: JSON.stringify({ repositoryFullName: repoName }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to create workspace');
+          }
+          onWorkspaceCreated?.(data.workspaceId, repoName);
+        } catch (err) {
+          console.error('Error creating workspace after reconnect:', err);
+          setError(err instanceof Error ? err.message : 'Failed to create workspace');
+        } finally {
+          setCreatingWorkspace(null);
+        }
+      })();
+    }
+  }, [reconnectSuccessful, pendingRepoForWorkspace, isReconnecting, csrfToken, onWorkspaceCreated]);
+
   // Handle GitHub OAuth connection
   const handleConnectGitHub = async () => {
     if (!nangoRef.current) {
@@ -215,12 +419,29 @@ export function RepoAccessPanel({
     }
   };
 
-  // Create workspace for a repo
+  // Create workspace for a repo - checks GitHub App access first
   const handleCreateWorkspace = useCallback(async (repoFullName: string) => {
+    console.log('[RepoAccessPanel] handleCreateWorkspace called for:', repoFullName);
     setCreatingWorkspace(repoFullName);
     setError(null);
 
     try {
+      // First, check if GitHub App has access to this repo
+      setCheckingAppAccess(repoFullName);
+      const accessResult = await checkGitHubAppAccess(repoFullName);
+      console.log('[RepoAccessPanel] Access result:', accessResult);
+      setCheckingAppAccess(null);
+
+      if (!accessResult.hasAccess && accessResult.needsReconnect) {
+        console.log('[RepoAccessPanel] Needs reconnect, triggering handleReconnectGitHubApp');
+        // Need to reconnect GitHub App to add this repo
+        // The reconnect handler will trigger workspace creation via effect
+        setCreatingWorkspace(null);
+        handleReconnectGitHubApp(repoFullName);
+        return;
+      }
+
+      // Proceed with workspace creation
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (csrfToken) {
         headers['X-CSRF-Token'] = csrfToken;
@@ -245,8 +466,9 @@ export function RepoAccessPanel({
       setError(err instanceof Error ? err.message : 'Failed to create workspace');
     } finally {
       setCreatingWorkspace(null);
+      setCheckingAppAccess(null);
     }
-  }, [csrfToken, onWorkspaceCreated]);
+  }, [csrfToken, onWorkspaceCreated, checkGitHubAppAccess, handleReconnectGitHubApp]);
 
   // Filter repos based on search and filter type
   const filteredRepos = repos.filter(repo => {
@@ -482,10 +704,26 @@ export function RepoAccessPanel({
                     ) : (
                       <button
                         onClick={() => handleCreateWorkspace(repo.fullName)}
-                        disabled={isCreating}
+                        disabled={isCreating || checkingAppAccess === repo.fullName || isReconnecting}
                         className="px-4 py-2 text-sm bg-gradient-to-r from-accent-cyan to-[#00b8d9] text-bg-deep font-medium rounded-lg hover:shadow-glow-cyan transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {isCreating ? (
+                        {checkingAppAccess === repo.fullName ? (
+                          <span className="flex items-center gap-2">
+                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            Checking...
+                          </span>
+                        ) : isReconnecting && pendingRepoForWorkspace === repo.fullName ? (
+                          <span className="flex items-center gap-2">
+                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            Connecting...
+                          </span>
+                        ) : isCreating ? (
                           <span className="flex items-center gap-2">
                             <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
