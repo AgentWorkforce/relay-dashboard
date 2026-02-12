@@ -5543,6 +5543,47 @@ export async function startDashboard(
   });
 
   /**
+   * POST /api/repos/remove - Remove a cloned repo directory from the workspace
+   * Body: { fullName: "Owner/RepoName" }
+   * Used by cloud API when a user removes a repo from their workspace settings.
+   */
+  app.post('/api/repos/remove', async (req, res) => {
+    const { fullName } = req.body;
+
+    if (!fullName || typeof fullName !== 'string' || !fullName.includes('/')) {
+      return res.status(400).json({ success: false, error: 'fullName is required (e.g., "Owner/RepoName")' });
+    }
+
+    if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(fullName)) {
+      return res.status(400).json({ success: false, error: 'Invalid repository name format' });
+    }
+
+    const repoName = fullName.split('/').pop()!;
+    const workspaceDir = process.env.WORKSPACE_DIR || path.dirname(projectRoot || dataDir);
+    const targetDir = path.join(workspaceDir, repoName);
+
+    // Verify the directory is inside the workspace dir (prevent path traversal)
+    const resolvedTarget = path.resolve(targetDir);
+    const resolvedWorkspace = path.resolve(workspaceDir);
+    if (!resolvedTarget.startsWith(resolvedWorkspace + path.sep)) {
+      return res.status(400).json({ success: false, error: 'Invalid path' });
+    }
+
+    if (!fs.existsSync(targetDir)) {
+      return res.json({ success: true, message: 'Directory does not exist', path: targetDir });
+    }
+
+    try {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+      console.log(`[api/repos/remove] Removed directory: ${targetDir}`);
+      res.json({ success: true, path: targetDir });
+    } catch (err: any) {
+      console.error('[api/repos/remove] Remove failed:', err.message);
+      res.status(500).json({ success: false, error: err.message || 'Remove failed' });
+    }
+  });
+
+  /**
    * POST /api/spawn/architect - Spawn an Architect agent for bridge mode
    * Body: { cli?: string }
    */
