@@ -1989,7 +1989,7 @@ export async function startDashboard(
 
   const getAllData = async () => {
     const team = getTeamData();
-    if (!team) return { agents: [], messages: [], activity: [], sessions: [], summaries: [] };
+    if (!team) return null; // Signal that team data is temporarily unavailable
 
     const agentsMap = new Map<string, AgentStatus>();
     const allMessages: Message[] = await getMessages(team.agents);
@@ -2297,6 +2297,14 @@ export async function startDashboard(
   const broadcastData = async () => {
     try {
       const data = await getAllData();
+
+      // Skip broadcast when team data is temporarily unavailable (e.g., agents.json
+      // being rewritten by daemon). Preserves the last valid payload so clients
+      // don't see an empty screen flash.
+      if (!data) {
+        return;
+      }
+
       const rawPayload = JSON.stringify(data);
 
       // Guard against empty/invalid payloads
@@ -2449,7 +2457,11 @@ export async function startDashboard(
 
     try {
       const data = await getAllData();
-      const payload = JSON.stringify(data);
+
+      // If team data is temporarily unavailable, send empty-but-valid structure
+      // so the client at least renders (better than sending nothing on first connect)
+      const safeData = data ?? { agents: [], messages: [], activity: [], sessions: [], summaries: [] };
+      const payload = JSON.stringify(safeData);
 
       // Guard against empty/invalid payloads
       if (!payload || payload.length === 0) {
