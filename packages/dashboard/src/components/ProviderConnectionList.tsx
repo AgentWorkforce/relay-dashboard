@@ -332,7 +332,7 @@ export function ProviderConnectionList({
                           </button>
                         </div>
                         <p className="text-xs text-text-muted">
-                          Run this in your terminal to connect via SSH (no browser terminal needed)
+                          Click &quot;Connect with {provider.displayName}&quot; above to get a command with a session token, or run this with your CLI already configured.
                         </p>
                       </>
                     )}

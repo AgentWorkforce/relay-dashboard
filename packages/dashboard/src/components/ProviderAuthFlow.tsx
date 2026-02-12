@@ -194,15 +194,13 @@ export function ProviderAuthFlow({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
 
-      const res = await fetch('/api/auth/codex-helper/cli-session', {
+      const res = await fetch('/api/auth/ssh/init', {
         method: 'POST',
         credentials: 'include',
         headers,
         body: JSON.stringify({
           workspaceId,
-          authUrl, // Pass authUrl so CLI can use it directly without needing session auth
-          sessionId, // Pass sessionId for credential storage
-          provider: backendProviderId, // Pass provider so cloud generates the right CLI command
+          provider: backendProviderId,
         }),
       });
 
