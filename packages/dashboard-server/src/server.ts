@@ -2071,15 +2071,17 @@ export async function startDashboard(
               existing.status = 'online';
               if (user.avatarUrl) existing.avatarUrl = user.avatarUrl;
             } else {
-              const now = new Date().toISOString();
+              // Use stable timestamps from the user/file data, not new Date(),
+              // so getAllData() produces deterministic output for dedup comparison
+              const stableTimestamp = user.lastSeen || user.connectedAt || new Date(remoteData.updatedAt).toISOString();
               agentsMap.set(user.name, {
                 name: user.name,
                 role: 'User',
                 cli: 'dashboard',
                 messageCount: 0,
                 status: 'online',
-                lastSeen: now,
-                lastActive: now,
+                lastSeen: stableTimestamp,
+                lastActive: stableTimestamp,
                 needsAttention: false,
                 avatarUrl: user.avatarUrl,
               });
@@ -2276,19 +2278,22 @@ export async function startDashboard(
       });
 
     // Separate AI agents from human users
+    // Sort by name for deterministic JSON serialization (enables dedup comparison)
     const filteredAgents = validEntries
       .filter(agent => agent.cli !== 'dashboard')
       .map(agent => ({
         ...agent,
         isHuman: false,
-      }));
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     const humanUsers = validEntries
       .filter(agent => agent.cli === 'dashboard')
       .map(agent => ({
         ...agent,
         isHuman: true,
-      }));
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     return {
       agents: filteredAgents,
@@ -2304,6 +2309,8 @@ export async function startDashboard(
   // This prevents race conditions where broadcastData sends before initial data is sent
   const initializingClients = new WeakSet<WebSocket>();
 
+  let lastBroadcastPayload = '';
+
   const broadcastData = async () => {
     try {
       const data = await getAllData();
@@ -2314,6 +2321,12 @@ export async function startDashboard(
         console.warn('[dashboard] Skipping broadcast - empty payload');
         return;
       }
+
+      // Skip broadcast if data hasn't changed since last send
+      if (rawPayload === lastBroadcastPayload) {
+        return;
+      }
+      lastBroadcastPayload = rawPayload;
 
       // Push into buffer and wrap with sequence ID for replay support
       const seq = mainMessageBuffer.push('data', rawPayload);
@@ -2398,6 +2411,8 @@ export async function startDashboard(
     return { projects: [], messages: [], connected: false };
   };
 
+  let lastBridgeBroadcastPayload = '';
+
   const broadcastBridgeData = async () => {
     try {
       const data = await getBridgeData();
@@ -2408,6 +2423,12 @@ export async function startDashboard(
         console.warn('[dashboard] Skipping bridge broadcast - empty payload');
         return;
       }
+
+      // Skip broadcast if data hasn't changed since last send
+      if (payload === lastBridgeBroadcastPayload) {
+        return;
+      }
+      lastBridgeBroadcastPayload = payload;
 
       wssBridge.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
@@ -6672,12 +6693,15 @@ Start by greeting the project leads and asking for status updates.`;
     return {};
   }
 
-  // Watch for changes
+  // Watch for changes - poll as a safety net for DB-backed storage mode.
+  // Real-time updates are already handled by explicit broadcastData() calls
+  // at every data mutation point (message send, spawn, release, cwd update, etc.).
+  // This interval only catches external/indirect changes (presence, DB edits).
   if (storage) {
     setInterval(() => {
       broadcastData().catch((err) => console.error('Broadcast failed', err));
       broadcastBridgeData().catch((err) => console.error('Bridge broadcast failed', err));
-    }, 1000);
+    }, 5000);
   } else {
     let fsWait: NodeJS.Timeout | null = null;
     let bridgeFsWait: NodeJS.Timeout | null = null;
