@@ -119,13 +119,19 @@ export function ProviderAuthFlow({
         // No URL yet, poll for it
         startPolling(data.sessionId);
       }
+
+      // For CLI auth flows, also start credential polling as a fallback.
+      // This detects auth completion even if the PTY success patterns don't match.
+      if (isCliAuthFlow && data.workspaceId && !data.useDeviceFlow) {
+        startCliPolling(data.workspaceId, data.sessionId);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to start authentication';
       setErrorMessage(msg);
       setStatus('error');
       onError(msg);
     }
-  }, [backendProviderId, workspaceId, csrfToken, useDeviceFlow, onSuccess, onError, isCliAuthFlow]);
+  }, [backendProviderId, workspaceId, csrfToken, useDeviceFlow, onSuccess, onError, isCliAuthFlow, startCliPolling]);
 
   // Ref to hold the latest code submission handler (avoids stale closure in polling)
   const handleCodeReceivedRef = useRef<((code: string, state?: string) => Promise<void>) | null>(null);
