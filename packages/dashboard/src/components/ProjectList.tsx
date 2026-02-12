@@ -97,6 +97,7 @@ export function ProjectList({
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     () => new Set(projects.map((p) => p.id))
   );
+  const [isAllCollapsed, setIsAllCollapsed] = useState(false);
 
   // Filter out system agents (setup agents and Dashboard) and human users
   // These should not appear in the sidebar but can still send/receive messages
@@ -179,6 +180,21 @@ export function ProjectList({
     });
   };
 
+  const toggleAll = () => {
+    if (isAllCollapsed) {
+      // Expand: restore all projects
+      setIsAllCollapsed(false);
+      const allProjectIds = new Set(filteredData.projects.map((p) => p.id));
+      if (filteredData.localAgents.length > 0) {
+        allProjectIds.add('__local__');
+      }
+      setExpandedProjects(allProjectIds);
+    } else {
+      // Collapse: hide everything
+      setIsAllCollapsed(true);
+    }
+  };
+
   const totalAgents =
     filteredData.localAgents.length +
     filteredData.projects.reduce((sum, p) => sum + p.agents.length, 0);
@@ -206,6 +222,18 @@ export function ProjectList({
 
   return (
     <div className="flex flex-col gap-1">
+      <div className="flex justify-between items-center py-2 px-3 text-xs text-text-muted">
+        <span>{totalAgents} {totalAgents === 1 ? 'agent' : 'agents'}</span>
+        <button
+          className="bg-transparent border-none text-accent cursor-pointer text-xs hover:underline"
+          onClick={toggleAll}
+        >
+          {isAllCollapsed ? 'Expand all' : 'Collapse all'}
+        </button>
+      </div>
+
+      {!isAllCollapsed && (
+        <>
       {/* Bridge-level agents section (Architect, etc.) - only in bridge mode */}
       {isInBridgeMode && filteredData.bridgeAgents.length > 0 && (
         <BridgeSection
@@ -267,6 +295,8 @@ export function ProjectList({
           onPinToggle={onPinToggle}
         />
       ))}
+        </>
+      )}
     </div>
   );
 }
