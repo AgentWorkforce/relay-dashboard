@@ -5518,6 +5518,13 @@ export async function startDashboard(
     const workspaceDir = process.env.WORKSPACE_DIR || path.dirname(projectRoot || dataDir);
     const targetDir = path.join(workspaceDir, repoName);
 
+    // Prevent path traversal (e.g., repoName = ".." or ".")
+    const resolvedTarget = path.resolve(targetDir);
+    const resolvedWorkspace = path.resolve(workspaceDir);
+    if (!resolvedTarget.startsWith(resolvedWorkspace + path.sep)) {
+      return res.status(400).json({ success: false, error: 'Invalid path' });
+    }
+
     // Idempotent: skip if already cloned (check for .git to avoid false positives
     // from empty directories left behind by previous failed clone attempts)
     if (fs.existsSync(path.join(targetDir, '.git'))) {
