@@ -119,6 +119,11 @@ export function ProviderAuthFlow({
         // No URL yet, poll for it
         startPolling(data.sessionId);
       }
+
+      // For CLI auth flows, store workspaceId so credential polling can start via useEffect.
+      if (isCliAuthFlow && data.workspaceId && !data.useDeviceFlow) {
+        setCliWorkspaceId(data.workspaceId);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to start authentication';
       setErrorMessage(msg);
@@ -242,6 +247,15 @@ export function ProviderAuthFlow({
       fetchCliSession();
     }
   }, [status, isCliAuthFlow, isDeviceFlow, cliCommand, fetchCliSession]);
+
+  // Start credential polling as a fallback when startAuth sets cliWorkspaceId.
+  // This detects auth completion even if fetchCliSession (SSH init) fails or
+  // the PTY success patterns don't match the CLI output.
+  useEffect(() => {
+    if (cliWorkspaceId && isCliAuthFlow && !isDeviceFlow && sessionId) {
+      startCliPolling(cliWorkspaceId, sessionId);
+    }
+  }, [cliWorkspaceId, isCliAuthFlow, isDeviceFlow, sessionId, startCliPolling]);
 
   // Open OAuth popup
   const openAuthPopup = useCallback((url: string) => {
