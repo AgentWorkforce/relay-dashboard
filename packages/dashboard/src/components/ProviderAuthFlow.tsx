@@ -66,8 +66,9 @@ export function ProviderAuthFlow({
 
   const backendProviderId = provider.id;
 
-  // Determine if this is the Codex flow (needs to be defined early for use in startAuth)
-  const isCodexFlow = provider.requiresUrlCopy || provider.id === 'codex';
+  // Determine if this is the CLI auth flow (SSH tunnel for OAuth callback)
+  // Applies to Codex, Claude, Cursor - any provider with requiresUrlCopy
+  const isCliAuthFlow = provider.requiresUrlCopy || provider.id === 'codex' || backendProviderId === 'openai';
 
   // Start the OAuth flow
   const startAuth = useCallback(async () => {
@@ -110,7 +111,7 @@ export function ProviderAuthFlow({
         setStatus('waiting');
         // For Codex flow with device auth, can auto-open popup since no localhost callback needed
         // For standard Codex flow, wait for user to confirm local server is running
-        if (!isCodexFlow || data.useDeviceFlow) {
+        if (!isCliAuthFlow || data.useDeviceFlow) {
           openAuthPopup(data.authUrl);
         }
         startPolling(data.sessionId);
@@ -124,7 +125,7 @@ export function ProviderAuthFlow({
       setStatus('error');
       onError(msg);
     }
-  }, [backendProviderId, workspaceId, csrfToken, useDeviceFlow, onSuccess, onError, isCodexFlow]);
+  }, [backendProviderId, workspaceId, csrfToken, useDeviceFlow, onSuccess, onError, isCliAuthFlow]);
 
   // Ref to hold the latest code submission handler (avoids stale closure in polling)
   const handleCodeReceivedRef = useRef<((code: string, state?: string) => Promise<void>) | null>(null);
@@ -133,7 +134,7 @@ export function ProviderAuthFlow({
   const handleCompleteRef = useRef<((sid?: string) => Promise<void>) | null>(null);
 
   // Poll for CLI auth completion via SSH tunnel (must be defined before fetchCliSession)
-  // This polls the workspace directly to check if Codex is authenticated
+  // This polls the workspace directly to check if the provider is authenticated
   const startCliPolling = useCallback((cliAuthWorkspaceId: string, sid?: string) => {
     if (cliPollingRef.current) return;
     cliPollingRef.current = true;
@@ -151,7 +152,8 @@ export function ProviderAuthFlow({
 
       try {
         // Poll workspace auth status (via SSH tunnel approach)
-        const res = await fetch(`/api/auth/codex-helper/auth-status/${cliAuthWorkspaceId}`, {
+        // Pass provider so the cloud checks the correct provider's auth status
+        const res = await fetch(`/api/auth/codex-helper/auth-status/${cliAuthWorkspaceId}?provider=${backendProviderId}`, {
           credentials: 'include',
         });
 
@@ -180,26 +182,25 @@ export function ProviderAuthFlow({
     };
 
     poll();
-  }, []);
+  }, [backendProviderId]);
 
   // Fetch CLI session for Codex - provides a command the user can run locally
   // For workspace-based flow, returns SSH tunnel command
   const fetchCliSession = useCallback(async () => {
-    if (!isCodexFlow) return;
+    if (!isCliAuthFlow) return;
 
     setCliCommandLoading(true);
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
 
-      const res = await fetch('/api/auth/codex-helper/cli-session', {
+      const res = await fetch('/api/auth/ssh/init', {
         method: 'POST',
         credentials: 'include',
         headers,
         body: JSON.stringify({
           workspaceId,
-          authUrl, // Pass authUrl so CLI can use it directly without needing session auth
-          sessionId, // Pass sessionId for credential storage
+          provider: backendProviderId,
         }),
       });
 
@@ -233,14 +234,14 @@ export function ProviderAuthFlow({
     } finally {
       setCliCommandLoading(false);
     }
-  }, [isCodexFlow, workspaceId, csrfToken, startCliPolling, sessionId, authUrl]);
+  }, [isCliAuthFlow, workspaceId, csrfToken, startCliPolling, sessionId, authUrl, backendProviderId]);
 
   // Fetch CLI session when auth starts for Codex (only for standard flow, not device flow)
   useEffect(() => {
-    if (status === 'waiting' && isCodexFlow && !isDeviceFlow && !cliCommand) {
+    if (status === 'waiting' && isCliAuthFlow && !isDeviceFlow && !cliCommand) {
       fetchCliSession();
     }
-  }, [status, isCodexFlow, isDeviceFlow, cliCommand, fetchCliSession]);
+  }, [status, isCliAuthFlow, isDeviceFlow, cliCommand, fetchCliSession]);
 
   // Open OAuth popup
   const openAuthPopup = useCallback((url: string) => {
@@ -294,7 +295,7 @@ export function ProviderAuthFlow({
           setAuthUrl(data.authUrl);
           setStatus('waiting');
           // For Codex flow, don't auto-open popup - wait for user confirmation
-          if (!popupOpenedRef.current && !isCodexFlow) {
+          if (!popupOpenedRef.current && !isCliAuthFlow) {
             openAuthPopup(data.authUrl);
           }
         }
@@ -311,7 +312,7 @@ export function ProviderAuthFlow({
     };
 
     poll();
-  }, [backendProviderId, openAuthPopup, onError, isCodexFlow]);
+  }, [backendProviderId, openAuthPopup, onError, isCliAuthFlow]);
 
   // Complete auth by polling for credentials
   const handleComplete = useCallback(async (sid?: string) => {
@@ -503,9 +504,6 @@ export function ProviderAuthFlow({
     };
   }, [startAuth, status]);
 
-  // Determine if this is Claude flow (isCodexFlow defined earlier)
-  const isClaudeFlow = provider.id === 'anthropic';
-
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -545,25 +543,16 @@ export function ProviderAuthFlow({
           {/* Instructions - different for each provider */}
           <div className="p-4 bg-bg-tertiary rounded-lg border border-border-subtle">
             <h4 className="font-medium text-white mb-2">Complete authentication:</h4>
-            {isCodexFlow && isDeviceFlow ? (
-              /* Codex/OpenAI with device flow: Simple browser-based auth */
+            {isCliAuthFlow && isDeviceFlow ? (
+              /* Device flow: Simple browser-based auth */
               <p className="text-sm text-text-muted">
-                Sign in with your OpenAI account in the popup window. You&apos;ll see a device code to enter - this confirms the authorization.
+                Sign in with your {provider.displayName} account in the popup window. You&apos;ll see a device code to enter - this confirms the authorization.
               </p>
-            ) : isCodexFlow ? (
-              /* Codex/OpenAI standard flow: SSH tunnel forwards OAuth callback to workspace */
+            ) : isCliAuthFlow ? (
+              /* Standard CLI auth flow: SSH tunnel forwards OAuth callback to workspace */
               <p className="text-sm text-text-muted">
                 Run the CLI command below. It establishes an SSH tunnel to forward the OAuth callback to your workspace.
               </p>
-            ) : isClaudeFlow ? (
-              /* Claude/Anthropic: Shows a code after OAuth completion */
-              <ol className="text-sm text-text-muted space-y-2 list-decimal list-inside">
-                <li>Click the button below to open the login page</li>
-                <li>Sign in with your Anthropic account</li>
-                <li>After signing in, Anthropic will display an <strong>authentication code</strong></li>
-                <li>Copy that code and paste it in the input below</li>
-                <li>Click Submit to complete authentication</li>
-              </ol>
             ) : (
               /* Other providers: Try polling for credentials first */
               <ol className="text-sm text-text-muted space-y-2 list-decimal list-inside">
@@ -575,7 +564,7 @@ export function ProviderAuthFlow({
           </div>
 
           {/* Auth URL button - hidden for Codex CLI flow since it's integrated into steps */}
-          {!(isCodexFlow && cliCommand && !showManualFallback) && (
+          {!(isCliAuthFlow && cliCommand && !showManualFallback) && (
             <a
               href={authUrl}
               target="_blank"
@@ -586,13 +575,13 @@ export function ProviderAuthFlow({
             </a>
           )}
 
-          {isCodexFlow && isDeviceFlow ? (
-            /* Codex with Device Flow: Simple browser-based auth, no CLI helper needed */
+          {isCliAuthFlow && isDeviceFlow ? (
+            /* Device Flow: Simple browser-based auth, no CLI helper needed */
             <div className="space-y-4">
               <div className="p-3 bg-accent-cyan/10 border border-accent-cyan/30 rounded-lg">
                 <p className="text-sm text-accent-cyan">
                   <strong>Device Authentication:</strong> Complete the sign-in in the popup window.
-                  After signing in, you&apos;ll see a code - enter it on the OpenAI page to authorize.
+                  After signing in, you&apos;ll see a code - enter it on the {provider.displayName} page to authorize.
                 </p>
               </div>
               <div className="flex items-center gap-2 p-3 bg-accent-cyan/5 border border-accent-cyan/20 rounded-lg text-sm text-accent-cyan">
@@ -609,8 +598,8 @@ export function ProviderAuthFlow({
                 I&apos;ve completed authentication
               </button>
             </div>
-          ) : isCodexFlow ? (
-            /* Codex standard flow: CLI helper or manual URL paste */
+          ) : isCliAuthFlow ? (
+            /* CLI auth flow: SSH tunnel for OAuth callback */
             <div className="space-y-4">
               {/* Loading state while fetching CLI command */}
               {cliCommandLoading && (
@@ -649,10 +638,10 @@ export function ProviderAuthFlow({
                   {/* Step 2: Sign in */}
                   <div className="p-3 bg-bg-tertiary border border-border-subtle rounded-lg">
                     <p className="text-sm text-white mb-1">
-                      <strong>Step 2:</strong> Sign in with OpenAI
+                      <strong>Step 2:</strong> Sign in with {provider.displayName}
                     </p>
                     <p className="text-xs text-text-muted">
-                      The CLI will open your browser to the OpenAI login page. Sign in with your OpenAI account.
+                      The CLI will open your browser to the {provider.displayName} login page. Sign in with your account.
                     </p>
                   </div>
 
@@ -725,37 +714,6 @@ export function ProviderAuthFlow({
                   )}
                 </div>
               )}
-            </div>
-          ) : isClaudeFlow ? (
-            /* Claude: Code paste flow */
-            <div className="space-y-3">
-              <div className="p-3 bg-accent-cyan/10 border border-accent-cyan/30 rounded-lg">
-                <p className="text-xs text-accent-cyan">
-                  <strong>Look for the code:</strong> After signing in, Anthropic will show you an authentication code.
-                  Copy it and paste it below.
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Paste the authentication code here"
-                  value={codeInput}
-                  onChange={(e) => setCodeInput(e.target.value)}
-                  className="flex-1 px-4 py-3 bg-bg-tertiary border border-border-subtle rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-accent-cyan transition-colors font-mono text-sm"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && codeInput.trim()) {
-                      handleSubmitCode();
-                    }
-                  }}
-                />
-                <button
-                  onClick={handleSubmitCode}
-                  disabled={!codeInput.trim()}
-                  className="px-6 py-3 bg-accent-cyan text-bg-deep font-semibold rounded-xl hover:bg-accent-cyan/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                >
-                  Submit
-                </button>
-              </div>
             </div>
           ) : (
             /* Other providers: Code input with fallback button */

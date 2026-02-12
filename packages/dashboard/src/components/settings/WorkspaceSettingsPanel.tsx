@@ -731,7 +731,7 @@ export function WorkspaceSettingsPanel({
                               name: provider.name,
                               displayName: provider.displayName,
                               color: provider.color,
-                              requiresUrlCopy: provider.id === 'codex',
+                              requiresUrlCopy: ['codex', 'anthropic', 'cursor'].includes(provider.id),
                               supportsDeviceFlow: provider.supportsDeviceFlow,
                             }}
                             workspaceId={workspaceId}
