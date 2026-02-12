@@ -13,14 +13,6 @@ import { ProviderAuthFlow } from '../ProviderAuthFlow';
 import { TerminalProviderSetup } from '../TerminalProviderSetup';
 import { RepositoriesPanel } from '../RepositoriesPanel';
 
-// Map provider IDs to CLI-friendly names for the `agent-relay auth` command
-const PROVIDER_CLI_NAMES: Record<string, string> = {
-  anthropic: 'claude',
-  cursor: 'cursor',
-  codex: 'codex',
-  google: 'gemini',
-};
-
 export interface WorkspaceSettingsPanelProps {
   workspaceId: string;
   csrfToken?: string;
@@ -172,17 +164,6 @@ export function WorkspaceSettingsPanel({
   });
 
   // CLI command copy state
-  const [copiedCliCommand, setCopiedCliCommand] = useState<string | null>(null);
-
-  const copyCliCommand = useCallback((providerId: string) => {
-    const cliName = PROVIDER_CLI_NAMES[providerId];
-    if (!cliName) return;
-    const command = `agent-relay auth ${cliName} --workspace ${workspaceId}`;
-    navigator.clipboard.writeText(command).then(() => {
-      setCopiedCliCommand(providerId);
-      setTimeout(() => setCopiedCliCommand(null), 2000);
-    }).catch(() => { /* clipboard access denied */ });
-  }, [workspaceId]);
 
   // Provider disconnection state
   const [disconnectingProvider, setDisconnectingProvider] = useState<string | null>(null);
@@ -882,42 +863,6 @@ export function WorkspaceSettingsPanel({
                     </div>
                   )}
 
-                  <div className="mt-4 pt-4 border-t border-border-subtle">
-                    {!providerStatus[provider.id] && !provider.comingSoon && PROVIDER_CLI_NAMES[provider.id] ? (
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium text-text-secondary">Connect via CLI</p>
-                        <div className="relative">
-                          <div className="p-3 bg-bg-card rounded-lg font-mono text-xs text-text-secondary pr-12">
-                            <div><span className="text-accent-cyan">agent-relay auth {PROVIDER_CLI_NAMES[provider.id]}</span></div>
-                            <div className="pl-4"><span className="text-text-muted">--workspace</span> {workspaceId}</div>
-                          </div>
-                          <button
-                            onClick={() => copyCliCommand(provider.id)}
-                            className="absolute top-2 right-2 p-1.5 text-text-muted hover:text-white bg-bg-tertiary rounded-md border border-border-subtle hover:border-accent-cyan/50 transition-all"
-                            title="Copy command"
-                          >
-                            {copiedCliCommand === provider.id ? (
-                              <svg className="w-3.5 h-3.5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                            ) : (
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" strokeWidth={2} />
-                                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" strokeWidth={2} />
-                              </svg>
-                            )}
-                          </button>
-                        </div>
-                        <p className="text-xs text-text-muted">
-                          Run in your terminal. Requires agent-relay CLI installed.
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-text-muted">
-                        CLI: <code className="px-2 py-1 bg-bg-card rounded font-mono">{provider.cliCommand}</code>
-                      </p>
-                    )}
-                  </div>
                 </div>
               ))}
             </div>
