@@ -93,11 +93,12 @@ export function useMessages({
     );
   }, [messages, optimisticMessages.length]);
 
-  // Combine real messages with optimistic messages
+  // Combine real messages with optimistic messages, sorted by timestamp
   const allMessages = useMemo(() => {
     if (optimisticMessages.length === 0) return messages;
-    // Append optimistic messages at the end (they're the most recent)
-    return [...messages, ...optimisticMessages];
+    return [...messages, ...optimisticMessages].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
   }, [messages, optimisticMessages]);
 
   // Filter messages by current channel
