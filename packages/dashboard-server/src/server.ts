@@ -5518,9 +5518,23 @@ export async function startDashboard(
     const workspaceDir = process.env.WORKSPACE_DIR || path.dirname(projectRoot || dataDir);
     const targetDir = path.join(workspaceDir, repoName);
 
-    // Idempotent: skip if already cloned
-    if (fs.existsSync(targetDir)) {
+    // Prevent path traversal (e.g., repoName = ".." or ".")
+    const resolvedTarget = path.resolve(targetDir);
+    const resolvedWorkspace = path.resolve(workspaceDir);
+    if (!resolvedTarget.startsWith(resolvedWorkspace + path.sep)) {
+      return res.status(400).json({ success: false, error: 'Invalid path' });
+    }
+
+    // Idempotent: skip if already cloned (check for .git to avoid false positives
+    // from empty directories left behind by previous failed clone attempts)
+    if (fs.existsSync(path.join(targetDir, '.git'))) {
       return res.json({ success: true, message: 'Already cloned', path: targetDir });
+    }
+
+    // Clean up stale directory from a previous failed clone (no .git = incomplete)
+    if (fs.existsSync(targetDir)) {
+      console.log(`[api/repos/clone] Removing stale directory ${targetDir} (no .git found)`);
+      fs.rmSync(targetDir, { recursive: true, force: true });
     }
 
     // Use plain HTTPS URL - git credential helper handles authentication.
@@ -5547,6 +5561,8 @@ export async function startDashboard(
     } catch (err: any) {
       const safeMessage = (err.message || 'Clone failed');
       console.error('[api/repos/clone] Clone failed:', safeMessage);
+      // Clean up failed clone directory so future attempts aren't blocked
+      try { fs.rmSync(targetDir, { recursive: true, force: true }); } catch { /* ignore */ }
       res.status(500).json({ success: false, error: safeMessage });
     }
   });
