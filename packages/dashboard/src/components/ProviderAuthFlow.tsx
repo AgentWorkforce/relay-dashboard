@@ -192,10 +192,14 @@ export function ProviderAuthFlow({
     if (status === 'idle') {
       startAuth();
     }
+  }, [startAuth, status]);
+
+  // Clean up polling only on unmount (not on status changes, which would kill active polling)
+  useEffect(() => {
     return () => {
       pollingRef.current = false;
     };
-  }, [startAuth, status]);
+  }, []);
 
   return (
     <div className="space-y-4">
