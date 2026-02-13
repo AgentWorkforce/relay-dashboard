@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useDebounce } from './useDebounce';
-import { listChannels, joinChannel as joinChannelApi, leaveChannel as leaveChannelApi } from '../channels/api';
+import { api } from '../../lib/api';
 
 export interface BrowseChannel {
   id: string;
@@ -93,35 +93,55 @@ export function useChannelBrowser(
     setError(null);
 
     try {
-      const result = await listChannels(workspaceId, { joinedOnly: false });
-      const normalizedSearch = search.trim().toLowerCase();
+      // Build query params
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: pageSize.toString(),
+      });
 
-      // Show only channels the user has not yet joined.
-      const availableChannels = result.channels
-        .filter((ch) => ch.status !== 'archived')
-        .map((ch): BrowseChannel => ({
+      if (search.trim()) {
+        params.set('search', search.trim());
+      }
+
+      // Use workspace-scoped endpoint
+      const result = await api.get<{
+        channels: Array<{
+          id: string;
+          name: string;
+          description?: string;
+          memberCount?: number;
+          isPrivate?: boolean;
+          createdAt: string;
+          // Backend may use different field names
+          isMember?: boolean;
+        }>;
+        archivedChannels?: unknown[];
+        pagination?: {
+          page: number;
+          limit: number;
+          total: number;
+          totalPages: number;
+        };
+      }>(`/api/workspaces/${workspaceId}/channels?${params.toString()}`);
+
+      if (result.channels) {
+        // Map backend response to BrowseChannel format
+        const mappedChannels: BrowseChannel[] = result.channels.map((ch) => ({
           id: ch.id,
           name: ch.name,
           description: ch.description,
           memberCount: ch.memberCount || 0,
-          isJoined: ch.isJoined ?? false,
-          isPrivate: ch.visibility === 'private',
+          isJoined: ch.isMember ?? false,
+          isPrivate: ch.isPrivate ?? false,
           createdAt: ch.createdAt,
-        }))
-        .filter((ch) => !ch.isJoined);
-
-      const filteredChannels = normalizedSearch
-        ? availableChannels.filter((ch) =>
-          ch.name.toLowerCase().includes(normalizedSearch) ||
-          ch.description?.toLowerCase().includes(normalizedSearch)
-        )
-        : availableChannels;
-
-      const start = (page - 1) * pageSize;
-      const end = start + pageSize;
-
-      setChannels(filteredChannels.slice(start, end));
-      setTotalCount(filteredChannels.length);
+        }));
+        setChannels(mappedChannels);
+        setTotalCount(result.pagination?.total || result.channels.length);
+      } else {
+        // API might return different structure - handle gracefully
+        setChannels([]);
+        setTotalCount(0);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch channels';
       setError(message);
@@ -156,11 +176,16 @@ export function useChannelBrowser(
     }
 
     try {
-      await joinChannelApi(workspaceId, channelId);
+      await api.post(`/api/workspaces/${workspaceId}/channels/${encodeURIComponent(channelId)}/join`);
 
-      // Remove from browse list once joined.
-      setChannels((prev) => prev.filter((ch) => ch.id !== channelId));
-      setTotalCount((prev) => Math.max(0, prev - 1));
+      // Optimistically update local state
+      setChannels((prev) =>
+        prev.map((ch) =>
+          ch.id === channelId
+            ? { ...ch, isJoined: true, memberCount: ch.memberCount + 1 }
+            : ch
+        )
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to join channel';
       setError(message);
@@ -175,7 +200,16 @@ export function useChannelBrowser(
     }
 
     try {
-      await leaveChannelApi(workspaceId, channelId);
+      await api.post(`/api/workspaces/${workspaceId}/channels/${encodeURIComponent(channelId)}/leave`);
+
+      // Optimistically update local state
+      setChannels((prev) =>
+        prev.map((ch) =>
+          ch.id === channelId
+            ? { ...ch, isJoined: false, memberCount: Math.max(0, ch.memberCount - 1) }
+            : ch
+        )
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to leave channel';
       setError(message);

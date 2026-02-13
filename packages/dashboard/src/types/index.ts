@@ -7,48 +7,6 @@ import type { ThreadMetadata } from './threading';
 
 export type { ThreadMetadata } from './threading';
 
-// Slack Integration Types
-export type SlackConversationStateType =
-  | 'discovery'
-  | 'refinement'
-  | 'prd_generated'
-  | 'approved'
-  | 'implementation';
-
-export interface SlackWorkspaceConnection {
-  id: string;
-  teamId: string;
-  teamName: string;
-  connectionId: string;
-  status: 'active' | 'inactive' | 'error';
-  connectedAt: string;
-}
-
-export interface SlackChannelConfig {
-  id: string;
-  channelId: string;
-  channelName: string;
-  workspaceConnectionId: string;
-  allowedRepos?: string[];
-  defaultRepo?: string;
-}
-
-export interface SlackConversationState {
-  id: string;
-  channelId: string;
-  threadTs: string;
-  state: SlackConversationStateType;
-  prdContent?: string;
-  agents?: Array<{
-    id: string;
-    name: string;
-    status: string;
-    taskDescription?: string;
-  }>;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
 // Agent Types
 export interface Agent {
   name: string;

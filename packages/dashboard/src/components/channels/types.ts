@@ -85,8 +85,6 @@ export interface Channel {
   };
   /** Whether this is a DM channel */
   isDm: boolean;
-  /** Whether current user is a member (present when browsing all channels) */
-  isJoined?: boolean;
   /** For DMs: the other participant(s) */
   dmParticipants?: string[];
 }
