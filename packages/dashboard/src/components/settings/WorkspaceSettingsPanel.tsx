@@ -309,14 +309,24 @@ export function WorkspaceSettingsPanel({
   };
 
   // Restart workspace
+  const [isRestarting, setIsRestarting] = useState(false);
+  const [isRebuilding, setIsRebuilding] = useState(false);
+
   const handleRestart = useCallback(async () => {
     if (!workspace) return;
 
     const confirmed = window.confirm('Are you sure you want to restart this workspace?');
     if (!confirmed) return;
 
+    setIsRestarting(true);
+    setError(null);
+
     const result = await cloudApi.restartWorkspace(workspace.id);
     if (result.success) {
+      // If reprovisioning, update status to show provisioning state
+      if (result.data.action === 'reprovisioning') {
+        setWorkspace(prev => prev ? { ...prev, status: 'provisioning', errorMessage: undefined } : null);
+      }
       const wsResult = await cloudApi.getWorkspaceDetails(workspaceId);
       if (wsResult.success) {
         setWorkspace(wsResult.data);
@@ -324,6 +334,32 @@ export function WorkspaceSettingsPanel({
     } else {
       setError(result.error);
     }
+    setIsRestarting(false);
+  }, [workspace, workspaceId]);
+
+  // Rebuild workspace from scratch
+  const handleRebuild = useCallback(async () => {
+    if (!workspace) return;
+
+    const confirmed = window.confirm(
+      'This will completely rebuild your workspace from scratch. All running processes will be stopped. Continue?'
+    );
+    if (!confirmed) return;
+
+    setIsRebuilding(true);
+    setError(null);
+
+    const result = await cloudApi.rebuildWorkspace(workspace.id);
+    if (result.success) {
+      setWorkspace(prev => prev ? { ...prev, status: 'provisioning', errorMessage: undefined } : null);
+      const wsResult = await cloudApi.getWorkspaceDetails(workspaceId);
+      if (wsResult.success) {
+        setWorkspace(wsResult.data);
+      }
+    } else {
+      setError(result.error);
+    }
+    setIsRebuilding(false);
   }, [workspace, workspaceId]);
 
   // Stop workspace
@@ -559,17 +595,56 @@ export function WorkspaceSettingsPanel({
               subtitle="Core configuration and status"
             />
 
+            {/* Error state banner */}
+            {workspace.status === 'error' && (
+              <div className="p-5 bg-error/10 border border-error/30 rounded-xl space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-error/20 flex items-center justify-center shrink-0 mt-0.5">
+                    <AlertIcon className="text-error" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-error">Workspace Error</h4>
+                    <p className="text-xs text-text-secondary mt-1">
+                      {workspace.errorMessage || 'The workspace encountered an error and is not running.'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <ActionButton
+                    onClick={handleRestart}
+                    disabled={isRestarting || isRebuilding}
+                    variant="primary"
+                    icon={isRestarting ? <SpinnerIcon /> : <RestartIcon />}
+                  >
+                    {isRestarting ? 'Restarting...' : 'Restart Workspace'}
+                  </ActionButton>
+                  <ActionButton
+                    onClick={handleRebuild}
+                    disabled={isRestarting || isRebuilding}
+                    variant="warning"
+                    icon={isRebuilding ? <SpinnerIcon /> : <RebuildIcon />}
+                  >
+                    {isRebuilding ? 'Rebuilding...' : 'Rebuild from Scratch'}
+                  </ActionButton>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <InfoCard label="Name" value={workspace.name} />
               <InfoCard
                 label="Status"
-                value={workspace.status.charAt(0).toUpperCase() + workspace.status.slice(1)}
+                value={
+                  (isRestarting || isRebuilding) ? 'Provisioning' :
+                  workspace.status.charAt(0).toUpperCase() + workspace.status.slice(1)
+                }
                 valueColor={
+                  (isRestarting || isRebuilding) ? 'text-accent-cyan' :
                   workspace.status === 'running' ? 'text-success' :
                   workspace.status === 'stopped' ? 'text-amber-400' :
                   workspace.status === 'error' ? 'text-error' : 'text-text-muted'
                 }
-                indicator={workspace.status === 'running'}
+                indicator={workspace.status === 'running' && !isRestarting && !isRebuilding}
               />
               <InfoCard
                 label="Public URL"
@@ -584,7 +659,7 @@ export function WorkspaceSettingsPanel({
 
             <div>
               <SectionHeader title="Actions" subtitle="Manage workspace state" />
-              <div className="flex gap-3 mt-4">
+              <div className="flex flex-wrap gap-3 mt-4">
                 {workspace.status === 'running' && (
                   <ActionButton
                     onClick={handleStop}
@@ -596,10 +671,19 @@ export function WorkspaceSettingsPanel({
                 )}
                 <ActionButton
                   onClick={handleRestart}
+                  disabled={isRestarting || isRebuilding}
                   variant="primary"
-                  icon={<RestartIcon />}
+                  icon={isRestarting ? <SpinnerIcon /> : <RestartIcon />}
                 >
-                  Restart Workspace
+                  {isRestarting ? 'Restarting...' : 'Restart Workspace'}
+                </ActionButton>
+                <ActionButton
+                  onClick={handleRebuild}
+                  disabled={isRestarting || isRebuilding}
+                  variant="danger"
+                  icon={isRebuilding ? <SpinnerIcon /> : <RebuildIcon />}
+                >
+                  {isRebuilding ? 'Rebuilding...' : 'Rebuild Workspace'}
                 </ActionButton>
               </div>
             </div>
@@ -1324,6 +1408,14 @@ function SlackMark() {
   );
 }
 
+function SpinnerIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin">
+      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+    </svg>
+  );
+}
+
 function SlackConnectionStatus({ workspaceId }: { workspaceId: string }) {
   const [status, setStatus] = useState<'loading' | 'connected' | 'not_connected'>('loading');
 
@@ -1358,6 +1450,19 @@ function SlackConnectionStatus({ workspaceId }: { workspaceId: string }) {
       <span className="w-1.5 h-1.5 rounded-full bg-text-muted" />
       Not connected
     </span>
+  );
+}
+
+function RebuildIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 12a10 10 0 0 1 10-10" />
+      <path d="M22 12a10 10 0 0 1-10 10" />
+      <path d="M12 2v4" />
+      <path d="M12 18v4" />
+      <path d="M4.93 4.93l2.83 2.83" />
+      <path d="M16.24 16.24l2.83 2.83" />
+    </svg>
   );
 }
 

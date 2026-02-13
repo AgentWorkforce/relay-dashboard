@@ -447,11 +447,23 @@ export const cloudApi = {
   },
 
   /**
-   * Restart a workspace
+   * Restart a workspace.
+   * Automatically handles error/stuck states by force-destroying and reprovisioning.
    */
   async restartWorkspace(id: string) {
-    return cloudFetch<{ success: boolean; message: string }>(
+    return cloudFetch<{ success: boolean; action: 'restarted' | 'reprovisioning'; message: string }>(
       `/api/workspaces/${encodeURIComponent(id)}/restart`,
+      { method: 'POST' }
+    );
+  },
+
+  /**
+   * Rebuild/reprovision a workspace from scratch.
+   * Destroys existing infrastructure and creates a new machine.
+   */
+  async rebuildWorkspace(id: string) {
+    return cloudFetch<{ success: boolean; message: string }>(
+      `/api/workspaces/${encodeURIComponent(id)}/rebuild`,
       { method: 'POST' }
     );
   },
