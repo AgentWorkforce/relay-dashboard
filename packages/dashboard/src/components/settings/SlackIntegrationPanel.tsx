@@ -223,11 +223,14 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
 
     setJoiningChannels(true);
     let joinedCount = 0;
+    const errors: string[] = [];
 
     for (const channelId of selectedChannels) {
       const result = await cloudApi.joinSlackChannel(channelPickerConnectionId, channelId);
       if (result.success) {
         joinedCount++;
+      } else {
+        errors.push(result.error || `Failed to join channel ${channelId}`);
       }
     }
 
@@ -236,7 +239,24 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
     setSelectedChannels(new Set());
     setAvailableChannels([]);
 
-    if (joinedCount > 0) {
+    // Invalidate cached channels so View Channels refetches
+    setChannels(prev => {
+      const updated = { ...prev };
+      // Find the connection that matches this channelPickerConnectionId
+      // and clear its cache to force a refetch
+      for (const key of Object.keys(updated)) {
+        delete updated[key];
+      }
+      return updated;
+    });
+
+    if (errors.length > 0) {
+      setTestResult({
+        connectionId: channelPickerConnectionId,
+        success: false,
+        message: `Failed to join ${errors.length} channel(s): ${errors[0]}`,
+      });
+    } else if (joinedCount > 0) {
       setTestResult({
         connectionId: channelPickerConnectionId,
         success: true,
@@ -528,6 +548,15 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
                       </p>
                     </div>
                   )}
+                  {/* Manage channels button */}
+                  <div className="mt-3 pt-3 border-t border-border-subtle">
+                    <button
+                      onClick={() => showChannelPicker(connection.id)}
+                      className="text-xs font-medium text-accent-cyan hover:text-accent-cyan/80 transition-colors"
+                    >
+                      + Manage Channels
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
