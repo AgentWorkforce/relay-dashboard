@@ -27,6 +27,7 @@ export interface IntegrationProvider {
   isConnected?: boolean;
   connectedAt?: string;
   connectionId?: string;
+  comingSoon?: boolean;
 }
 
 export interface IntegrationConnectProps {
@@ -54,23 +55,22 @@ const CATEGORY_INFO: Record<ProviderCategory, { label: string; icon: React.React
 // Base provider list (matches relay-cloud provider registry)
 const BASE_PROVIDERS: IntegrationProvider[] = [
   // Tier 1 - Curated actions
-  { id: 'github', name: 'GitHub', category: 'project', tier: 1, color: '#24292e', description: 'Code repositories and issues' },
-  { id: 'slack', name: 'Slack', category: 'communication', tier: 1, color: '#4A154B', description: 'Team messaging and notifications' },
-  { id: 'linear', name: 'Linear', category: 'project', tier: 1, color: '#5E6AD2', description: 'Issue tracking and project management' },
-  { id: 'jira', name: 'Jira', category: 'project', tier: 1, color: '#0052CC', description: 'Issue and project tracking' },
-  { id: 'notion', name: 'Notion', category: 'storage', tier: 1, color: '#000000', description: 'Notes and documentation' },
-  { id: 'google-docs', name: 'Google Docs', category: 'storage', tier: 1, color: '#4285F4', description: 'Document collaboration' },
-  { id: 'gmail', name: 'Gmail', category: 'communication', tier: 1, color: '#EA4335', description: 'Email integration' },
-  { id: 'outlook', name: 'Outlook', category: 'communication', tier: 1, color: '#0078D4', description: 'Microsoft email and calendar' },
+  { id: 'slack', name: 'Slack', category: 'communication', tier: 1, color: '#4A154B', description: 'Team messaging and notifications', comingSoon: true },
+  { id: 'linear', name: 'Linear', category: 'project', tier: 1, color: '#5E6AD2', description: 'Issue tracking and project management', comingSoon: true },
+  { id: 'jira', name: 'Jira', category: 'project', tier: 1, color: '#0052CC', description: 'Issue and project tracking', comingSoon: true },
+  { id: 'notion', name: 'Notion', category: 'storage', tier: 1, color: '#000000', description: 'Notes and documentation', comingSoon: true },
+  { id: 'google-docs', name: 'Google Docs', category: 'storage', tier: 1, color: '#4285F4', description: 'Document collaboration', comingSoon: true },
+  { id: 'gmail', name: 'Gmail', category: 'communication', tier: 1, color: '#EA4335', description: 'Email integration', comingSoon: true },
+  { id: 'outlook', name: 'Outlook', category: 'communication', tier: 1, color: '#0078D4', description: 'Microsoft email and calendar', comingSoon: true },
 
   // Tier 2 - Proxy-only
-  { id: 'datadog', name: 'Datadog', category: 'monitoring', tier: 2, color: '#632CA6', description: 'Infrastructure monitoring' },
-  { id: 'sentry', name: 'Sentry', category: 'monitoring', tier: 2, color: '#362D59', description: 'Error tracking' },
-  { id: 'vercel', name: 'Vercel', category: 'deploy', tier: 2, color: '#000000', description: 'Frontend deployment' },
-  { id: 'netlify', name: 'Netlify', category: 'deploy', tier: 2, color: '#00C7B7', description: 'Web hosting and deployment' },
-  { id: 'circleci', name: 'CircleCI', category: 'deploy', tier: 2, color: '#343434', description: 'Continuous integration' },
-  { id: 'pagerduty', name: 'PagerDuty', category: 'monitoring', tier: 2, color: '#06AC38', description: 'Incident management' },
-  { id: 'confluence', name: 'Confluence', category: 'storage', tier: 2, color: '#172B4D', description: 'Team documentation' },
+  { id: 'datadog', name: 'Datadog', category: 'monitoring', tier: 2, color: '#632CA6', description: 'Infrastructure monitoring', comingSoon: true },
+  { id: 'sentry', name: 'Sentry', category: 'monitoring', tier: 2, color: '#362D59', description: 'Error tracking', comingSoon: true },
+  { id: 'vercel', name: 'Vercel', category: 'deploy', tier: 2, color: '#000000', description: 'Frontend deployment', comingSoon: true },
+  { id: 'netlify', name: 'Netlify', category: 'deploy', tier: 2, color: '#00C7B7', description: 'Web hosting and deployment', comingSoon: true },
+  { id: 'circleci', name: 'CircleCI', category: 'deploy', tier: 2, color: '#343434', description: 'Continuous integration', comingSoon: true },
+  { id: 'pagerduty', name: 'PagerDuty', category: 'monitoring', tier: 2, color: '#06AC38', description: 'Incident management', comingSoon: true },
+  { id: 'confluence', name: 'Confluence', category: 'storage', tier: 2, color: '#172B4D', description: 'Team documentation', comingSoon: true },
 ];
 
 export function IntegrationConnect({
@@ -112,7 +112,7 @@ export function IntegrationConnect({
 
           setProviders(BASE_PROVIDERS.map(p => ({
             ...p,
-            ...connectedMap.get(p.id),
+            ...(connectedMap.get(p.id) || {}),
           })));
         }
       } catch (err) {
@@ -345,7 +345,7 @@ export function IntegrationConnect({
                 {CATEGORY_INFO[category as ProviderCategory].label}
               </h3>
             </div>
-            <div className={`grid gap-3 ${compact ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4'}`}>
+            <div className="grid gap-3 grid-cols-4">
               {categoryProviders.map(provider => (
                 <ProviderCard
                   key={provider.id}
@@ -362,7 +362,7 @@ export function IntegrationConnect({
         ))
       ) : (
         // Show flat grid for single category
-        <div className={`grid gap-3 ${compact ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4'}`}>
+        <div className="grid gap-3 grid-cols-4">
           {filteredProviders.map(provider => (
             <ProviderCard
               key={provider.id}
@@ -402,7 +402,9 @@ function ProviderCard({ provider, onConnect, onDisconnect, isConnecting, isDisco
   return (
     <div
       className={`relative p-4 bg-bg-tertiary rounded-xl border transition-all duration-200 ${
-        provider.isConnected
+        provider.comingSoon
+          ? 'border-border-subtle opacity-60'
+          : provider.isConnected
           ? 'border-success/30 hover:border-success/50'
           : 'border-border-subtle hover:border-accent-cyan/50'
       }`}
@@ -435,7 +437,13 @@ function ProviderCard({ provider, onConnect, onDisconnect, isConnecting, isDisco
 
       {/* Connection status & actions */}
       <div className="mt-3 pt-3 border-t border-border-subtle">
-        {provider.isConnected ? (
+        {provider.comingSoon ? (
+          <div className="flex justify-center">
+            <span className="px-2 py-1 bg-amber-400/15 text-amber-400 text-xs font-medium rounded-full">
+              Coming Soon
+            </span>
+          </div>
+        ) : provider.isConnected ? (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-success" />

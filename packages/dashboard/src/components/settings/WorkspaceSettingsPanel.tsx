@@ -15,7 +15,6 @@ import { RepositoriesPanel } from '../RepositoriesPanel';
 import { IntegrationConnect } from '../IntegrationConnect';
 import { SlackIntegrationPanel } from './SlackIntegrationPanel';
 import { AuditLogViewer } from '../AuditLogViewer';
-import { ApprovalRequestPanel } from '../ApprovalRequestPanel';
 
 export interface WorkspaceSettingsPanelProps {
   workspaceId: string;
@@ -148,10 +147,11 @@ export function WorkspaceSettingsPanel({
   const [availableRepos, setAvailableRepos] = useState<AvailableRepo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'general' | 'providers' | 'integrations' | 'audit' | 'repos' | 'github-access' | 'domain' | 'danger'>('general');
+  const [activeSection, setActiveSection] = useState<'general' | 'providers' | 'integrations' | 'audit' | 'repos' | 'domain' | 'danger'>('general');
 
   // Slack integration collapsed state
   const [slackExpanded, setSlackExpanded] = useState(false);
+  const [slackConnectionVersion, setSlackConnectionVersion] = useState(0);
 
   // Provider connection state
   const [providerStatus, setProviderStatus] = useState<Record<string, boolean>>({});
@@ -891,7 +891,7 @@ export function WorkspaceSettingsPanel({
                   <span className="text-sm font-medium text-text-primary">Slack</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <SlackConnectionStatus workspaceId={workspaceId} />
+                  <SlackConnectionStatus key={slackConnectionVersion} workspaceId={workspaceId} />
                   <svg
                     width="14"
                     height="14"
@@ -909,17 +909,11 @@ export function WorkspaceSettingsPanel({
               </button>
               {slackExpanded && (
                 <div className="border-t border-border-subtle p-4">
-                  <SlackIntegrationPanel workspaceId={workspaceId} csrfToken={csrfToken} />
+                  <SlackIntegrationPanel workspaceId={workspaceId} csrfToken={csrfToken} onConnectionChange={() => setSlackConnectionVersion(v => v + 1)} />
                 </div>
               )}
             </div>
 
-            <ApprovalRequestPanel
-              workspaceId={workspaceId}
-              onApprovalChange={() => {
-                // Refresh connection state after approval
-              }}
-            />
             <IntegrationConnect
               workspaceId={workspaceId}
               csrfToken={csrfToken}
