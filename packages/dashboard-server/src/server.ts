@@ -3407,6 +3407,7 @@ export async function startDashboard(
    */
   app.get('/api/channels', async (req, res) => {
     const username = req.query.username as string | undefined;
+    const joinedOnly = req.query.joinedOnly !== 'false';
     const workspaceId = resolveWorkspaceId(req);
 
     if (!storage) {
@@ -3426,6 +3427,7 @@ export async function startDashboard(
           unreadCount: 0,
           hasMentions: false,
           isDm: id.startsWith('dm:'),
+          isJoined: true,
         })),
         archivedChannels: [],
       });
@@ -3447,14 +3449,15 @@ export async function startDashboard(
         hasMentions: boolean;
         lastMessage?: { content: string; from: string; timestamp: string };
         isDm: boolean;
+        isJoined: boolean;
         dmParticipants?: string[];
       };
       const activeChannels: ChannelResponse[] = [];
       const archivedChannels: ChannelResponse[] = [];
 
       for (const record of channelMap.values()) {
-        const isMember = !username || record.members.has(username) || record.id === '#general';
-        if (!isMember) {
+        const isMember = Boolean(username && record.members.has(username));
+        if (joinedOnly && !isMember) {
           continue;
         }
 
@@ -3472,6 +3475,7 @@ export async function startDashboard(
           hasMentions: false,
           lastMessage: record.lastMessage,
           isDm: record.id.startsWith('dm:'),
+          isJoined: isMember,
           dmParticipants: record.dmParticipants,
         };
 
