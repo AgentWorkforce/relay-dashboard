@@ -15,6 +15,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { cloudApi } from '../../lib/cloudApi';
 
 export interface SlackIntegrationPanelProps {
+  workspaceId: string;
   csrfToken?: string;
 }
 
@@ -36,7 +37,7 @@ interface SlackChannel {
   defaultRepo?: string;
 }
 
-export function SlackIntegrationPanel({ csrfToken }: SlackIntegrationPanelProps) {
+export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrationPanelProps) {
   const [connections, setConnections] = useState<SlackConnection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,14 +64,14 @@ export function SlackIntegrationPanel({ csrfToken }: SlackIntegrationPanelProps)
     setIsLoading(true);
     setError(null);
 
-    const result = await cloudApi.getSlackConnections();
+    const result = await cloudApi.getSlackConnections(workspaceId);
     if (result.success) {
       setConnections(result.data.connections);
     } else {
       setError(result.error);
     }
     setIsLoading(false);
-  }, []);
+  }, [workspaceId]);
 
   useEffect(() => {
     loadConnections();
@@ -90,7 +91,7 @@ export function SlackIntegrationPanel({ csrfToken }: SlackIntegrationPanelProps)
     setIsConnecting(true);
     setError(null);
 
-    const result = await cloudApi.createSlackOAuthSession();
+    const result = await cloudApi.createSlackOAuthSession(workspaceId);
     if (!result.success) {
       setError(result.error);
       setIsConnecting(false);

@@ -893,7 +893,7 @@ export function WorkspaceSettingsPanel({
               </button>
               {slackExpanded && (
                 <div className="border-t border-border-subtle p-4">
-                  <SlackIntegrationPanel csrfToken={csrfToken} />
+                  <SlackIntegrationPanel workspaceId={workspaceId} csrfToken={csrfToken} />
                 </div>
               )}
             </div>
@@ -1326,7 +1326,7 @@ function SlackConnectionStatus({ workspaceId }: { workspaceId: string }) {
     async function check() {
       try {
         const { cloudApi } = await import('../../lib/cloudApi');
-        const result = await cloudApi.getSlackConnections();
+        const result = await cloudApi.getSlackConnections(workspaceId);
         if (result.success && result.data.connections.length > 0) {
           setStatus('connected');
         } else {

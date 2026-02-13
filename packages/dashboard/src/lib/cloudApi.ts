@@ -884,7 +884,7 @@ export const cloudApi = {
   /**
    * Get Slack workspace connections for the current user
    */
-  async getSlackConnections() {
+  async getSlackConnections(workspaceId: string) {
     return cloudFetch<{
       connections: Array<{
         id: string;
@@ -894,17 +894,17 @@ export const cloudApi = {
         status: string;
         connectedAt: string;
       }>;
-    }>('/api/slack/connections');
+    }>(`/api/slack/connections?workspaceId=${encodeURIComponent(workspaceId)}`);
   },
 
   /**
    * Create a Nango connect session for Slack OAuth
    */
-  async createSlackOAuthSession() {
+  async createSlackOAuthSession(workspaceId: string) {
     return cloudFetch<{
       sessionToken: string;
       connectionId: string;
-    }>('/api/slack/oauth/session');
+    }>(`/api/slack/oauth/session?workspaceId=${encodeURIComponent(workspaceId)}`);
   },
 
   /**
@@ -989,7 +989,7 @@ export const cloudApi = {
   /**
    * List conversations for a workspace
    */
-  async getSlackConversations(connectionId: string) {
+  async getSlackConversations(workspaceId: string, connectionId: string) {
     return cloudFetch<{
       conversations: Array<{
         id: string;
@@ -999,7 +999,7 @@ export const cloudApi = {
         createdAt?: string;
         updatedAt?: string;
       }>;
-    }>(`/api/slack/conversations?connectionId=${encodeURIComponent(connectionId)}`);
+    }>(`/api/slack/conversations?workspaceId=${encodeURIComponent(workspaceId)}&connectionId=${encodeURIComponent(connectionId)}`);
   },
 
   /**
