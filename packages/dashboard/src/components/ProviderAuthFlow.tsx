@@ -93,7 +93,12 @@ export function ProviderAuthFlow({
         throw new Error(data.error || 'Failed to start authentication');
       }
 
-      setCliCommand(data.commandWithUrl || data.command);
+      const rawCommand = data.commandWithUrl || data.command;
+      // Prepend npx if not already present
+      const commandWithNpx = rawCommand && !rawCommand.trim().startsWith('npx ')
+        ? `npx ${rawCommand}`
+        : rawCommand;
+      setCliCommand(commandWithNpx);
       setStatus('waiting');
 
       // Start polling for completion
