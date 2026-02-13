@@ -12,6 +12,9 @@ import { cloudApi } from '../../lib/cloudApi';
 import { ProviderAuthFlow } from '../ProviderAuthFlow';
 import { TerminalProviderSetup } from '../TerminalProviderSetup';
 import { RepositoriesPanel } from '../RepositoriesPanel';
+import { IntegrationConnect } from '../IntegrationConnect';
+import { SlackIntegrationPanel } from './SlackIntegrationPanel';
+import { AuditLogViewer } from '../AuditLogViewer';
 
 export interface WorkspaceSettingsPanelProps {
   workspaceId: string;
@@ -144,7 +147,11 @@ export function WorkspaceSettingsPanel({
   const [availableRepos, setAvailableRepos] = useState<AvailableRepo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'general' | 'providers' | 'repos' | 'github-access' | 'domain' | 'danger'>('general');
+  const [activeSection, setActiveSection] = useState<'general' | 'providers' | 'integrations' | 'repos' | 'domain' | 'danger'>('general');
+
+  // Slack integration collapsed state
+  const [slackExpanded, setSlackExpanded] = useState(false);
+  const [slackConnectionVersion, setSlackConnectionVersion] = useState(0);
 
   // Provider connection state
   const [providerStatus, setProviderStatus] = useState<Record<string, boolean>>({});
@@ -537,6 +544,7 @@ export function WorkspaceSettingsPanel({
   const sections = [
     { id: 'general', label: 'General', icon: <SettingsGearIcon /> },
     { id: 'providers', label: 'AI Providers', icon: <ProviderIcon /> },
+    { id: 'integrations', label: 'Integrations', icon: <IntegrationIcon /> },
     { id: 'repos', label: 'Repositories', icon: <RepoIcon /> },
     { id: 'domain', label: 'Domain', icon: <GlobeIcon /> },
     { id: 'danger', label: 'Danger', icon: <AlertIcon /> },
@@ -932,6 +940,61 @@ export function WorkspaceSettingsPanel({
           </div>
         )}
 
+        {/* Integrations Section */}
+        {activeSection === 'integrations' && (
+          <div className="space-y-6">
+            <SectionHeader
+              title="External Integrations"
+              subtitle="Connect external services for agents to use (GitHub, Slack, Linear, etc.)"
+            />
+            {/* Slack - compact collapsible row */}
+            <div className="bg-bg-tertiary rounded-xl border border-border-subtle overflow-hidden">
+              <button
+                onClick={() => setSlackExpanded(!slackExpanded)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-bg-hover/50 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#4A154B] flex items-center justify-center">
+                    <SlackMark />
+                  </div>
+                  <span className="text-sm font-medium text-text-primary">Slack</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <SlackConnectionStatus key={slackConnectionVersion} workspaceId={workspaceId} />
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`text-text-muted transition-transform duration-200 ${slackExpanded ? 'rotate-180' : ''}`}
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </div>
+              </button>
+              {slackExpanded && (
+                <div className="border-t border-border-subtle p-4">
+                  <SlackIntegrationPanel workspaceId={workspaceId} csrfToken={csrfToken} onConnectionChange={() => setSlackConnectionVersion(v => v + 1)} />
+                </div>
+              )}
+            </div>
+
+            <IntegrationConnect
+              workspaceId={workspaceId}
+              csrfToken={csrfToken}
+              onConnectionChange={(providerId, connected) => {
+                // Could trigger a refresh or update local state
+                console.log(`Integration ${providerId} ${connected ? 'connected' : 'disconnected'}`);
+              }}
+            />
+            <AuditLogViewer workspaceId={workspaceId} />
+          </div>
+        )}
+        
         {/* Repositories Section */}
         {activeSection === 'repos' && (
           <div className="space-y-6">
@@ -1235,6 +1298,15 @@ function RepoIcon({ className = '' }: { className?: string }) {
   );
 }
 
+function IntegrationIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
+  );
+}
+
 function GlobeIcon({ className = '' }: { className?: string }) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -1325,11 +1397,59 @@ function InfoIcon() {
   );
 }
 
+function SlackMark() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+      <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313z" fill="#E01E5A"/>
+      <path d="M8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312z" fill="#36C5F0"/>
+      <path d="M18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312z" fill="#2EB67D"/>
+      <path d="M15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.527 2.527 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z" fill="#ECB22E"/>
+    </svg>
+  );
+}
+
 function SpinnerIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin">
       <path d="M21 12a9 9 0 1 1-6.219-8.56" />
     </svg>
+  );
+}
+
+function SlackConnectionStatus({ workspaceId }: { workspaceId: string }) {
+  const [status, setStatus] = useState<'loading' | 'connected' | 'not_connected'>('loading');
+
+  useEffect(() => {
+    async function check() {
+      try {
+        const { cloudApi } = await import('../../lib/cloudApi');
+        const result = await cloudApi.getSlackConnections(workspaceId);
+        if (result.success && result.data.connections.length > 0) {
+          setStatus('connected');
+        } else {
+          setStatus('not_connected');
+        }
+      } catch {
+        setStatus('not_connected');
+      }
+    }
+    check();
+  }, [workspaceId]);
+
+  if (status === 'loading') {
+    return <span className="text-xs text-text-muted">...</span>;
+  }
+
+  return status === 'connected' ? (
+    <span className="flex items-center gap-1.5 text-xs font-medium text-success">
+      <span className="w-1.5 h-1.5 rounded-full bg-success" />
+      Connected
+    </span>
+  ) : (
+    <span className="flex items-center gap-1.5 text-xs font-medium text-text-muted">
+      <span className="w-1.5 h-1.5 rounded-full bg-text-muted" />
+      Not connected
+    </span>
   );
 }
 
@@ -1363,6 +1483,18 @@ function SyncIcon({ spinning = false }: { spinning?: boolean } = {}) {
       <path d="M1 20v-6h6" />
       <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
       <path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" />
+    </svg>
+  );
+}
+
+function AuditIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <polyline points="10 9 9 9 8 9" />
     </svg>
   );
 }
