@@ -18,6 +18,7 @@ import { cloudApi } from '../../lib/cloudApi';
 export interface SlackIntegrationPanelProps {
   workspaceId: string;
   csrfToken?: string;
+  onConnectionChange?: () => void;
 }
 
 interface SlackConnection {
@@ -48,7 +49,7 @@ interface SlackAvailableChannel {
   purpose: string;
 }
 
-export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrationPanelProps) {
+export function SlackIntegrationPanel({ workspaceId, csrfToken, onConnectionChange }: SlackIntegrationPanelProps) {
   const [connections, setConnections] = useState<SlackConnection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -164,6 +165,7 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
           setIsConnecting(false);
           setOauthConnectionId(null);
           await loadConnections();
+          onConnectionChange?.();
 
           // Show channel picker for the newly connected workspace
           const conn = statusResult.data.connection;
@@ -331,6 +333,7 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
     const result = await cloudApi.disconnectSlackWorkspace(connection.id);
     if (result.success) {
       setConnections(prev => prev.filter(c => c.id !== connection.id));
+      onConnectionChange?.();
       // Clean up expanded/channel state
       if (expandedConnection === connection.id) {
         setExpandedConnection(null);
@@ -499,12 +502,12 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
                       <div className="w-5 h-5 rounded-full border-2 border-accent-cyan/20 border-t-accent-cyan animate-spin" />
                       <span className="text-xs text-text-muted">Loading channels...</span>
                     </div>
-                  ) : (channels[connection.id]?.length ?? 0) > 0 ? (
+                  ) : (channels[connection.id]?.filter(ch => ch.isMember).length ?? 0) > 0 ? (
                     <div className="space-y-2">
                       <p className="text-xs text-text-muted font-semibold uppercase tracking-wide mb-3">
-                        Workspace Channels ({channels[connection.id]?.length})
+                        Joined Channels ({channels[connection.id]?.filter(ch => ch.isMember).length ?? 0})
                       </p>
-                      {channels[connection.id]?.map((channel) => (
+                      {channels[connection.id]?.filter(ch => ch.isMember).map((channel) => (
                         <div
                           key={channel.id}
                           className="flex items-center justify-between p-3 bg-bg-tertiary rounded-lg border border-border-subtle"
@@ -525,11 +528,6 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            {channel.isMember && (
-                              <span className="text-[10px] px-1.5 py-0.5 bg-success/15 text-success rounded-full font-medium">
-                                joined
-                              </span>
-                            )}
                             {channel.numMembers != null && (
                               <span className="text-xs text-text-muted">
                                 {channel.numMembers} members
@@ -542,7 +540,7 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
                   ) : (
                     <div className="py-6 text-center">
                       <ChannelIcon className="w-8 h-8 mx-auto mb-2 text-text-muted" />
-                      <p className="text-sm text-text-muted">No channels found</p>
+                      <p className="text-sm text-text-muted">No channels joined yet</p>
                       <p className="text-xs text-text-muted mt-1">
                         The bot doesn&apos;t have access to any channels yet
                       </p>

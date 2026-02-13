@@ -147,7 +147,7 @@ export function WorkspaceSettingsPanel({
   const [availableRepos, setAvailableRepos] = useState<AvailableRepo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'general' | 'providers' | 'integrations' | 'audit' | 'repos' | 'domain' | 'danger'>('general');
+  const [activeSection, setActiveSection] = useState<'general' | 'providers' | 'integrations' | 'repos' | 'domain' | 'danger'>('general');
 
   // Slack integration collapsed state
   const [slackExpanded, setSlackExpanded] = useState(false);
@@ -509,7 +509,6 @@ export function WorkspaceSettingsPanel({
     { id: 'general', label: 'General', icon: <SettingsGearIcon /> },
     { id: 'providers', label: 'AI Providers', icon: <ProviderIcon /> },
     { id: 'integrations', label: 'Integrations', icon: <IntegrationIcon /> },
-    { id: 'audit', label: 'Audit Log', icon: <AuditIcon /> },
     { id: 'repos', label: 'Repositories', icon: <RepoIcon /> },
     { id: 'domain', label: 'Domain', icon: <GlobeIcon /> },
     { id: 'danger', label: 'Danger', icon: <AlertIcon /> },
@@ -908,9 +907,10 @@ export function WorkspaceSettingsPanel({
                 console.log(`Integration ${providerId} ${connected ? 'connected' : 'disconnected'}`);
               }}
             />
+            <AuditLogViewer workspaceId={workspaceId} />
           </div>
         )}
-
+        
         {/* Repositories Section */}
         {activeSection === 'repos' && (
           <div className="space-y-6">
@@ -942,17 +942,6 @@ export function WorkspaceSettingsPanel({
               csrfToken={csrfToken}
               className="bg-bg-tertiary rounded-xl border border-border-subtle overflow-hidden"
             />
-          </div>
-        )}
-
-        {/* Audit Log Section */}
-        {activeSection === 'audit' && (
-          <div className="space-y-6">
-            <SectionHeader
-              title="Integration Audit Log"
-              subtitle="View all proxy requests made by agents to external integrations"
-            />
-            <AuditLogViewer workspaceId={workspaceId} />
           </div>
         )}
 
