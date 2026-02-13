@@ -864,20 +864,6 @@ export function WorkspaceSettingsPanel({
               title="External Integrations"
               subtitle="Connect external services for agents to use (GitHub, Slack, Linear, etc.)"
             />
-            <div className="p-5 bg-gradient-to-r from-accent-cyan/10 to-accent-purple/10 border border-accent-cyan/20 rounded-xl">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-accent-cyan/20 flex items-center justify-center">
-                  <IntegrationIcon className="text-accent-cyan" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-text-primary">Unified Agent Auth</h4>
-                  <p className="text-xs text-text-secondary">
-                    Agents can access connected integrations via the proxy API. Configure access policies per agent.
-                  </p>
-                </div>
-              </div>
-            </div>
-
             {/* Slack - compact collapsible row */}
             <div className="bg-bg-tertiary rounded-xl border border-border-subtle overflow-hidden">
               <button
