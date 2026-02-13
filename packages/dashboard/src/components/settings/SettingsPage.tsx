@@ -15,7 +15,6 @@ import { cloudApi, getCsrfToken } from '../../lib/cloudApi';
 import { WorkspaceSettingsPanel } from './WorkspaceSettingsPanel';
 import { TeamSettingsPanel } from './TeamSettingsPanel';
 import { BillingSettingsPanel } from './BillingSettingsPanel';
-import { SlackIntegrationPanel } from './SlackIntegrationPanel';
 import type { Settings, CliType } from './types';
 import { CLAUDE_MODEL_OPTIONS, CURSOR_MODEL_OPTIONS, CODEX_MODEL_OPTIONS, GEMINI_MODEL_OPTIONS } from '../SpawnModal';
 
@@ -23,7 +22,7 @@ export interface SettingsPageProps {
   /** Current user ID for team membership checks */
   currentUserId?: string;
   /** Initial tab to show */
-  initialTab?: 'dashboard' | 'workspace' | 'team' | 'billing' | 'slack';
+  initialTab?: 'dashboard' | 'workspace' | 'team' | 'billing';
   /** Callback when settings page is closed */
   onClose?: () => void;
   /** Current dashboard settings */
@@ -51,7 +50,7 @@ export function SettingsPage({
   activeWorkspaceId,
   onReposChanged,
 }: SettingsPageProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'workspace' | 'team' | 'billing' | 'slack'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'workspace' | 'team' | 'billing'>(initialTab);
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   // Initialize with activeWorkspaceId from parent if provided
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(activeWorkspaceId ?? null);
@@ -104,7 +103,6 @@ export function SettingsPage({
     { id: 'workspace', label: 'Workspace', icon: <WorkspaceIcon /> },
     { id: 'team', label: 'Team', icon: <TeamIcon /> },
     { id: 'billing', label: 'Billing', icon: <BillingIcon /> },
-    { id: 'slack', label: 'Slack', icon: <SlackIcon /> },
   ] as const;
 
   return (
@@ -491,18 +489,6 @@ export function SettingsPage({
                 </div>
               )}
 
-              {/* Slack Integration Settings */}
-              {activeTab === 'slack' && (
-                <div className="space-y-8">
-                  <PageHeader
-                    title="Slack Integration"
-                    subtitle="Connect and manage Slack workspaces"
-                  />
-                  <SlackIntegrationPanel
-                    csrfToken={getCsrfToken() || undefined}
-                  />
-                </div>
-              )}
             </div>
           </main>
         </div>
@@ -697,13 +683,3 @@ function RocketIcon() {
   );
 }
 
-function SlackIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313z" fill="#E01E5A"/>
-      <path d="M8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312z" fill="#36C5F0"/>
-      <path d="M18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312z" fill="#2EB67D"/>
-      <path d="M15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.527 2.527 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z" fill="#ECB22E"/>
-    </svg>
-  );
-}
