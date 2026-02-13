@@ -1727,15 +1727,19 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     }
   }, [closeSidebarOnMobile, effectiveActiveWorkspaceId, navigateToChannel]);
 
+  const handleOpenCreateChannelModal = useCallback(() => {
+    setIsCreateChannelOpen(true);
+  }, []);
+
   // Sidebar + button handler:
   // in cloud mode open the join modal, in local mode open create modal.
-  const handleCreateChannel = useCallback(() => {
+  const handleSidebarAddChannel = useCallback(() => {
     if (isCloudMode && effectiveActiveWorkspaceId) {
       setIsChannelBrowserOpen(true);
       return;
     }
-    setIsCreateChannelOpen(true);
-  }, [effectiveActiveWorkspaceId, isCloudMode]);
+    handleOpenCreateChannelModal();
+  }, [effectiveActiveWorkspaceId, handleOpenCreateChannelModal, isCloudMode]);
 
   const handleChannelJoined = useCallback(async (channel: BrowseChannel) => {
     if (!effectiveActiveWorkspaceId) return;
@@ -2114,17 +2118,15 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       },
     });
 
-    // Create/join channel
+    // Create channel
     commands.push({
       id: 'channels-create',
-      label: isCloudMode ? 'Join Channel' : 'Create Channel',
-      description: isCloudMode
-        ? 'Browse and join more channels'
-        : 'Create a new messaging channel',
+      label: 'Create Channel',
+      description: 'Create a new messaging channel',
       category: 'channels',
       action: () => {
         setViewMode('channels');
-        handleCreateChannel();
+        handleOpenCreateChannelModal();
       },
     });
 
@@ -2144,7 +2146,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     });
 
     return commands;
-  }, [channelsList, handleCreateChannel, isCloudMode]);
+  }, [channelsList, handleOpenCreateChannelModal]);
 
   // Handle send from new conversation modal - select the channel after sending
   const handleNewConversationSend = useCallback(async (to: string, content: string): Promise<boolean> => {
@@ -2696,7 +2698,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
               setViewMode('channels');
             }
           }}
-          onCreateChannel={handleCreateChannel}
+          onCreateChannel={handleSidebarAddChannel}
           onInviteToChannel={(channel) => {
             const fullChannel = channelsList.find(c => c.id === channel.id);
             if (fullChannel) {
