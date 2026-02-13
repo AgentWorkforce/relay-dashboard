@@ -343,10 +343,10 @@ export function WorkspaceSettingsPanel({
 
     setIsRebuilding(true);
     setError(null);
-    setWorkspace(prev => prev ? { ...prev, status: 'provisioning', errorMessage: undefined } : null);
 
     const result = await cloudApi.rebuildWorkspace(workspace.id);
     if (result.success) {
+      setWorkspace(prev => prev ? { ...prev, status: 'provisioning', errorMessage: undefined } : null);
       const wsResult = await cloudApi.getWorkspaceDetails(workspaceId);
       if (wsResult.success) {
         setWorkspace(wsResult.data);
