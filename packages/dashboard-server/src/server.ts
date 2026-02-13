@@ -2458,22 +2458,13 @@ export async function startDashboard(
     try {
       const data = await getAllData();
 
-      // If team data is temporarily unavailable, skip the initial send entirely.
-      // Reconnecting clients keep their previous data (no empty-screen flash).
-      // New clients wait for the first successful broadcastData() cycle.
       if (!data) {
+        // Team data temporarily unavailable — skip the initial send.
+        // Reconnecting clients keep their previous data (no empty-screen flash).
+        // New clients wait for the first successful broadcastData() cycle.
         debug('[dashboard] Team data unavailable on connect - deferring initial send to next broadcast');
-        return;
-      }
-      const payload = JSON.stringify(data);
-
-      // Guard against empty/invalid payloads
-      if (!payload || payload.length === 0) {
-        console.warn('[dashboard] Skipping initial send - empty payload');
-        return;
-      }
-
-      if (ws.readyState === WebSocket.OPEN) {
+      } else if (ws.readyState === WebSocket.OPEN) {
+        const payload = JSON.stringify(data);
         debug(`[dashboard] Sending initial data, size: ${payload.length}, first 200 chars: ${payload.substring(0, 200)}`);
         ws.send(payload);
         debug('[dashboard] Initial data sent successfully');
