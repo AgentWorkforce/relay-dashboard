@@ -193,7 +193,7 @@ export function SettingsPage({
         <div className="flex-1 overflow-hidden">
           {/* Main Content */}
           <main className="h-full w-full overflow-y-auto">
-            <div className="w-full max-w-4xl mx-auto p-4 md:p-8">
+            <div className="w-full p-4 md:p-8">
               {/* Dashboard Settings */}
               {activeTab === 'dashboard' && (
                 <div className="space-y-8">
@@ -488,6 +488,7 @@ export function SettingsPage({
                   <BillingSettingsPanel />
                 </div>
               )}
+
             </div>
           </main>
         </div>
@@ -681,3 +682,4 @@ function RocketIcon() {
     </svg>
   );
 }
+
