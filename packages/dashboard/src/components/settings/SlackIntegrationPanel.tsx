@@ -60,7 +60,7 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
 
   // Channel expansion state
   const [expandedConnection, setExpandedConnection] = useState<string | null>(null);
-  const [channels, setChannels] = useState<Record<string, SlackChannel[]>>({});
+  const [channels, setChannels] = useState<Record<string, SlackAvailableChannel[]>>({});
   const [loadingChannels, setLoadingChannels] = useState<string | null>(null);
 
   // Test message state
@@ -91,6 +91,28 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
     }
     setIsLoading(false);
   }, [workspaceId]);
+
+  // Load available Slack channels for channel picker
+  const loadAvailableChannels = useCallback(async (connectionId: string) => {
+    setLoadingAvailableChannels(true);
+    setAvailableChannels([]);
+    setSelectedChannels(new Set());
+    setChannelSearchQuery('');
+
+    const result = await cloudApi.getSlackAvailableChannels(connectionId);
+    if (result.success) {
+      setAvailableChannels(result.data.channels);
+    } else {
+      setError(result.error);
+    }
+    setLoadingAvailableChannels(false);
+  }, []);
+
+  // Show channel picker for a connection
+  const showChannelPicker = useCallback(async (connectionId: string) => {
+    setChannelPickerConnectionId(connectionId);
+    await loadAvailableChannels(connectionId);
+  }, [loadAvailableChannels]);
 
   useEffect(() => {
     loadConnections();
@@ -182,28 +204,6 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
     setOauthConnectionId(null);
   }, []);
 
-  // Load available Slack channels for channel picker
-  const loadAvailableChannels = useCallback(async (connectionId: string) => {
-    setLoadingAvailableChannels(true);
-    setAvailableChannels([]);
-    setSelectedChannels(new Set());
-    setChannelSearchQuery('');
-
-    const result = await cloudApi.getSlackAvailableChannels(connectionId);
-    if (result.success) {
-      setAvailableChannels(result.data.channels);
-    } else {
-      setError(result.error);
-    }
-    setLoadingAvailableChannels(false);
-  }, []);
-
-  // Show channel picker for a connection
-  const showChannelPicker = useCallback(async (connectionId: string) => {
-    setChannelPickerConnectionId(connectionId);
-    await loadAvailableChannels(connectionId);
-  }, [loadAvailableChannels]);
-
   // Toggle channel selection
   const toggleChannelSelection = useCallback((channelId: string) => {
     setSelectedChannels(prev => {
@@ -255,21 +255,21 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
 
   // Load channels for a connection
   const handleToggleChannels = useCallback(async (connection: SlackConnection) => {
-    if (expandedConnection === connection.connectionId) {
+    if (expandedConnection === connection.id) {
       setExpandedConnection(null);
       return;
     }
 
-    setExpandedConnection(connection.connectionId);
+    setExpandedConnection(connection.id);
 
     // Only fetch if not already loaded
-    if (!channels[connection.connectionId]) {
-      setLoadingChannels(connection.connectionId);
-      const result = await cloudApi.getSlackChannels(connection.connectionId);
+    if (!channels[connection.id]) {
+      setLoadingChannels(connection.id);
+      const result = await cloudApi.getSlackAvailableChannels(connection.id);
       if (result.success) {
         setChannels(prev => ({
           ...prev,
-          [connection.connectionId]: result.data.channels,
+          [connection.id]: result.data.channels,
         }));
       }
       setLoadingChannels(null);
@@ -312,12 +312,12 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
     if (result.success) {
       setConnections(prev => prev.filter(c => c.id !== connection.id));
       // Clean up expanded/channel state
-      if (expandedConnection === connection.connectionId) {
+      if (expandedConnection === connection.id) {
         setExpandedConnection(null);
       }
       setChannels(prev => {
         const updated = { ...prev };
-        delete updated[connection.connectionId];
+        delete updated[connection.id];
         return updated;
       });
     } else {
@@ -438,14 +438,14 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
                   <button
                     onClick={() => handleToggleChannels(connection)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
-                      expandedConnection === connection.connectionId
+                      expandedConnection === connection.id
                         ? 'bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan'
                         : 'bg-bg-card border border-border-subtle text-text-secondary hover:border-accent-cyan/30 hover:text-accent-cyan'
                     }`}
                   >
                     <ChannelIcon />
-                    {expandedConnection === connection.connectionId ? 'Hide Channels' : 'View Channels'}
-                    <ChevronIcon expanded={expandedConnection === connection.connectionId} />
+                    {expandedConnection === connection.id ? 'Hide Channels' : 'View Channels'}
+                    <ChevronIcon expanded={expandedConnection === connection.id} />
                   </button>
 
                   {/* Test message */}
@@ -472,52 +472,59 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
               </div>
 
               {/* Channels section (collapsible) */}
-              {expandedConnection === connection.connectionId && (
+              {expandedConnection === connection.id && (
                 <div className="border-t border-border-subtle bg-bg-primary/50 p-4">
-                  {loadingChannels === connection.connectionId ? (
+                  {loadingChannels === connection.id ? (
                     <div className="flex items-center gap-3 py-4 justify-center">
                       <div className="w-5 h-5 rounded-full border-2 border-accent-cyan/20 border-t-accent-cyan animate-spin" />
                       <span className="text-xs text-text-muted">Loading channels...</span>
                     </div>
-                  ) : (channels[connection.connectionId]?.length ?? 0) > 0 ? (
+                  ) : (channels[connection.id]?.length ?? 0) > 0 ? (
                     <div className="space-y-2">
                       <p className="text-xs text-text-muted font-semibold uppercase tracking-wide mb-3">
-                        Configured Channels ({channels[connection.connectionId]?.length})
+                        Workspace Channels ({channels[connection.id]?.length})
                       </p>
-                      {channels[connection.connectionId]?.map((channel) => (
+                      {channels[connection.id]?.map((channel) => (
                         <div
                           key={channel.id}
                           className="flex items-center justify-between p-3 bg-bg-tertiary rounded-lg border border-border-subtle"
                         >
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-lg bg-bg-card flex items-center justify-center">
-                              <span className="text-text-muted text-sm">#</span>
+                              <span className="text-text-muted text-sm">{channel.isPrivate ? '🔒' : '#'}</span>
                             </div>
                             <div>
                               <p className="text-sm font-medium text-text-primary">
-                                #{channel.channelName}
+                                {channel.isPrivate ? '🔒' : '#'}{channel.name}
                               </p>
-                              {channel.defaultRepo && (
-                                <p className="text-xs text-text-muted">
-                                  Default repo: {channel.defaultRepo}
+                              {(channel.purpose || channel.topic) && (
+                                <p className="text-xs text-text-muted truncate max-w-xs">
+                                  {channel.purpose || channel.topic}
                                 </p>
                               )}
                             </div>
                           </div>
-                          {channel.allowedRepos && channel.allowedRepos.length > 0 && (
-                            <span className="text-xs text-text-muted bg-bg-card px-2 py-1 rounded">
-                              {channel.allowedRepos.length} repo{channel.allowedRepos.length !== 1 ? 's' : ''}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {channel.isMember && (
+                              <span className="text-[10px] px-1.5 py-0.5 bg-success/15 text-success rounded-full font-medium">
+                                joined
+                              </span>
+                            )}
+                            {channel.numMembers != null && (
+                              <span className="text-xs text-text-muted">
+                                {channel.numMembers} members
+                              </span>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
                   ) : (
                     <div className="py-6 text-center">
                       <ChannelIcon className="w-8 h-8 mx-auto mb-2 text-text-muted" />
-                      <p className="text-sm text-text-muted">No channels configured yet</p>
+                      <p className="text-sm text-text-muted">No channels found</p>
                       <p className="text-xs text-text-muted mt-1">
-                        Invite the bot to a Slack channel to get started
+                        The bot doesn&apos;t have access to any channels yet
                       </p>
                     </div>
                   )}
