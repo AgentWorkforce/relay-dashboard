@@ -26,7 +26,7 @@ interface BackendProvider {
 // Available AI providers - same as /app page
 const AI_PROVIDERS: ProviderInfo[] = [
   { id: 'anthropic', name: 'Anthropic', displayName: 'Claude', color: '#D97757', cliCommand: 'claude', requiresUrlCopy: true },
-  { id: 'codex', name: 'OpenAI', displayName: 'Codex', color: '#10A37F', cliCommand: 'codex login', supportsDeviceFlow: true, requiresUrlCopy: true },
+  { id: 'codex', name: 'OpenAI', displayName: 'Codex', color: '#10A37F', cliCommand: 'codex login', requiresUrlCopy: true },
   { id: 'google', name: 'Google', displayName: 'Gemini', color: '#4285F4', cliCommand: 'gemini' },
   { id: 'opencode', name: 'OpenCode', displayName: 'OpenCode', color: '#00D4AA', cliCommand: 'opencode', comingSoon: true },
   { id: 'droid', name: 'Factory', displayName: 'Droid', color: '#6366F1', cliCommand: 'droid', comingSoon: true },

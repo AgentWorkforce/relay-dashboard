@@ -19,8 +19,6 @@ export interface ProviderInfo {
   description?: string;
   /** For OAuth providers, whether they need URL copy (localhost callback) */
   requiresUrlCopy?: boolean;
-  /** For OAuth providers, whether they support device flow */
-  supportsDeviceFlow?: boolean;
   /** Provider is not yet fully tested/available */
   comingSoon?: boolean;
 }
@@ -29,11 +27,10 @@ export interface ProviderInfo {
 const PROVIDER_AUTH_CONFIG: Record<string, {
   authMethod: 'terminal' | 'oauth';
   requiresUrlCopy?: boolean;
-  supportsDeviceFlow?: boolean;
 }> = {
   anthropic: { authMethod: 'oauth', requiresUrlCopy: true },
-  codex: { authMethod: 'oauth', requiresUrlCopy: true, supportsDeviceFlow: true },
-  openai: { authMethod: 'oauth', requiresUrlCopy: true, supportsDeviceFlow: true },
+  codex: { authMethod: 'oauth', requiresUrlCopy: true },
+  openai: { authMethod: 'oauth', requiresUrlCopy: true },
   // Gemini uses terminal - CLI shows interactive menu for OAuth vs API key
   google: { authMethod: 'terminal' },
   opencode: { authMethod: 'terminal' },
@@ -183,7 +180,6 @@ export function ProviderConnectionList({
               displayName: provider.displayName,
               color: provider.color,
               requiresUrlCopy: authConfig.requiresUrlCopy,
-              supportsDeviceFlow: authConfig.supportsDeviceFlow,
             }}
             workspaceId={workspaceId}
             csrfToken={csrfToken}

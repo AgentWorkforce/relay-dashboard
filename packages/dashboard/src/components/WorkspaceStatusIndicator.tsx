@@ -78,9 +78,11 @@ export function WorkspaceStatusIndicator({
     const result = await cloudApi.restartWorkspace(workspace.id);
     if (result.success) {
       setToastMessage(result.data.message);
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 5000);
+    } else {
+      setToastMessage(result.error);
     }
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 5000);
     setIsRestarting(false);
   }, [workspace]);
 

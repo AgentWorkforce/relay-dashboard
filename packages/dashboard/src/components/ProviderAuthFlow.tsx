@@ -23,8 +23,6 @@ export interface ProviderInfo {
   cliCommand?: string;
   /** Whether this provider's OAuth redirects to localhost (shows "site can't be reached") */
   requiresUrlCopy?: boolean;
-  /** Whether this provider supports device flow */
-  supportsDeviceFlow?: boolean;
 }
 
 export interface ProviderAuthFlowProps {
@@ -34,8 +32,6 @@ export interface ProviderAuthFlowProps {
   onSuccess: () => void;
   onCancel: () => void;
   onError: (error: string) => void;
-  /** Whether to use device flow (for providers that support it) */
-  useDeviceFlow?: boolean;
 }
 
 type AuthStatus = 'idle' | 'starting' | 'waiting' | 'success' | 'error';
@@ -97,7 +93,12 @@ export function ProviderAuthFlow({
         throw new Error(data.error || 'Failed to start authentication');
       }
 
-      setCliCommand(data.commandWithUrl || data.command);
+      const rawCommand = data.commandWithUrl || data.command;
+      // Prepend npx if not already present
+      const commandWithNpx = rawCommand && !rawCommand.trim().startsWith('npx ')
+        ? `npx ${rawCommand}`
+        : rawCommand;
+      setCliCommand(commandWithNpx);
       setStatus('waiting');
 
       // Start polling for completion

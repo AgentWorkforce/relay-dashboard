@@ -65,7 +65,6 @@ interface AIProvider {
   apiKeyUrl?: string;
   apiKeyName?: string;
   supportsOAuth?: boolean;
-  supportsDeviceFlow?: boolean; // Provider supports device flow (easier for headless environments)
   preferApiKey?: boolean; // Show API key input by default (simpler for mobile/containers)
   isConnected?: boolean;
   comingSoon?: boolean; // Provider is not yet fully tested/available
@@ -93,7 +92,6 @@ const AI_PROVIDERS: AIProvider[] = [
     apiKeyUrl: 'https://platform.openai.com/api-keys',
     apiKeyName: 'API key',
     supportsOAuth: true,
-    supportsDeviceFlow: true, // Codex supports --device-auth for headless environments
   },
   {
     id: 'google',
@@ -154,8 +152,6 @@ export function WorkspaceSettingsPanel({
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [providerError, setProviderError] = useState<string | null>(null);
   const [showApiKeyFallback, setShowApiKeyFallback] = useState<Record<string, boolean>>({});
-  // Device flow preference for providers that support it
-  const [useDeviceFlow, setUseDeviceFlow] = useState<Record<string, boolean>>({});
   // Use terminal-based setup (default for Claude, Cursor, and Gemini - Codex uses CLI helper flow)
   const [useTerminalSetup, setUseTerminalSetup] = useState<Record<string, boolean>>({
     anthropic: false, // CLI-assisted SSH tunnel flow for Claude
@@ -345,10 +341,10 @@ export function WorkspaceSettingsPanel({
 
     setIsRebuilding(true);
     setError(null);
-    setWorkspace(prev => prev ? { ...prev, status: 'provisioning', errorMessage: undefined } : null);
 
     const result = await cloudApi.rebuildWorkspace(workspace.id);
     if (result.success) {
+      setWorkspace(prev => prev ? { ...prev, status: 'provisioning', errorMessage: undefined } : null);
       const wsResult = await cloudApi.getWorkspaceDetails(workspaceId);
       if (wsResult.success) {
         setWorkspace(wsResult.data);
@@ -797,11 +793,9 @@ export function WorkspaceSettingsPanel({
                               displayName: provider.displayName,
                               color: provider.color,
                               requiresUrlCopy: ['codex', 'anthropic', 'cursor'].includes(provider.id),
-                              supportsDeviceFlow: provider.supportsDeviceFlow,
                             }}
                             workspaceId={workspaceId}
                             csrfToken={csrfToken}
-                            useDeviceFlow={useDeviceFlow[provider.id] || false}
                             onSuccess={() => {
                               setProviderStatus(prev => ({ ...prev, [provider.id]: true }));
                               setConnectingProvider(null);
@@ -870,21 +864,6 @@ export function WorkspaceSettingsPanel({
                                 Run it on your local machine to authenticate with {provider.displayName} via a secure SSH tunnel.
                               </p>
                             </div>
-                          )}
-                          {/* Device flow toggle for providers that support it */}
-                          {provider.supportsDeviceFlow && (
-                            <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={useDeviceFlow[provider.id] || false}
-                                onChange={(e) => setUseDeviceFlow(prev => ({
-                                  ...prev,
-                                  [provider.id]: e.target.checked,
-                                }))}
-                                className="w-4 h-4 rounded border-border-subtle bg-bg-card text-accent-cyan focus:ring-accent-cyan/30 cursor-pointer"
-                              />
-                              Use device flow (easier for containers/headless)
-                            </label>
                           )}
                           <button
                             onClick={() => startOAuthFlow(provider)}
