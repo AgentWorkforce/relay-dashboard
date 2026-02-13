@@ -1697,15 +1697,18 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
       setHasMoreMessages(false);
     } else if (!fetchedChannelsRef.current.has(selectedChannelId)) {
       // Only fetch if we haven't already fetched this channel (prevents infinite loop)
-      fetchedChannelsRef.current.add(selectedChannelId);
+      const channelToFetch = selectedChannelId;
+      fetchedChannelsRef.current.add(channelToFetch);
       (async () => {
         try {
-          const response = await getMessages(effectiveActiveWorkspaceId || 'local', selectedChannelId, { limit: 200 });
-          setChannelMessageMap(prev => ({ ...prev, [selectedChannelId]: response.messages }));
+          const response = await getMessages(effectiveActiveWorkspaceId || 'local', channelToFetch, { limit: 200 });
+          setChannelMessageMap(prev => ({ ...prev, [channelToFetch]: response.messages }));
           setChannelMessages(response.messages);
           setHasMoreMessages(response.hasMore);
         } catch (err) {
           console.error('Failed to fetch channel messages:', err);
+          // Remove from fetched set so it can be retried on next navigation
+          fetchedChannelsRef.current.delete(channelToFetch);
           setChannelMessages([]);
           setHasMoreMessages(false);
         }

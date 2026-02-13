@@ -2458,10 +2458,14 @@ export async function startDashboard(
     try {
       const data = await getAllData();
 
-      // If team data is temporarily unavailable, send empty-but-valid structure
-      // so the client at least renders (better than sending nothing on first connect)
-      const safeData = data ?? { agents: [], users: [], messages: [], activity: [], sessions: [], summaries: [] };
-      const payload = JSON.stringify(safeData);
+      // If team data is temporarily unavailable, skip the initial send entirely.
+      // Reconnecting clients keep their previous data (no empty-screen flash).
+      // New clients wait for the first successful broadcastData() cycle.
+      if (!data) {
+        debug('[dashboard] Team data unavailable on connect - deferring initial send to next broadcast');
+        return;
+      }
+      const payload = JSON.stringify(data);
 
       // Guard against empty/invalid payloads
       if (!payload || payload.length === 0) {
