@@ -4391,16 +4391,16 @@ export async function startDashboard(
 
   /**
    * POST /auth/cli/:provider/start - Start CLI auth flow
-   * Body: { useDeviceFlow?: boolean, userId?: string }
+   * Body: { userId?: string }
    *
    * When userId is provided, credentials are stored per-user at /data/users/{userId}/.{provider}/
    * This allows multiple users to share a workspace with their own CLI credentials.
    */
   app.post('/auth/cli/:provider/start', async (req, res) => {
     const { provider } = req.params;
-    const { useDeviceFlow, userId } = req.body || {};
+    const { userId } = req.body || {};
     try {
-      const session = await startCLIAuth(provider, { useDeviceFlow, userId });
+      const session = await startCLIAuth(provider, { userId });
       res.json({
         sessionId: session.id,
         status: session.status,
