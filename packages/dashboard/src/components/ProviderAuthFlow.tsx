@@ -1,12 +1,16 @@
 /**
  * Provider Auth Flow Component
  *
- * Shared component for AI provider OAuth authentication.
+ * Shared component for AI provider authentication via SSH tunnel.
  * Used by both the onboarding page and workspace settings.
  *
- * Handles different auth flows:
- * - Claude/Anthropic: OAuth popup → "I've completed login" → poll for credentials
- * - Codex/OpenAI: OAuth popup → copy localhost URL → paste code → submit
+ * Flow:
+ * 1. Calls /api/auth/ssh/init to get a CLI command with one-time token
+ * 2. User copies and runs the command in their local terminal
+ * 3. CLI establishes SSH to workspace and runs the provider's auth command
+ * 4. User completes interactive auth (OAuth in browser, etc.)
+ * 5. CLI calls /api/auth/ssh/complete to mark provider as connected
+ * 6. Dashboard polls /api/auth/ssh/status/:workspaceId to detect completion
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -34,9 +38,20 @@ export interface ProviderAuthFlowProps {
   useDeviceFlow?: boolean;
 }
 
-type AuthStatus = 'idle' | 'starting' | 'waiting' | 'submitting' | 'success' | 'error';
+type AuthStatus = 'idle' | 'starting' | 'waiting' | 'success' | 'error';
 
-// Backend accepts canonical provider names directly (codex, anthropic, google, etc.)
+/**
+ * Map dashboard provider IDs to SSH backend provider names.
+ * The SSH status endpoint uses PROVIDER_COMMANDS keys (anthropic, openai, google, etc.)
+ * while the dashboard uses its own IDs (anthropic, codex, google, etc.)
+ */
+const PROVIDER_STATUS_MAP: Record<string, string> = {
+  codex: 'openai',
+};
+
+function getStatusProviderName(providerId: string): string {
+  return PROVIDER_STATUS_MAP[providerId] || providerId;
+}
 
 export function ProviderAuthFlow({
   provider,
@@ -45,156 +60,23 @@ export function ProviderAuthFlow({
   onSuccess,
   onCancel,
   onError,
-  useDeviceFlow = false,
 }: ProviderAuthFlowProps) {
   const [status, setStatus] = useState<AuthStatus>('idle');
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [codeInput, setCodeInput] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [cliCommand, setCliCommand] = useState<string | null>(null);
-  const [cliWorkspaceId, setCliWorkspaceId] = useState<string | null>(null);
-  const [cliWorkspaceName, setCliWorkspaceName] = useState<string | null>(null);
-  const [cliCommandLoading, setCliCommandLoading] = useState(false);
-  const [showManualFallback, setShowManualFallback] = useState(false);
-  const [cliPollingActive, setCliPollingActive] = useState(false);
-  const [isDeviceFlow, setIsDeviceFlow] = useState(false);
-  const popupOpenedRef = useRef(false);
+  const [copied, setCopied] = useState(false);
   const pollingRef = useRef(false);
-  const cliPollingRef = useRef(false);
-  const completingRef = useRef(false); // Prevent double-calling handleComplete
+  const completingRef = useRef(false);
 
   const backendProviderId = provider.id;
+  const statusProviderId = getStatusProviderName(backendProviderId);
 
-  // Determine if this is the CLI auth flow (SSH tunnel for OAuth callback)
-  // Applies to Codex, Claude, Cursor - any provider with requiresUrlCopy
-  const isCliAuthFlow = provider.requiresUrlCopy || provider.id === 'codex' || backendProviderId === 'openai';
-
-  // Start the OAuth flow
+  // Start the SSH auth flow
   const startAuth = useCallback(async () => {
     setStatus('starting');
     setErrorMessage(null);
-    popupOpenedRef.current = false;
+    completingRef.current = false;
 
-    try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
-
-      const res = await fetch(`/api/onboarding/cli/${backendProviderId}/start`, {
-        method: 'POST',
-        credentials: 'include',
-        headers,
-        body: JSON.stringify({ workspaceId, useDeviceFlow }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to start authentication');
-      }
-
-      if (data.status === 'success' || data.alreadyAuthenticated) {
-        setStatus('success');
-        onSuccess();
-        return;
-      }
-
-      setSessionId(data.sessionId);
-
-      // Track if device flow is being used (from API response)
-      if (data.useDeviceFlow) {
-        setIsDeviceFlow(true);
-      }
-
-      if (data.authUrl) {
-        setAuthUrl(data.authUrl);
-        setStatus('waiting');
-        // For Codex flow with device auth, can auto-open popup since no localhost callback needed
-        // For standard Codex flow, wait for user to confirm local server is running
-        if (!isCliAuthFlow || data.useDeviceFlow) {
-          openAuthPopup(data.authUrl);
-        }
-        startPolling(data.sessionId);
-      } else if (data.sessionId) {
-        // No URL yet, poll for it
-        startPolling(data.sessionId);
-      }
-
-      // For CLI auth flows, store workspaceId so credential polling can start via useEffect.
-      if (isCliAuthFlow && data.workspaceId && !data.useDeviceFlow) {
-        setCliWorkspaceId(data.workspaceId);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to start authentication';
-      setErrorMessage(msg);
-      setStatus('error');
-      onError(msg);
-    }
-  }, [backendProviderId, workspaceId, csrfToken, useDeviceFlow, onSuccess, onError, isCliAuthFlow]);
-
-  // Ref to hold the latest code submission handler (avoids stale closure in polling)
-  const handleCodeReceivedRef = useRef<((code: string, state?: string) => Promise<void>) | null>(null);
-
-  // Ref to hold handleComplete (avoids circular dependency with startCliPolling)
-  const handleCompleteRef = useRef<((sid?: string) => Promise<void>) | null>(null);
-
-  // Poll for CLI auth completion via SSH tunnel (must be defined before fetchCliSession)
-  // This polls the workspace directly to check if the provider is authenticated
-  const startCliPolling = useCallback((cliAuthWorkspaceId: string, sid?: string) => {
-    if (cliPollingRef.current) return;
-    cliPollingRef.current = true;
-    setCliPollingActive(true);
-
-    const maxAttempts = 120; // 10 minutes at 5s intervals
-    let attempts = 0;
-
-    const poll = async () => {
-      if (attempts >= maxAttempts || !cliPollingRef.current) {
-        cliPollingRef.current = false;
-        setCliPollingActive(false);
-        return;
-      }
-
-      try {
-        // Poll workspace auth status (via SSH tunnel approach)
-        // Pass provider so the cloud checks the correct provider's auth status
-        const res = await fetch(`/api/auth/codex-helper/auth-status/${cliAuthWorkspaceId}?provider=${backendProviderId}`, {
-          credentials: 'include',
-        });
-
-        if (res.ok) {
-          const data = await res.json() as { authenticated: boolean };
-
-          if (data.authenticated) {
-            cliPollingRef.current = false;
-            setCliPollingActive(false);
-            // Auth completed via SSH tunnel, now complete the flow to store credentials
-            // Use the session ID from the main auth flow (via ref to avoid stale closure)
-            if (handleCompleteRef.current) {
-              await handleCompleteRef.current(sid);
-            }
-            return;
-          }
-        }
-
-        attempts++;
-        setTimeout(poll, 5000);
-      } catch (err) {
-        console.error('CLI poll error:', err);
-        attempts++;
-        setTimeout(poll, 5000);
-      }
-    };
-
-    poll();
-  }, [backendProviderId]);
-
-  // Fetch CLI session for Codex - provides a command the user can run locally
-  // For workspace-based flow, returns SSH tunnel command
-  const fetchCliSession = useCallback(async () => {
-    if (!isCliAuthFlow) return;
-
-    setCliCommandLoading(true);
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
@@ -204,317 +86,114 @@ export function ProviderAuthFlow({
         credentials: 'include',
         headers,
         body: JSON.stringify({
-          workspaceId,
           provider: backendProviderId,
+          workspaceId,
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json() as {
-          workspaceId?: string;
-          workspaceName?: string;
-          command: string;
-          commandWithUrl?: string;
-          // Legacy fields
-          authSessionId?: string;
-        };
+      const data = await res.json();
 
-        // Prefer commandWithUrl if available (includes cloud URL)
-        setCliCommand(data.commandWithUrl || data.command);
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to start authentication');
+      }
 
-        if (data.workspaceId) {
-          // New SSH tunnel flow
-          setCliWorkspaceId(data.workspaceId);
-          setCliWorkspaceName(data.workspaceName || null);
-          // Start polling workspace auth status, passing session ID for completion
-          startCliPolling(data.workspaceId, sessionId || undefined);
-        } else if (data.authSessionId) {
-          // Legacy token-based flow (backwards compatibility)
-          setCliWorkspaceId(data.authSessionId);
-          startCliPolling(data.authSessionId, sessionId || undefined);
-        }
+      setCliCommand(data.commandWithUrl || data.command);
+      setStatus('waiting');
+
+      // Start polling for completion
+      if (data.workspaceId) {
+        startPolling(data.workspaceId);
       }
     } catch (err) {
-      console.error('Failed to fetch CLI session:', err);
-    } finally {
-      setCliCommandLoading(false);
+      const msg = err instanceof Error ? err.message : 'Failed to start authentication';
+      setErrorMessage(msg);
+      setStatus('error');
+      onError(msg);
     }
-  }, [isCliAuthFlow, workspaceId, csrfToken, startCliPolling, sessionId, authUrl, backendProviderId]);
+  }, [backendProviderId, workspaceId, csrfToken, onError]);
 
-  // Fetch CLI session when auth starts for Codex (only for standard flow, not device flow)
-  useEffect(() => {
-    if (status === 'waiting' && isCliAuthFlow && !isDeviceFlow && !cliCommand) {
-      fetchCliSession();
-    }
-  }, [status, isCliAuthFlow, isDeviceFlow, cliCommand, fetchCliSession]);
-
-  // Start credential polling as a fallback when startAuth sets cliWorkspaceId.
-  // This detects auth completion even if fetchCliSession (SSH init) fails or
-  // the PTY success patterns don't match the CLI output.
-  useEffect(() => {
-    if (cliWorkspaceId && isCliAuthFlow && !isDeviceFlow && sessionId) {
-      startCliPolling(cliWorkspaceId, sessionId);
-    }
-  }, [cliWorkspaceId, isCliAuthFlow, isDeviceFlow, sessionId, startCliPolling]);
-
-  // Open OAuth popup
-  const openAuthPopup = useCallback((url: string) => {
-    const width = 600;
-    const height = 700;
-    const left = window.screenX + (window.outerWidth - width) / 2;
-    const top = window.screenY + (window.outerHeight - height) / 2;
-    window.open(
-      url,
-      `${provider.displayName} Login`,
-      `width=${width},height=${height},left=${left},top=${top},popup=yes`
-    );
-    popupOpenedRef.current = true;
-  }, [provider.displayName]);
-
-  // Poll for auth status
-  const startPolling = useCallback((sid: string) => {
+  // Poll SSH auth status endpoint to detect when provider is connected
+  const startPolling = useCallback((wsId: string) => {
     if (pollingRef.current) return;
     pollingRef.current = true;
 
-    const maxAttempts = 60;
+    const maxAttempts = 120; // 10 minutes at 5s intervals
     let attempts = 0;
 
     const poll = async () => {
-      if (attempts >= maxAttempts) {
+      if (attempts >= maxAttempts || !pollingRef.current) {
         pollingRef.current = false;
-        setErrorMessage('Authentication timed out. Please try again.');
-        setStatus('error');
-        onError('Authentication timed out');
+        if (attempts >= maxAttempts) {
+          setErrorMessage('Authentication timed out. Please try again.');
+          setStatus('error');
+          onError('Authentication timed out');
+        }
         return;
       }
 
       try {
-        const res = await fetch(`/api/onboarding/cli/${backendProviderId}/status/${sid}`, {
+        const res = await fetch(`/api/auth/ssh/status/${wsId}`, {
           credentials: 'include',
         });
 
-        const data = await res.json();
+        if (res.ok) {
+          const data = await res.json() as {
+            providers: Array<{ name: string; status: string }>;
+          };
 
-        if (!res.ok) {
-          throw new Error(data.error || 'Failed to check status');
-        }
+          const providerStatus = data.providers?.find(
+            (p) => p.name === statusProviderId
+          );
 
-        if (data.status === 'success') {
-          pollingRef.current = false;
-          await handleComplete(sid);
-          return;
-        } else if (data.status === 'error') {
-          throw new Error(data.error || 'Authentication failed');
-        } else if (data.status === 'waiting_auth' && data.authUrl) {
-          setAuthUrl(data.authUrl);
-          setStatus('waiting');
-          // For Codex flow, don't auto-open popup - wait for user confirmation
-          if (!popupOpenedRef.current && !isCliAuthFlow) {
-            openAuthPopup(data.authUrl);
+          if (providerStatus?.status === 'connected') {
+            pollingRef.current = false;
+            if (!completingRef.current) {
+              completingRef.current = true;
+              setStatus('success');
+              setTimeout(() => onSuccess(), 1500);
+            }
+            return;
           }
         }
 
         attempts++;
         setTimeout(poll, 5000);
       } catch (err) {
-        pollingRef.current = false;
-        const msg = err instanceof Error ? err.message : 'Auth check failed';
-        setErrorMessage(msg);
-        setStatus('error');
-        onError(msg);
+        console.error('Poll error:', err);
+        attempts++;
+        setTimeout(poll, 5000);
       }
     };
 
     poll();
-  }, [backendProviderId, openAuthPopup, onError, isCliAuthFlow]);
-
-  // Complete auth by polling for credentials
-  const handleComplete = useCallback(async (sid?: string) => {
-    const targetSessionId = sid || sessionId;
-    if (!targetSessionId) return;
-
-    // Prevent double-calling (both CLI polling and status polling may detect success)
-    if (completingRef.current) return;
-    completingRef.current = true;
-
-    // Stop both polling loops
-    pollingRef.current = false;
-    cliPollingRef.current = false;
-
-    setStatus('submitting');
-    setErrorMessage(null);
-
-    try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
-
-      const res = await fetch(`/api/onboarding/cli/${backendProviderId}/complete/${targetSessionId}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers,
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to complete authentication');
-      }
-
-      setStatus('success');
-      // Brief delay to show success message before parent unmounts component
-      setTimeout(() => onSuccess(), 1500);
-    } catch (err) {
-      completingRef.current = false; // Allow retry on error
-      const msg = err instanceof Error ? err.message : 'Failed to complete authentication';
-      setErrorMessage(msg);
-      setStatus('error');
-      onError(msg);
-    }
-  }, [sessionId, backendProviderId, csrfToken, onSuccess, onError]);
-
-  // Keep handleCompleteRef in sync (for CLI polling to avoid stale closure)
-  useEffect(() => {
-    handleCompleteRef.current = handleComplete;
-  }, [handleComplete]);
-
-  // Submit auth code (for providers like Codex that need it)
-  const handleSubmitCode = useCallback(async () => {
-    if (!sessionId || !codeInput.trim()) return;
-
-    setStatus('submitting');
-    setErrorMessage(null);
-
-    // Extract code from URL if user pasted the full callback URL
-    let code = codeInput.trim();
-    if (code.includes('code=')) {
-      try {
-        const url = new URL(code);
-        const extractedCode = url.searchParams.get('code');
-        if (extractedCode) {
-          code = extractedCode;
-        }
-      } catch {
-        const match = code.match(/code=([^&\s]+)/);
-        if (match) {
-          code = match[1];
-        }
-      }
-    }
-
-    try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
-
-      const res = await fetch(`/api/onboarding/cli/${backendProviderId}/code/${sessionId}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers,
-        body: JSON.stringify({ code }),
-      });
-
-      const data = await res.json() as { success?: boolean; status?: string; error?: string; needsRestart?: boolean };
-
-      if (!res.ok) {
-        // If server indicates we need to restart, show helpful message
-        if (data.needsRestart) {
-          setErrorMessage('The authentication session timed out. Please click "Try Again" to restart.');
-          setStatus('error');
-          return;
-        }
-        throw new Error(data.error || 'Failed to submit auth code');
-      }
-
-      setCodeInput('');
-
-      // Backend returns { success: true } not { status: 'success' }
-      if (data.success) {
-        // Code was accepted, now complete the auth flow to store credentials
-        await handleComplete();
-      }
-      // Otherwise continue polling
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to submit auth code';
-      setErrorMessage(msg);
-      setStatus('error');
-      onError(msg);
-    }
-  }, [sessionId, codeInput, backendProviderId, csrfToken, handleComplete, onError]);
-
-  // Update the ref for CLI polling to use (avoids stale closure)
-  useEffect(() => {
-    handleCodeReceivedRef.current = async (code: string, state?: string) => {
-      if (!sessionId) return;
-
-      setStatus('submitting');
-      setErrorMessage(null);
-
-      try {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
-
-        const res = await fetch(`/api/onboarding/cli/${backendProviderId}/code/${sessionId}`, {
-          method: 'POST',
-          credentials: 'include',
-          headers,
-          body: JSON.stringify({ code, state }), // Include state for CSRF validation
-        });
-
-        const data = await res.json() as { success?: boolean; error?: string; needsRestart?: boolean };
-
-        if (!res.ok) {
-          if (data.needsRestart) {
-            setErrorMessage('The authentication session timed out. Please click "Try Again" to restart.');
-            setStatus('error');
-            return;
-          }
-          throw new Error(data.error || 'Failed to submit auth code');
-        }
-
-        if (data.success) {
-          await handleComplete();
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to submit auth code';
-        setErrorMessage(msg);
-        setStatus('error');
-        onError(msg);
-      }
-    };
-  }, [sessionId, backendProviderId, csrfToken, handleComplete, onError]);
+  }, [statusProviderId, onError, onSuccess]);
 
   // Cancel auth flow
-  const handleCancel = useCallback(async () => {
+  const handleCancel = useCallback(() => {
     pollingRef.current = false;
-
-    if (sessionId) {
-      try {
-        await fetch(`/api/onboarding/cli/${backendProviderId}/cancel/${sessionId}`, {
-          method: 'POST',
-          credentials: 'include',
-        });
-      } catch {
-        // Ignore cancel errors
-      }
-    }
-
     setStatus('idle');
-    setAuthUrl(null);
-    setSessionId(null);
-    setCodeInput('');
+    setCliCommand(null);
     setErrorMessage(null);
+    setCopied(false);
     onCancel();
-  }, [sessionId, backendProviderId, onCancel]);
+  }, [onCancel]);
 
-  // Start auth when component mounts (parent controls when to render this component)
+  // Copy command to clipboard
+  const handleCopy = useCallback(() => {
+    if (cliCommand) {
+      navigator.clipboard.writeText(cliCommand);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [cliCommand]);
+
+  // Start auth when component mounts
   useEffect(() => {
     if (status === 'idle') {
       startAuth();
     }
-    // Cleanup on unmount
     return () => {
       pollingRef.current = false;
-      cliPollingRef.current = false;
-      setCliPollingActive(false);
     };
   }, [startAuth, status]);
 
@@ -533,7 +212,6 @@ export function ProviderAuthFlow({
           <p className="text-sm text-text-muted">
             {status === 'starting' && 'Starting authentication...'}
             {status === 'waiting' && 'Complete authentication below'}
-            {status === 'submitting' && 'Verifying...'}
             {status === 'success' && 'Connected!'}
             {status === 'error' && (errorMessage || 'Authentication failed')}
           </p>
@@ -551,216 +229,65 @@ export function ProviderAuthFlow({
         </div>
       )}
 
-      {/* Waiting state */}
-      {status === 'waiting' && authUrl && (
+      {/* Waiting state - SSH CLI flow */}
+      {status === 'waiting' && cliCommand && (
         <div className="space-y-4">
-          {/* Instructions - different for each provider */}
-          <div className="p-4 bg-bg-tertiary rounded-lg border border-border-subtle">
-            <h4 className="font-medium text-white mb-2">Complete authentication:</h4>
-            {isCliAuthFlow && isDeviceFlow ? (
-              /* Device flow: Simple browser-based auth */
-              <p className="text-sm text-text-muted">
-                Sign in with your {provider.displayName} account in the popup window. You&apos;ll see a device code to enter - this confirms the authorization.
-              </p>
-            ) : isCliAuthFlow ? (
-              /* Standard CLI auth flow: SSH tunnel forwards OAuth callback to workspace */
-              <p className="text-sm text-text-muted">
-                Run the CLI command below. It establishes an SSH tunnel to forward the OAuth callback to your workspace.
-              </p>
-            ) : (
-              /* Other providers: Try polling for credentials first */
-              <ol className="text-sm text-text-muted space-y-2 list-decimal list-inside">
-                <li>Click the button below to open the login page</li>
-                <li>Sign in with your {provider.displayName} account</li>
-                <li>If you receive a code, paste it below. Otherwise click &quot;I&apos;ve completed login&quot;</li>
-              </ol>
-            )}
+          {/* Step 1: Copy and run the command */}
+          <div className="p-3 bg-accent-cyan/10 border border-accent-cyan/30 rounded-lg">
+            <p className="text-sm text-accent-cyan mb-2">
+              <strong>Step 1:</strong> Copy and run this command in your terminal
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 px-3 py-2 bg-bg-deep rounded-lg text-xs font-mono text-white overflow-x-auto">
+                {cliCommand}
+              </code>
+              <button
+                onClick={handleCopy}
+                className="px-3 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-text-muted hover:text-white hover:border-accent-cyan/50 transition-colors text-xs whitespace-nowrap"
+              >
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
           </div>
 
-          {/* Auth URL button - hidden for Codex CLI flow since it's integrated into steps */}
-          {!(isCliAuthFlow && cliCommand && !showManualFallback) && (
-            <a
-              href={authUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block w-full py-2 px-4 bg-bg-tertiary border border-border-subtle text-white font-medium rounded-lg text-center hover:border-accent-cyan/50 transition-all"
-            >
-              Open {provider.displayName} Login Page
-            </a>
-          )}
+          {/* Step 2: Accept SSH warnings */}
+          <div className="p-3 bg-bg-tertiary border border-border-subtle rounded-lg">
+            <p className="text-sm text-white mb-1">
+              <strong>Step 2:</strong> Accept any SSH host key warnings
+            </p>
+            <p className="text-xs text-text-muted">
+              If prompted with &quot;Are you sure you want to continue connecting?&quot;, type <code className="px-1 py-0.5 bg-bg-deep rounded text-accent-cyan">yes</code> and press Enter.
+            </p>
+          </div>
 
-          {isCliAuthFlow && isDeviceFlow ? (
-            /* Device Flow: Simple browser-based auth, no CLI helper needed */
-            <div className="space-y-4">
-              <div className="p-3 bg-accent-cyan/10 border border-accent-cyan/30 rounded-lg">
-                <p className="text-sm text-accent-cyan">
-                  <strong>Device Authentication:</strong> Complete the sign-in in the popup window.
-                  After signing in, you&apos;ll see a code - enter it on the {provider.displayName} page to authorize.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 p-3 bg-accent-cyan/5 border border-accent-cyan/20 rounded-lg text-sm text-accent-cyan">
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                <span>Waiting for authentication to complete...</span>
-              </div>
-              <button
-                onClick={() => handleComplete()}
-                className="w-full py-2 text-text-muted hover:text-white transition-colors text-sm"
-              >
-                I&apos;ve completed authentication
-              </button>
-            </div>
-          ) : isCliAuthFlow ? (
-            /* CLI auth flow: SSH tunnel for OAuth callback */
-            <div className="space-y-4">
-              {/* Loading state while fetching CLI command */}
-              {cliCommandLoading && (
-                <div className="flex items-center gap-3 p-4 bg-bg-tertiary rounded-lg border border-border-subtle">
-                  <svg className="w-5 h-5 text-accent-cyan animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  <span className="text-sm text-text-muted">Generating session token...</span>
-                </div>
-              )}
+          {/* Step 3: Complete sign-in */}
+          <div className="p-3 bg-bg-tertiary border border-border-subtle rounded-lg">
+            <p className="text-sm text-white mb-1">
+              <strong>Step 3:</strong> Complete the sign-in
+            </p>
+            <p className="text-xs text-text-muted">
+              A browser window will open for {provider.displayName} authentication. Sign in with your account and authorize access.
+            </p>
+          </div>
 
-              {/* Primary: CLI command - shown BEFORE the login button */}
-              {cliCommand && !showManualFallback && !cliCommandLoading && (
-                <div className="space-y-3">
-                  {/* Step 1: Copy and run the command */}
-                  <div className="p-3 bg-accent-cyan/10 border border-accent-cyan/30 rounded-lg">
-                    <p className="text-sm text-accent-cyan mb-2">
-                      <strong>Step 1:</strong> Copy and run this command in your terminal
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 px-3 py-2 bg-bg-deep rounded-lg text-xs font-mono text-white overflow-x-auto">
-                        {cliCommand}
-                      </code>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(cliCommand);
-                        }}
-                        className="px-3 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-text-muted hover:text-white hover:border-accent-cyan/50 transition-colors text-xs"
-                      >
-                        Copy
-                      </button>
-                    </div>
-                  </div>
+          {/* Step 4: Wait for the input prompt, then exit */}
+          <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+            <p className="text-sm text-amber-400 mb-1">
+              <strong>Step 4:</strong> Wait for the {provider.displayName} input prompt, then type <code className="px-1 py-0.5 bg-bg-deep rounded">exit</code>
+            </p>
+            <p className="text-xs text-amber-400/80">
+              Do NOT close the terminal early. After sign-in completes, wait until you see the {provider.displayName} input screen (e.g. the <code className="px-1 py-0.5 bg-bg-deep rounded">&gt;</code> prompt). Then type <code className="px-1 py-0.5 bg-bg-deep rounded">exit</code> and press Enter. This page will update automatically.
+            </p>
+          </div>
 
-                  {/* Step 2: Sign in */}
-                  <div className="p-3 bg-bg-tertiary border border-border-subtle rounded-lg">
-                    <p className="text-sm text-white mb-1">
-                      <strong>Step 2:</strong> Sign in with {provider.displayName}
-                    </p>
-                    <p className="text-xs text-text-muted">
-                      The CLI will open your browser to the {provider.displayName} login page. Sign in with your account.
-                    </p>
-                  </div>
-
-                  {/* Step 3: Wait for completion */}
-                  <div className="p-3 bg-bg-tertiary border border-border-subtle rounded-lg">
-                    <p className="text-sm text-white mb-1">
-                      <strong>Step 3:</strong> Authentication completes automatically
-                    </p>
-                    <p className="text-xs text-text-muted">
-                      After signing in, the CLI will capture the callback and this page will update automatically.
-                    </p>
-                  </div>
-
-                  {cliPollingActive && (
-                    <div className="flex items-center gap-2 p-3 bg-success/10 border border-success/30 rounded-lg text-sm text-success">
-                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      <span>Waiting for authentication to complete...</span>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => setShowManualFallback(true)}
-                    className="text-xs text-text-muted hover:text-white transition-colors"
-                  >
-                    CLI not working? Click here for manual method
-                  </button>
-                </div>
-              )}
-
-              {/* Fallback: Manual URL paste - only show when not loading */}
-              {!cliCommandLoading && (showManualFallback || !cliCommand) && (
-                <div className="space-y-3">
-                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-                    <p className="text-xs text-amber-400">
-                      <strong>Manual method:</strong> After login, you&apos;ll see &quot;This site can&apos;t be reached&quot; - this is expected!
-                      Copy the full URL from your browser&apos;s address bar and paste it below.
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Paste the localhost URL here (e.g., http://localhost:...)"
-                      value={codeInput}
-                      onChange={(e) => setCodeInput(e.target.value)}
-                      className="flex-1 px-4 py-3 bg-bg-tertiary border border-border-subtle rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-accent-cyan transition-colors font-mono text-sm"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && codeInput.trim()) {
-                          handleSubmitCode();
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={handleSubmitCode}
-                      disabled={!codeInput.trim()}
-                      className="px-6 py-3 bg-accent-cyan text-bg-deep font-semibold rounded-xl hover:bg-accent-cyan/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                    >
-                      Submit
-                    </button>
-                  </div>
-                  {cliCommand && (
-                    <button
-                      onClick={() => setShowManualFallback(false)}
-                      className="text-xs text-accent-cyan hover:underline"
-                    >
-                      ← Back to CLI method
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          ) : (
-            /* Other providers: Code input with fallback button */
-            <div className="space-y-3">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Paste authentication code (if provided)"
-                  value={codeInput}
-                  onChange={(e) => setCodeInput(e.target.value)}
-                  className="flex-1 px-4 py-3 bg-bg-tertiary border border-border-subtle rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-accent-cyan transition-colors font-mono text-sm"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && codeInput.trim()) {
-                      handleSubmitCode();
-                    }
-                  }}
-                />
-                <button
-                  onClick={handleSubmitCode}
-                  disabled={!codeInput.trim()}
-                  className="px-6 py-3 bg-accent-cyan text-bg-deep font-semibold rounded-xl hover:bg-accent-cyan/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                >
-                  Submit
-                </button>
-              </div>
-              <button
-                onClick={() => handleComplete()}
-                className="w-full py-2 text-text-muted hover:text-white transition-colors text-sm"
-              >
-                No code? Click here if you&apos;ve completed login
-              </button>
-            </div>
-          )}
+          {/* Polling indicator */}
+          <div className="flex items-center gap-2 p-3 bg-success/10 border border-success/30 rounded-lg text-sm text-success">
+            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span>Waiting for authentication to complete...</span>
+          </div>
 
           {/* Cancel button */}
           <button
@@ -769,17 +296,6 @@ export function ProviderAuthFlow({
           >
             Cancel
           </button>
-        </div>
-      )}
-
-      {/* Submitting state */}
-      {status === 'submitting' && (
-        <div className="flex items-center justify-center gap-3 py-4">
-          <svg className="w-5 h-5 text-accent-cyan animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          <span className="text-text-muted">Verifying authentication...</span>
         </div>
       )}
 
