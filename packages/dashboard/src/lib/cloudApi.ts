@@ -463,6 +463,10 @@ export const cloudApi = {
    * @param workspaceId - Workspace to get providers for
    */
   async getProviders(workspaceId: string) {
+    // Validate workspaceId is a proper UUID, not 'default' or other placeholder
+    if (!workspaceId || workspaceId === 'default' || !/^[0-9a-f-]{36}$/i.test(workspaceId)) {
+      return { success: false as const, error: 'Invalid workspace ID' };
+    }
     return cloudFetch<{ providers: Array<{
       id: string;
       name: string;

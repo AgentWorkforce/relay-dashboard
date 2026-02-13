@@ -281,8 +281,14 @@ export function TerminalProviderSetup({
       }
 
       // Handle user input - store disposable for cleanup
+      // Suppress input when user has text selected (e.g., copying OAuth URL)
       if (terminalRef.current) {
         onDataDisposableRef.current = terminalRef.current.onData((data: string) => {
+          // Don't send input if user has text selected (likely copying a URL)
+          const selection = terminalRef.current?.getSelection();
+          if (selection && selection.length > 0) {
+            return; // User is selecting/copying text, don't send input
+          }
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'input', agent: agentName, data }));
           }
@@ -322,7 +328,7 @@ export function TerminalProviderSetup({
 
   const handleComplete = useCallback(async () => {
     // Mark provider as connected in the database
-    // Use provider.name (anthropic/openai) not provider.id (claude/codex)
+    // Use provider.name (canonical backend name e.g. 'codex', 'anthropic')
     const providerName = provider.name || provider.id;
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };

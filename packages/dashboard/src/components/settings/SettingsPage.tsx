@@ -32,6 +32,8 @@ export interface SettingsPageProps {
   onUpdateSettings: (updater: (prev: Settings) => Settings) => void;
   /** Active workspace ID from parent (synced with App.tsx) */
   activeWorkspaceId?: string | null;
+  /** Callback when repos are added/removed in workspace settings */
+  onReposChanged?: () => void;
 }
 
 interface WorkspaceSummary {
@@ -47,6 +49,7 @@ export function SettingsPage({
   settings,
   onUpdateSettings,
   activeWorkspaceId,
+  onReposChanged,
 }: SettingsPageProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'workspace' | 'team' | 'billing' | 'slack'>(initialTab);
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
@@ -436,6 +439,7 @@ export function SettingsPage({
                       workspaceId={selectedWorkspaceId}
                       csrfToken={getCsrfToken() || undefined}
                       onClose={onClose}
+                      onReposChanged={onReposChanged}
                     />
                   ) : (
                     <EmptyState

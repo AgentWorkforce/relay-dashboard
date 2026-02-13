@@ -73,6 +73,7 @@ export interface Agent {
   isHuman?: boolean; // True if this is a human user, not an AI agent
   avatarUrl?: string; // Avatar URL for human users
   authRevoked?: boolean; // True if agent's authentication has been revoked (needs re-login)
+  cwd?: string; // Working directory (repo name) the agent was spawned in
   // Local daemon agent fields
   isLocal?: boolean; // True if agent is from a linked local daemon
   daemonName?: string; // Name of the linked daemon
@@ -299,6 +300,8 @@ export interface SpawnAgentRequest {
   cli?: string;
   task?: string;
   team?: string;
+  /** Working directory relative to project root */
+  cwd?: string;
   /** Shadow execution mode (subagent for Claude/OpenCode, process otherwise) */
   shadowMode?: 'subagent' | 'process';
   /** Primary agent to shadow (if this agent is a shadow) */

@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import crypto from 'crypto';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { fileURLToPath } from 'url';
 import { createStorageAdapter, type StorageAdapter, type StoredMessage } from '@agent-relay/storage/adapter';
 import { RelayClient, type ClientState, type Envelope, type ChannelMessagePayload } from '@agent-relay/sdk';
@@ -392,6 +392,7 @@ interface AgentStatus {
   team?: string;
   avatarUrl?: string;
   model?: string;
+  cwd?: string;
 }
 
 interface Attachment {
@@ -850,6 +851,10 @@ export async function startDashboard(
   }
   const onlineUsers = new Map<string, UserPresenceState>();
 
+  // Track cwd per spawned agent (name -> cwd)
+  // This is set when /api/spawn is called and included in /api/spawned responses
+  const agentCwdMap = new Map<string, string>();
+
   // Validation helpers for presence
   const isValidUsername = (username: unknown): username is string => {
     if (typeof username !== 'string') return false;
@@ -1224,6 +1229,8 @@ export async function startDashboard(
 
       // Set up direct message handler to forward messages to presence WebSocket
       // This enables agents to send replies that appear in the dashboard UI
+      // Note: the relay daemon already persists messages authoritatively, so we
+      // only need to broadcast the real-time event here (no storage.saveMessage).
       client.onMessage = (from: string, payload: unknown, messageId: string) => {
         const body = typeof payload === 'object' && payload !== null && 'body' in payload
           ? (payload as { body: string }).body
@@ -1238,29 +1245,9 @@ export async function startDashboard(
 
         const timestamp = new Date().toISOString();
 
-        // Persist the message to storage so it survives page refresh
-        if (storage) {
-          storage.saveMessage({
-            id: messageId || `dm-${crypto.randomUUID()}`,
-            ts: Date.now(),
-            from,
-            to: senderName,
-            topic: undefined,
-            kind: 'message',
-            body,
-            data: {
-              fromAvatarUrl,
-              fromEntityType,
-            },
-            status: 'unread',
-            is_urgent: false,
-            is_broadcast: false,
-          }).catch((err) => {
-            console.error('[dashboard] Failed to persist direct message', err);
-          });
-        }
-
-        // Broadcast to presence WebSocket clients so cloud/dashboard can display the message
+        // Broadcast real-time event so the dashboard UI updates immediately.
+        // Pass id (= messageId) so the client has a stable identifier and
+        // doesn't need to fabricate one from Date.now().
         broadcastDirectMessage({
           type: 'direct_message',
           targetUser: senderName,
@@ -1268,6 +1255,7 @@ export async function startDashboard(
           fromAvatarUrl,
           fromEntityType,
           body,
+          id: messageId,
           messageId,
           timestamp,
         });
@@ -2001,7 +1989,7 @@ export async function startDashboard(
 
   const getAllData = async () => {
     const team = getTeamData();
-    if (!team) return { agents: [], messages: [], activity: [], sessions: [], summaries: [] };
+    if (!team) return null; // Signal that team data is temporarily unavailable
 
     const agentsMap = new Map<string, AgentStatus>();
     const allMessages: Message[] = await getMessages(team.agents);
@@ -2066,15 +2054,17 @@ export async function startDashboard(
               existing.status = 'online';
               if (user.avatarUrl) existing.avatarUrl = user.avatarUrl;
             } else {
-              const now = new Date().toISOString();
+              // Use stable timestamps from the user/file data, not new Date(),
+              // so getAllData() produces deterministic output for dedup comparison
+              const stableTimestamp = user.lastSeen || user.connectedAt || new Date(remoteData.updatedAt).toISOString();
               agentsMap.set(user.name, {
                 name: user.name,
                 role: 'User',
                 cli: 'dashboard',
                 messageCount: 0,
                 status: 'online',
-                lastSeen: now,
-                lastActive: now,
+                lastSeen: stableTimestamp,
+                lastActive: stableTimestamp,
                 needsAttention: false,
                 avatarUrl: user.avatarUrl,
               });
@@ -2150,7 +2140,7 @@ export async function startDashboard(
       }
     }
 
-    // Mark spawned agents with isSpawned flag, team, and model
+    // Mark spawned agents with isSpawned flag, team, model, and cwd
     if (spawnReader) {
       const activeWorkers = spawnReader.getActiveWorkers();
       for (const worker of activeWorkers) {
@@ -2159,6 +2149,12 @@ export async function startDashboard(
           agent.isSpawned = true;
           if (worker.team) {
             agent.team = worker.team;
+          }
+          // Inject cwd from agentCwdMap (set during /api/spawn) or from worker info
+          // (set by SpawnManager for relay-protocol spawns that bypass /api/spawn)
+          const workerCwd = agentCwdMap.get(worker.name) || (worker as any).cwd;
+          if (workerCwd) {
+            agent.cwd = workerCwd;
           }
           // Extract model from spawn command (e.g., "codex --model gpt-5.2-codex" → "gpt-5.2-codex")
           if (worker.cli) {
@@ -2169,6 +2165,15 @@ export async function startDashboard(
             }
           }
         }
+      }
+    }
+
+    // Inject cwd from agentCwdMap for agents not in spawner's active workers
+    // (e.g., agents that connected before spawner tracked them, or after restarts)
+    for (const [name, cwd] of agentCwdMap) {
+      const agent = agentsMap.get(name);
+      if (agent && !agent.cwd) {
+        agent.cwd = cwd;
       }
     }
 
@@ -2186,6 +2191,20 @@ export async function startDashboard(
         }
       } catch (err) {
         // Ignore errors reading workers.json
+      }
+    }
+
+    // Mark relay-protocol spawned agents (spawned by other agents, not via dashboard /api/spawn)
+    // These agents have log files in the team directory but aren't tracked by agentCwdMap
+    if (spawnReader) {
+      for (const [name, agent] of agentsMap) {
+        if (agent.isSpawned) continue;
+        if (onlineUsers.has(name) || name === 'Dashboard') continue;
+        // Check if there's a log file for this agent (indicates it was spawned)
+        const logPath = path.join(teamDir, `${name}.log`);
+        if (fs.existsSync(logPath)) {
+          agent.isSpawned = true;
+        }
       }
     }
 
@@ -2242,19 +2261,22 @@ export async function startDashboard(
       });
 
     // Separate AI agents from human users
+    // Sort by name for deterministic JSON serialization (enables dedup comparison)
     const filteredAgents = validEntries
       .filter(agent => agent.cli !== 'dashboard')
       .map(agent => ({
         ...agent,
         isHuman: false,
-      }));
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     const humanUsers = validEntries
       .filter(agent => agent.cli === 'dashboard')
       .map(agent => ({
         ...agent,
         isHuman: true,
-      }));
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     return {
       agents: filteredAgents,
@@ -2270,9 +2292,19 @@ export async function startDashboard(
   // This prevents race conditions where broadcastData sends before initial data is sent
   const initializingClients = new WeakSet<WebSocket>();
 
+  let lastBroadcastPayload = '';
+
   const broadcastData = async () => {
     try {
       const data = await getAllData();
+
+      // Skip broadcast when team data is temporarily unavailable (e.g., agents.json
+      // being rewritten by daemon). Preserves the last valid payload so clients
+      // don't see an empty screen flash.
+      if (!data) {
+        return;
+      }
+
       const rawPayload = JSON.stringify(data);
 
       // Guard against empty/invalid payloads
@@ -2280,6 +2312,12 @@ export async function startDashboard(
         console.warn('[dashboard] Skipping broadcast - empty payload');
         return;
       }
+
+      // Skip broadcast if data hasn't changed since last send
+      if (rawPayload === lastBroadcastPayload) {
+        return;
+      }
+      lastBroadcastPayload = rawPayload;
 
       // Push into buffer and wrap with sequence ID for replay support
       const seq = mainMessageBuffer.push('data', rawPayload);
@@ -2364,6 +2402,8 @@ export async function startDashboard(
     return { projects: [], messages: [], connected: false };
   };
 
+  let lastBridgeBroadcastPayload = '';
+
   const broadcastBridgeData = async () => {
     try {
       const data = await getBridgeData();
@@ -2374,6 +2414,12 @@ export async function startDashboard(
         console.warn('[dashboard] Skipping bridge broadcast - empty payload');
         return;
       }
+
+      // Skip broadcast if data hasn't changed since last send
+      if (payload === lastBridgeBroadcastPayload) {
+        return;
+      }
+      lastBridgeBroadcastPayload = payload;
 
       wssBridge.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
@@ -2411,15 +2457,14 @@ export async function startDashboard(
 
     try {
       const data = await getAllData();
-      const payload = JSON.stringify(data);
 
-      // Guard against empty/invalid payloads
-      if (!payload || payload.length === 0) {
-        console.warn('[dashboard] Skipping initial send - empty payload');
-        return;
-      }
-
-      if (ws.readyState === WebSocket.OPEN) {
+      if (!data) {
+        // Team data temporarily unavailable — skip the initial send.
+        // Reconnecting clients keep their previous data (no empty-screen flash).
+        // New clients wait for the first successful broadcastData() cycle.
+        debug('[dashboard] Team data unavailable on connect - deferring initial send to next broadcast');
+      } else if (ws.readyState === WebSocket.OPEN) {
+        const payload = JSON.stringify(data);
         debug(`[dashboard] Sending initial data, size: ${payload.length}, first 200 chars: ${payload.substring(0, 200)}`);
         ws.send(payload);
         debug('[dashboard] Initial data sent successfully');
@@ -3012,7 +3057,6 @@ export async function startDashboard(
 
   // Helper to broadcast direct messages to all connected clients
   // This enables agent replies to appear in the dashboard UI
-  // Broadcasts to both main wss (local mode) and wssPresence (cloud mode)
   const broadcastDirectMessage = (message: {
     type: 'direct_message';
     targetUser: string;
@@ -3020,6 +3064,7 @@ export async function startDashboard(
     fromAvatarUrl?: string;
     fromEntityType?: 'user' | 'agent';
     body: string;
+    id: string;
     messageId: string;
     timestamp: string;
   }) => {
@@ -3037,15 +3082,20 @@ export async function startDashboard(
       }
     });
 
-    // Also broadcast to presence WebSocket clients (cloud mode)
-    const presenceClients = Array.from(wssPresence.clients).filter(c => c.readyState === WebSocket.OPEN);
-    if (presenceClients.length > 0) {
-      debug(`[dashboard] Broadcasting direct_message to ${presenceClients.length} presence clients`);
-      wssPresence.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(payload);
-        }
-      });
+    // Only broadcast to presence WS if UserBridge does NOT have a session for
+    // the target user. When UserBridge is active it already delivers the DM
+    // directly to the user's WebSocket(s), so broadcasting here would duplicate.
+    const targetHandledByBridge = userBridge?.isUserRegistered(message.targetUser) ?? false;
+    if (!targetHandledByBridge) {
+      const presenceClients = Array.from(wssPresence.clients).filter(c => c.readyState === WebSocket.OPEN);
+      if (presenceClients.length > 0) {
+        debug(`[dashboard] Broadcasting direct_message to ${presenceClients.length} presence clients (no bridge session)`);
+        wssPresence.clients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(payload);
+          }
+        });
+      }
     }
   };
 
@@ -3342,7 +3392,10 @@ export async function startDashboard(
   });
 
   app.get('/api/data', (req, res) => {
-    getAllData().then((data) => res.json(data)).catch((err) => {
+    getAllData().then((data) => {
+      const safeData = data ?? { agents: [], users: [], messages: [], activity: [], sessions: [], summaries: [] };
+      res.json(safeData);
+    }).catch((err) => {
       console.error('Failed to fetch dashboard data', err);
       res.status(500).json({ error: 'Failed to load data' });
     });
@@ -4772,26 +4825,9 @@ export async function startDashboard(
         }
       }
 
-      // Also check agents.json for registered agents that may not be spawned
-      const agentsPath = path.join(teamDir, 'agents.json');
-      if (fs.existsSync(agentsPath)) {
-        const data = JSON.parse(fs.readFileSync(agentsPath, 'utf-8'));
-        const registeredAgents = data.agents || [];
-        for (const agent of registeredAgents) {
-          if (!agents.find(a => a.name === agent.name)) {
-            // Check if recently active (within 30 seconds)
-            const lastSeen = agent.lastSeen ? new Date(agent.lastSeen).getTime() : 0;
-            const isActive = Date.now() - lastSeen < 30000;
-            if (isActive) {
-              agents.push({
-                name: agent.name,
-                status: 'active',
-                alertLevel: 'normal',
-              });
-            }
-          }
-        }
-      }
+      // Note: We only show spawned agents with actual PIDs in memory metrics.
+      // Human users and non-process entries from agents.json are excluded since
+      // they don't have memory usage to track.
 
       res.json({
         agents,
@@ -5335,6 +5371,21 @@ export async function startDashboard(
     res.json({ name, online });
   });
 
+  /**
+   * PUT /api/agents/:name/cwd - Register an agent's working directory
+   * Used by relay-pty-orchestrator after daemon socket spawns (which bypass /api/spawn).
+   */
+  app.put('/api/agents/:name/cwd', (req, res) => {
+    const { name } = req.params;
+    const { cwd } = req.body || {};
+    if (!cwd || typeof cwd !== 'string') {
+      return res.status(400).json({ error: 'Missing required field: cwd' });
+    }
+    agentCwdMap.set(name, cwd);
+    broadcastData().catch(() => {});
+    res.json({ success: true, name, cwd });
+  });
+
   // ===== Agent Spawn API =====
 
   /**
@@ -5372,6 +5423,9 @@ export async function startDashboard(
       });
     }
 
+    // Inherit spawner's cwd if no explicit cwd provided (for nested/agent-to-agent spawns)
+    const effectiveCwd = cwd || (spawnerName ? agentCwdMap.get(spawnerName) : undefined);
+
     try {
       let result: { success: boolean; name: string; pid?: number; error?: string; policyDecision?: unknown };
 
@@ -5392,7 +5446,7 @@ export async function startDashboard(
           cli,
           task,
           team: team || undefined,
-          cwd: cwd || undefined,
+          cwd: effectiveCwd || undefined,
           interactive,
           shadowMode,
           shadowAgent,
@@ -5411,7 +5465,7 @@ export async function startDashboard(
           task,
           team: team || undefined,
           spawnerName: spawnerName || undefined,
-          cwd: cwd || undefined,
+          cwd: effectiveCwd || undefined,
           interactive,
           shadowMode,
           shadowAgent,
@@ -5425,6 +5479,10 @@ export async function startDashboard(
       }
 
       if (result.success) {
+        // Track cwd for this agent so /api/spawned can return it
+        if (effectiveCwd) {
+          agentCwdMap.set(name, effectiveCwd);
+        }
         // Broadcast update to WebSocket clients
         broadcastData().catch(() => {});
         // Broadcast agent_spawned event to activity feed
@@ -5446,6 +5504,117 @@ export async function startDashboard(
         name,
         error: err.message,
       });
+    }
+  });
+
+  /**
+   * POST /api/repos/clone - Clone a repo into the workspace directory
+   * Body: { fullName: "Owner/RepoName" }
+   * Used by cloud API to hot-clone repos added to a running workspace.
+   */
+  app.post('/api/repos/clone', async (req, res) => {
+    const { fullName } = req.body;
+
+    if (!fullName || typeof fullName !== 'string' || !fullName.includes('/')) {
+      return res.status(400).json({ success: false, error: 'fullName is required (e.g., "Owner/RepoName")' });
+    }
+
+    // Validate format: "Owner/RepoName" with safe characters only
+    if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(fullName)) {
+      return res.status(400).json({ success: false, error: 'Invalid repository name format' });
+    }
+
+    const repoName = fullName.split('/').pop()!;
+    const workspaceDir = process.env.WORKSPACE_DIR || path.dirname(projectRoot || dataDir);
+    const targetDir = path.join(workspaceDir, repoName);
+
+    // Prevent path traversal (e.g., repoName = ".." or ".")
+    const resolvedTarget = path.resolve(targetDir);
+    const resolvedWorkspace = path.resolve(workspaceDir);
+    if (!resolvedTarget.startsWith(resolvedWorkspace + path.sep)) {
+      return res.status(400).json({ success: false, error: 'Invalid path' });
+    }
+
+    // Idempotent: skip if already cloned (check for .git to avoid false positives
+    // from empty directories left behind by previous failed clone attempts)
+    if (fs.existsSync(path.join(targetDir, '.git'))) {
+      return res.json({ success: true, message: 'Already cloned', path: targetDir });
+    }
+
+    // Clean up stale directory from a previous failed clone (no .git = incomplete)
+    if (fs.existsSync(targetDir)) {
+      console.log(`[api/repos/clone] Removing stale directory ${targetDir} (no .git found)`);
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
+
+    // Use plain HTTPS URL - git credential helper handles authentication.
+    // The credential helper (git-credential-relay) fetches per-repo tokens from
+    // the cloud API, which correctly resolves installation tokens for private repos.
+    const cloneUrl = `https://github.com/${fullName}.git`;
+
+    try {
+      // Use execFile to avoid shell injection
+      await new Promise<void>((resolve, reject) => {
+        execFile('git', ['clone', cloneUrl, targetDir], { timeout: 120000 }, (error, _stdout, stderr) => {
+          if (error) {
+            reject(new Error(stderr || error.message));
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      // Mark directory as safe for git
+      execFile('git', ['config', '--global', '--add', 'safe.directory', targetDir], () => {});
+
+      res.json({ success: true, path: targetDir });
+    } catch (err: any) {
+      const safeMessage = (err.message || 'Clone failed');
+      console.error('[api/repos/clone] Clone failed:', safeMessage);
+      // Clean up failed clone directory so future attempts aren't blocked
+      try { fs.rmSync(targetDir, { recursive: true, force: true }); } catch { /* ignore */ }
+      res.status(500).json({ success: false, error: safeMessage });
+    }
+  });
+
+  /**
+   * POST /api/repos/remove - Remove a cloned repo directory from the workspace
+   * Body: { fullName: "Owner/RepoName" }
+   * Used by cloud API when a user removes a repo from their workspace settings.
+   */
+  app.post('/api/repos/remove', async (req, res) => {
+    const { fullName } = req.body;
+
+    if (!fullName || typeof fullName !== 'string' || !fullName.includes('/')) {
+      return res.status(400).json({ success: false, error: 'fullName is required (e.g., "Owner/RepoName")' });
+    }
+
+    if (!/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(fullName)) {
+      return res.status(400).json({ success: false, error: 'Invalid repository name format' });
+    }
+
+    const repoName = fullName.split('/').pop()!;
+    const workspaceDir = process.env.WORKSPACE_DIR || path.dirname(projectRoot || dataDir);
+    const targetDir = path.join(workspaceDir, repoName);
+
+    // Verify the directory is inside the workspace dir (prevent path traversal)
+    const resolvedTarget = path.resolve(targetDir);
+    const resolvedWorkspace = path.resolve(workspaceDir);
+    if (!resolvedTarget.startsWith(resolvedWorkspace + path.sep)) {
+      return res.status(400).json({ success: false, error: 'Invalid path' });
+    }
+
+    if (!fs.existsSync(targetDir)) {
+      return res.json({ success: true, message: 'Directory does not exist', path: targetDir });
+    }
+
+    try {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+      console.log(`[api/repos/remove] Removed directory: ${targetDir}`);
+      res.json({ success: true, path: targetDir });
+    } catch (err: any) {
+      console.error('[api/repos/remove] Remove failed:', err.message);
+      res.status(500).json({ success: false, error: err.message || 'Remove failed' });
     }
   });
 
@@ -5605,6 +5774,7 @@ Start by greeting the project leads and asking for status updates.`;
       spawnedAt?: number;
       task?: string;
       team?: string;
+      cwd?: string;
       source: 'spawner' | 'daemon';
     }>();
 
@@ -5618,6 +5788,7 @@ Start by greeting the project leads and asking for status updates.`;
           spawnedAt: worker.spawnedAt,
           task: worker.task,
           team: worker.team,
+          cwd: agentCwdMap.get(worker.name) || (worker as any).cwd,
           source: 'spawner',
         });
       }
@@ -5694,6 +5865,7 @@ Start by greeting the project leads and asking for status updates.`;
       }
 
       if (released) {
+        agentCwdMap.delete(name);
         broadcastData().catch(() => {});
         // Broadcast agent_released event to activity feed
         broadcastPresence({
@@ -6535,12 +6707,15 @@ Start by greeting the project leads and asking for status updates.`;
     return {};
   }
 
-  // Watch for changes
+  // Watch for changes - poll as a safety net for DB-backed storage mode.
+  // Real-time updates are already handled by explicit broadcastData() calls
+  // at every data mutation point (message send, spawn, release, cwd update, etc.).
+  // This interval only catches external/indirect changes (presence, DB edits).
   if (storage) {
     setInterval(() => {
       broadcastData().catch((err) => console.error('Broadcast failed', err));
       broadcastBridgeData().catch((err) => console.error('Bridge broadcast failed', err));
-    }, 1000);
+    }, 5000);
   } else {
     let fsWait: NodeJS.Timeout | null = null;
     let bridgeFsWait: NodeJS.Timeout | null = null;
