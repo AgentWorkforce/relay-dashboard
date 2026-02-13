@@ -1014,4 +1014,38 @@ export const cloudApi = {
       body: JSON.stringify({ connectionId }),
     });
   },
+
+  /**
+   * List available channels from the Slack workspace
+   */
+  async getSlackAvailableChannels(connectionId: string, cursor?: string) {
+    const params = new URLSearchParams();
+    if (cursor) params.set('cursor', cursor);
+    const qs = params.toString();
+    return cloudFetch<{
+      channels: Array<{
+        id: string;
+        name: string;
+        isPrivate: boolean;
+        isMember: boolean;
+        numMembers?: number;
+        topic: string;
+        purpose: string;
+      }>;
+      nextCursor?: string;
+    }>(`/api/slack/workspace/${encodeURIComponent(connectionId)}/available-channels${qs ? `?${qs}` : ''}`);
+  },
+
+  /**
+   * Have the bot join a Slack channel
+   */
+  async joinSlackChannel(connectionId: string, channelId: string) {
+    return cloudFetch<{
+      success: boolean;
+      channel?: { id: string; name: string };
+    }>(`/api/slack/workspace/${encodeURIComponent(connectionId)}/join-channel`, {
+      method: 'POST',
+      body: JSON.stringify({ channelId }),
+    });
+  },
 };
