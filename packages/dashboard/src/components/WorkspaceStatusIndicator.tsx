@@ -10,6 +10,7 @@
  */
 
 import React, { useCallback, useState } from 'react';
+import { cloudApi } from '../lib/cloudApi';
 import { useWorkspaceStatus } from './hooks/useWorkspaceStatus';
 
 export interface WorkspaceStatusIndicatorProps {
@@ -59,6 +60,8 @@ export function WorkspaceStatusIndicator({
     },
   });
 
+  const [isRestarting, setIsRestarting] = useState(false);
+
   const handleWakeup = useCallback(async () => {
     const result = await wakeup();
     if (result.success) {
@@ -68,6 +71,18 @@ export function WorkspaceStatusIndicator({
       setTimeout(() => setShowToast(false), 5000);
     }
   }, [wakeup, onWakeup]);
+
+  const handleRestart = useCallback(async () => {
+    if (!workspace) return;
+    setIsRestarting(true);
+    const result = await cloudApi.restartWorkspace(workspace.id);
+    if (result.success) {
+      setToastMessage(result.data.message);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 5000);
+    }
+    setIsRestarting(false);
+  }, [workspace]);
 
   // Get status color and icon
   const getStatusConfig = () => {
@@ -240,12 +255,21 @@ export function WorkspaceStatusIndicator({
         )}
 
         {actionNeeded === 'check_error' && (
-          <a
-            href={`/workspaces/${workspace?.id}`}
-            className="block w-full mt-3 px-3 py-2 text-sm font-medium text-center text-error bg-error/10 border border-error/30 rounded-lg hover:bg-error/20 transition-colors no-underline"
-          >
-            View error details
-          </a>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={handleRestart}
+              disabled={isRestarting}
+              className="flex-1 px-3 py-2 text-sm font-medium text-accent-cyan bg-accent-cyan/10 border border-accent-cyan/30 rounded-lg hover:bg-accent-cyan/20 transition-colors disabled:opacity-50"
+            >
+              {isRestarting ? 'Restarting...' : 'Restart'}
+            </button>
+            <a
+              href="/app/settings/workspace"
+              className="px-3 py-2 text-sm font-medium text-center text-text-muted bg-bg-tertiary border border-border-subtle rounded-lg hover:bg-bg-hover transition-colors no-underline"
+            >
+              Settings
+            </a>
+          </div>
         )}
       </div>
 
