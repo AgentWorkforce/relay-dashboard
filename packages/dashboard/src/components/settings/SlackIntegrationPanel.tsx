@@ -38,6 +38,16 @@ interface SlackChannel {
   defaultRepo?: string;
 }
 
+interface SlackAvailableChannel {
+  id: string;
+  name: string;
+  isPrivate: boolean;
+  isMember: boolean;
+  numMembers?: number;
+  topic: string;
+  purpose: string;
+}
+
 export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrationPanelProps) {
   const [connections, setConnections] = useState<SlackConnection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,6 +69,14 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
 
   // Disconnect state
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
+
+  // Channel picker state (shown after OAuth connect)
+  const [channelPickerConnectionId, setChannelPickerConnectionId] = useState<string | null>(null);
+  const [availableChannels, setAvailableChannels] = useState<SlackAvailableChannel[]>([]);
+  const [loadingAvailableChannels, setLoadingAvailableChannels] = useState(false);
+  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(new Set());
+  const [joiningChannels, setJoiningChannels] = useState(false);
+  const [channelSearchQuery, setChannelSearchQuery] = useState('');
 
   // Load connections
   const loadConnections = useCallback(async () => {
@@ -123,7 +141,13 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
           }
           setIsConnecting(false);
           setOauthConnectionId(null);
-          loadConnections();
+          await loadConnections();
+
+          // Show channel picker for the newly connected workspace
+          const conn = statusResult.data.connection;
+          if (conn?.id) {
+            showChannelPicker(conn.id);
+          }
         }
       }, 2000);
 
@@ -146,7 +170,7 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
       setError(authError.message || 'Slack authentication failed');
       setIsConnecting(false);
     }
-  }, [workspaceId, loadConnections]);
+  }, [workspaceId, loadConnections, showChannelPicker]);
 
   // Cancel OAuth flow
   const handleCancelConnect = useCallback(() => {
@@ -156,6 +180,77 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
     }
     setIsConnecting(false);
     setOauthConnectionId(null);
+  }, []);
+
+  // Load available Slack channels for channel picker
+  const loadAvailableChannels = useCallback(async (connectionId: string) => {
+    setLoadingAvailableChannels(true);
+    setAvailableChannels([]);
+    setSelectedChannels(new Set());
+    setChannelSearchQuery('');
+
+    const result = await cloudApi.getSlackAvailableChannels(connectionId);
+    if (result.success) {
+      setAvailableChannels(result.data.channels);
+    } else {
+      setError(result.error);
+    }
+    setLoadingAvailableChannels(false);
+  }, []);
+
+  // Show channel picker for a connection
+  const showChannelPicker = useCallback(async (connectionId: string) => {
+    setChannelPickerConnectionId(connectionId);
+    await loadAvailableChannels(connectionId);
+  }, [loadAvailableChannels]);
+
+  // Toggle channel selection
+  const toggleChannelSelection = useCallback((channelId: string) => {
+    setSelectedChannels(prev => {
+      const next = new Set(prev);
+      if (next.has(channelId)) {
+        next.delete(channelId);
+      } else {
+        next.add(channelId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Join selected channels
+  const handleJoinChannels = useCallback(async () => {
+    if (!channelPickerConnectionId || selectedChannels.size === 0) return;
+
+    setJoiningChannels(true);
+    let joinedCount = 0;
+
+    for (const channelId of selectedChannels) {
+      const result = await cloudApi.joinSlackChannel(channelPickerConnectionId, channelId);
+      if (result.success) {
+        joinedCount++;
+      }
+    }
+
+    setJoiningChannels(false);
+    setChannelPickerConnectionId(null);
+    setSelectedChannels(new Set());
+    setAvailableChannels([]);
+
+    if (joinedCount > 0) {
+      setTestResult({
+        connectionId: channelPickerConnectionId,
+        success: true,
+        message: `Bot joined ${joinedCount} channel${joinedCount !== 1 ? 's' : ''} successfully`,
+      });
+    }
+  }, [channelPickerConnectionId, selectedChannels]);
+
+  // Dismiss channel picker
+  const dismissChannelPicker = useCallback(() => {
+    setChannelPickerConnectionId(null);
+    setSelectedChannels(new Set());
+    setAvailableChannels([]);
+    setChannelSearchQuery('');
   }, []);
 
   // Load channels for a connection
@@ -433,6 +528,118 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
         </div>
       )}
 
+      {/* Channel Picker (shown after OAuth connect) */}
+      {channelPickerConnectionId && (
+        <div className="p-6 bg-bg-tertiary rounded-xl border border-accent-cyan/30 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-semibold text-text-primary">
+                Select Channels
+              </h4>
+              <p className="text-xs text-text-muted mt-1">
+                Choose which channels the bot should join
+              </p>
+            </div>
+            <button
+              onClick={dismissChannelPicker}
+              className="text-text-muted hover:text-text-secondary p-1"
+            >
+              <CloseIcon />
+            </button>
+          </div>
+
+          {loadingAvailableChannels ? (
+            <div className="flex items-center justify-center gap-3 py-8">
+              <div className="w-5 h-5 rounded-full border-2 border-accent-cyan/20 border-t-accent-cyan animate-spin" />
+              <span className="text-xs text-text-muted">Loading channels...</span>
+            </div>
+          ) : (
+            <>
+              {/* Search */}
+              <input
+                type="text"
+                placeholder="Search channels..."
+                value={channelSearchQuery}
+                onChange={(e) => setChannelSearchQuery(e.target.value)}
+                className="w-full px-3 py-2 bg-bg-primary border border-border-subtle rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-cyan/50"
+              />
+
+              {/* Channel list */}
+              <div className="max-h-64 overflow-y-auto space-y-1">
+                {availableChannels
+                  .filter(ch => !channelSearchQuery || ch.name.toLowerCase().includes(channelSearchQuery.toLowerCase()))
+                  .map((channel) => (
+                    <label
+                      key={channel.id}
+                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                        selectedChannels.has(channel.id)
+                          ? 'bg-accent-cyan/10 border border-accent-cyan/30'
+                          : 'bg-bg-primary border border-transparent hover:border-border-subtle'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedChannels.has(channel.id)}
+                        onChange={() => toggleChannelSelection(channel.id)}
+                        className="w-4 h-4 rounded border-border-subtle text-accent-cyan focus:ring-accent-cyan/50"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-text-primary">
+                            {channel.isPrivate ? '🔒' : '#'} {channel.name}
+                          </span>
+                          {channel.isMember && (
+                            <span className="text-[10px] px-1.5 py-0.5 bg-success/15 text-success rounded-full">
+                              joined
+                            </span>
+                          )}
+                        </div>
+                        {(channel.purpose || channel.topic) && (
+                          <p className="text-xs text-text-muted truncate mt-0.5">
+                            {channel.purpose || channel.topic}
+                          </p>
+                        )}
+                      </div>
+                      {channel.numMembers != null && (
+                        <span className="text-xs text-text-muted whitespace-nowrap">
+                          {channel.numMembers} members
+                        </span>
+                      )}
+                    </label>
+                  ))}
+                {availableChannels.length === 0 && (
+                  <p className="text-sm text-text-muted text-center py-6">
+                    No channels found
+                  </p>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-between pt-2 border-t border-border-subtle">
+                <span className="text-xs text-text-muted">
+                  {selectedChannels.size} channel{selectedChannels.size !== 1 ? 's' : ''} selected
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={dismissChannelPicker}
+                    className="px-4 py-2 text-xs font-medium text-text-muted hover:text-text-secondary transition-colors"
+                  >
+                    Skip
+                  </button>
+                  <button
+                    onClick={handleJoinChannels}
+                    disabled={selectedChannels.size === 0 || joiningChannels}
+                    className="px-4 py-2 bg-accent-cyan text-bg-primary text-xs font-semibold rounded-lg hover:bg-accent-cyan/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {joiningChannels ? 'Joining...' : `Join ${selectedChannels.size > 0 ? selectedChannels.size + ' ' : ''}Channel${selectedChannels.size !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Connect button / OAuth flow */}
       {isConnecting ? (
         <div className="p-6 bg-bg-tertiary rounded-xl border border-accent-cyan/30 text-center space-y-4">
@@ -452,7 +659,7 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
             Cancel
           </button>
         </div>
-      ) : (
+      ) : !channelPickerConnectionId && (
         <button
           onClick={handleConnect}
           className="w-full py-4 px-6 bg-gradient-to-r from-[#4A154B] to-[#611F69] text-white font-semibold rounded-xl hover:shadow-lg hover:shadow-[#4A154B]/30 hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-3"
