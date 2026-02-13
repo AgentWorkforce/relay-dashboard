@@ -355,17 +355,17 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
 
                   {/* Test message */}
                   <button
-                    onClick={() => handleTestMessage(connection.connectionId)}
-                    disabled={sendingTest === connection.connectionId}
+                    onClick={() => handleTestMessage(connection.id)}
+                    disabled={sendingTest === connection.id}
                     className="flex items-center gap-2 px-4 py-2 bg-bg-card border border-border-subtle rounded-lg text-xs font-semibold text-text-secondary hover:border-accent-cyan/30 hover:text-accent-cyan transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <MessageIcon />
-                    {sendingTest === connection.connectionId ? 'Sending...' : 'Send Test'}
+                    {sendingTest === connection.id ? 'Sending...' : 'Send Test'}
                   </button>
                 </div>
 
                 {/* Test result */}
-                {testResult && testResult.connectionId === connection.connectionId && (
+                {testResult && testResult.connectionId === connection.id && (
                   <div className={`mt-3 p-3 rounded-lg text-xs ${
                     testResult.success
                       ? 'bg-success/10 border border-success/30 text-success'
