@@ -14,6 +14,8 @@ import { TerminalProviderSetup } from '../TerminalProviderSetup';
 import { RepositoriesPanel } from '../RepositoriesPanel';
 import { IntegrationConnect } from '../IntegrationConnect';
 import { SlackIntegrationPanel } from './SlackIntegrationPanel';
+import { AuditLogViewer } from '../AuditLogViewer';
+import { ApprovalRequestPanel } from '../ApprovalRequestPanel';
 
 export interface WorkspaceSettingsPanelProps {
   workspaceId: string;
@@ -146,7 +148,7 @@ export function WorkspaceSettingsPanel({
   const [availableRepos, setAvailableRepos] = useState<AvailableRepo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'general' | 'providers' | 'integrations' | 'repos' | 'github-access' | 'domain' | 'danger'>('general');
+  const [activeSection, setActiveSection] = useState<'general' | 'providers' | 'integrations' | 'audit' | 'repos' | 'github-access' | 'domain' | 'danger'>('general');
 
   // Slack integration collapsed state
   const [slackExpanded, setSlackExpanded] = useState(false);
@@ -507,6 +509,7 @@ export function WorkspaceSettingsPanel({
     { id: 'general', label: 'General', icon: <SettingsGearIcon /> },
     { id: 'providers', label: 'AI Providers', icon: <ProviderIcon /> },
     { id: 'integrations', label: 'Integrations', icon: <IntegrationIcon /> },
+    { id: 'audit', label: 'Audit Log', icon: <AuditIcon /> },
     { id: 'repos', label: 'Repositories', icon: <RepoIcon /> },
     { id: 'domain', label: 'Domain', icon: <GlobeIcon /> },
     { id: 'danger', label: 'Danger', icon: <AlertIcon /> },
@@ -861,6 +864,19 @@ export function WorkspaceSettingsPanel({
               title="External Integrations"
               subtitle="Connect external services for agents to use (GitHub, Slack, Linear, etc.)"
             />
+            <div className="p-5 bg-gradient-to-r from-accent-cyan/10 to-accent-purple/10 border border-accent-cyan/20 rounded-xl">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-accent-cyan/20 flex items-center justify-center">
+                  <IntegrationIcon className="text-accent-cyan" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-text-primary">Unified Agent Auth</h4>
+                  <p className="text-xs text-text-secondary">
+                    Agents can access connected integrations via the proxy API. Configure access policies per agent.
+                  </p>
+                </div>
+              </div>
+            </div>
 
             {/* Slack - compact collapsible row */}
             <div className="bg-bg-tertiary rounded-xl border border-border-subtle overflow-hidden">
@@ -898,10 +914,19 @@ export function WorkspaceSettingsPanel({
               )}
             </div>
 
-            {/* Other integrations grid */}
+            <ApprovalRequestPanel
+              workspaceId={workspaceId}
+              onApprovalChange={() => {
+                // Refresh connection state after approval
+              }}
+            />
             <IntegrationConnect
               workspaceId={workspaceId}
               csrfToken={csrfToken}
+              onConnectionChange={(providerId, connected) => {
+                // Could trigger a refresh or update local state
+                console.log(`Integration ${providerId} ${connected ? 'connected' : 'disconnected'}`);
+              }}
             />
           </div>
         )}
@@ -937,6 +962,17 @@ export function WorkspaceSettingsPanel({
               csrfToken={csrfToken}
               className="bg-bg-tertiary rounded-xl border border-border-subtle overflow-hidden"
             />
+          </div>
+        )}
+
+        {/* Audit Log Section */}
+        {activeSection === 'audit' && (
+          <div className="space-y-6">
+            <SectionHeader
+              title="Integration Audit Log"
+              subtitle="View all proxy requests made by agents to external integrations"
+            />
+            <AuditLogViewer workspaceId={workspaceId} />
           </div>
         )}
 
@@ -1209,6 +1245,15 @@ function RepoIcon({ className = '' }: { className?: string }) {
   );
 }
 
+function IntegrationIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
+  );
+}
+
 function GlobeIcon({ className = '' }: { className?: string }) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -1299,15 +1344,6 @@ function InfoIcon() {
   );
 }
 
-function IntegrationIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-    </svg>
-  );
-}
-
 function SlackMark() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -1373,6 +1409,18 @@ function SyncIcon({ spinning = false }: { spinning?: boolean } = {}) {
       <path d="M1 20v-6h6" />
       <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
       <path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" />
+    </svg>
+  );
+}
+
+function AuditIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <polyline points="10 9 9 9 8 9" />
     </svg>
   );
 }
