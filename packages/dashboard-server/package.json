@@ -1,6 +1,6 @@
 {
   "name": "@agent-relay/dashboard-server",
-  "version": "2.0.73",
+  "version": "2.0.76",
   "description": "Express server for Agent Relay dashboard - serves UI and proxies to relay daemon",
   "type": "module",
   "main": "dist/index.js",
@@ -33,15 +33,15 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@agent-relay/bridge": "2.1.25",
-    "@agent-relay/config": "2.1.25",
-    "@agent-relay/daemon": "2.1.25",
-    "@agent-relay/protocol": "2.1.25",
-    "@agent-relay/resiliency": "2.1.25",
-    "@agent-relay/sdk": "2.1.25",
-    "@agent-relay/storage": "2.1.25",
-    "@agent-relay/trajectory": "2.1.25",
-    "@agent-relay/utils": "2.1.25",
+    "@agent-relay/bridge": "2.1.27",
+    "@agent-relay/config": "2.1.27",
+    "@agent-relay/daemon": "2.1.27",
+    "@agent-relay/protocol": "2.1.27",
+    "@agent-relay/resiliency": "2.1.27",
+    "@agent-relay/sdk": "2.1.27",
+    "@agent-relay/storage": "2.1.27",
+    "@agent-relay/trajectory": "2.1.27",
+    "@agent-relay/utils": "2.1.27",
     "express": "^5.2.1",
     "http-proxy-middleware": "^3.0.0",
     "ws": "^8.18.3"
