@@ -67,7 +67,6 @@ interface AIProvider {
   apiKeyUrl?: string;
   apiKeyName?: string;
   supportsOAuth?: boolean;
-  supportsDeviceFlow?: boolean; // Provider supports device flow (easier for headless environments)
   preferApiKey?: boolean; // Show API key input by default (simpler for mobile/containers)
   isConnected?: boolean;
   comingSoon?: boolean; // Provider is not yet fully tested/available
@@ -95,7 +94,6 @@ const AI_PROVIDERS: AIProvider[] = [
     apiKeyUrl: 'https://platform.openai.com/api-keys',
     apiKeyName: 'API key',
     supportsOAuth: true,
-    supportsDeviceFlow: true, // Codex supports --device-auth for headless environments
   },
   {
     id: 'google',
@@ -159,14 +157,14 @@ export function WorkspaceSettingsPanel({
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [providerError, setProviderError] = useState<string | null>(null);
   const [showApiKeyFallback, setShowApiKeyFallback] = useState<Record<string, boolean>>({});
-  // Device flow preference for providers that support it
-  const [useDeviceFlow, setUseDeviceFlow] = useState<Record<string, boolean>>({});
   // Use terminal-based setup (default for Claude, Cursor, and Gemini - Codex uses CLI helper flow)
   const [useTerminalSetup, setUseTerminalSetup] = useState<Record<string, boolean>>({
-    anthropic: true, // Default to terminal for Claude
-    cursor: true,    // Default to terminal for Cursor
-    google: true,    // Default to terminal for Gemini - allows choosing OAuth or API key
+    anthropic: false, // CLI-assisted SSH tunnel flow for Claude
+    cursor: false,    // CLI-assisted SSH tunnel flow for Cursor
+    google: true,     // Default to terminal for Gemini - allows choosing OAuth or API key
   });
+
+  // CLI command copy state
 
   // Provider disconnection state
   const [disconnectingProvider, setDisconnectingProvider] = useState<string | null>(null);
@@ -716,12 +714,10 @@ export function WorkspaceSettingsPanel({
                               name: provider.name,
                               displayName: provider.displayName,
                               color: provider.color,
-                              requiresUrlCopy: provider.id === 'codex',
-                              supportsDeviceFlow: provider.supportsDeviceFlow,
+                              requiresUrlCopy: ['codex', 'anthropic', 'cursor'].includes(provider.id),
                             }}
                             workspaceId={workspaceId}
                             csrfToken={csrfToken}
-                            useDeviceFlow={useDeviceFlow[provider.id] || false}
                             onSuccess={() => {
                               setProviderStatus(prev => ({ ...prev, [provider.id]: true }));
                               setConnectingProvider(null);
@@ -781,31 +777,15 @@ export function WorkspaceSettingsPanel({
                         </div>
                       ) : provider.supportsOAuth ? (
                         <div className="space-y-3">
-                          {/* CLI info for Codex */}
-                          {provider.id === 'codex' && (
+                          {/* CLI info for providers using SSH tunnel auth */}
+                          {['codex', 'anthropic', 'cursor'].includes(provider.id) && (
                             <div className="p-3 bg-accent-cyan/10 border border-accent-cyan/30 rounded-lg">
                               <p className="text-sm text-accent-cyan font-medium mb-1">CLI-assisted authentication</p>
                               <p className="text-xs text-accent-cyan/80">
-                                Codex auth uses a CLI command to capture the OAuth callback locally.
-                                Click the button below and we&apos;ll show you a command with a unique session token
-                                to run in your terminal before signing in with OpenAI.
+                                Click the button below to get a CLI command with a unique session token.
+                                Run it on your local machine to authenticate with {provider.displayName} via a secure SSH tunnel.
                               </p>
                             </div>
-                          )}
-                          {/* Device flow toggle for providers that support it */}
-                          {provider.supportsDeviceFlow && (
-                            <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={useDeviceFlow[provider.id] || false}
-                                onChange={(e) => setUseDeviceFlow(prev => ({
-                                  ...prev,
-                                  [provider.id]: e.target.checked,
-                                }))}
-                                className="w-4 h-4 rounded border-border-subtle bg-bg-card text-accent-cyan focus:ring-accent-cyan/30 cursor-pointer"
-                              />
-                              Use device flow (easier for containers/headless)
-                            </label>
                           )}
                           <button
                             onClick={() => startOAuthFlow(provider)}
@@ -868,11 +848,6 @@ export function WorkspaceSettingsPanel({
                     </div>
                   )}
 
-                  <div className="mt-4 pt-4 border-t border-border-subtle">
-                    <p className="text-xs text-text-muted">
-                      CLI: <code className="px-2 py-1 bg-bg-card rounded font-mono">{provider.cliCommand}</code>
-                    </p>
-                  </div>
                 </div>
               ))}
             </div>

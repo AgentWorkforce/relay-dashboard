@@ -4391,16 +4391,16 @@ export async function startDashboard(
 
   /**
    * POST /auth/cli/:provider/start - Start CLI auth flow
-   * Body: { useDeviceFlow?: boolean, userId?: string }
+   * Body: { userId?: string }
    *
    * When userId is provided, credentials are stored per-user at /data/users/{userId}/.{provider}/
    * This allows multiple users to share a workspace with their own CLI credentials.
    */
   app.post('/auth/cli/:provider/start', async (req, res) => {
     const { provider } = req.params;
-    const { useDeviceFlow, userId } = req.body || {};
+    const { userId } = req.body || {};
     try {
-      const session = await startCLIAuth(provider, { useDeviceFlow, userId });
+      const session = await startCLIAuth(provider, { userId });
       res.json({
         sessionId: session.id,
         status: session.status,
@@ -4650,6 +4650,37 @@ export async function startDashboard(
     } catch (err) {
       console.error(`[credentials] Failed to write ${provider} API key for user ${userId}:`, err);
       res.status(500).json({ error: 'Failed to write credential file' });
+    }
+  });
+
+  /**
+   * DELETE /api/credentials/apikey - Delete credential files for a provider from user's home directory
+   * Used by cloud API when disconnecting a provider to clean up CLI credential files
+   */
+  app.delete('/api/credentials/apikey', express.json(), async (req, res) => {
+    const { userId, provider } = req.body;
+
+    if (!userId || typeof userId !== 'string') {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+    if (!provider || typeof provider !== 'string') {
+      return res.status(400).json({ error: 'provider is required' });
+    }
+
+    try {
+      const { getUserDirectoryService } = await import('@agent-relay/user-directory');
+      const userDirService = getUserDirectoryService();
+      const deletedPaths = userDirService.deleteProviderCredentials(userId, provider);
+
+      console.log(`[credentials] Deleted ${provider} credentials for user ${userId}:`, deletedPaths);
+
+      res.json({
+        success: true,
+        deletedPaths,
+      });
+    } catch (err) {
+      console.error(`[credentials] Failed to delete ${provider} credentials for user ${userId}:`, err);
+      res.status(500).json({ error: 'Failed to delete credential files' });
     }
   });
 

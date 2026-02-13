@@ -5,7 +5,7 @@
  * Handles Claude (terminal), Codex (CLI-assisted), and other providers.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { TerminalProviderSetup } from './TerminalProviderSetup';
 import { ProviderAuthFlow } from './ProviderAuthFlow';
 
@@ -19,8 +19,6 @@ export interface ProviderInfo {
   description?: string;
   /** For OAuth providers, whether they need URL copy (localhost callback) */
   requiresUrlCopy?: boolean;
-  /** For OAuth providers, whether they support device flow */
-  supportsDeviceFlow?: boolean;
   /** Provider is not yet fully tested/available */
   comingSoon?: boolean;
 }
@@ -29,16 +27,15 @@ export interface ProviderInfo {
 const PROVIDER_AUTH_CONFIG: Record<string, {
   authMethod: 'terminal' | 'oauth';
   requiresUrlCopy?: boolean;
-  supportsDeviceFlow?: boolean;
 }> = {
-  anthropic: { authMethod: 'terminal' },
-  codex: { authMethod: 'oauth', requiresUrlCopy: true, supportsDeviceFlow: true },
-  openai: { authMethod: 'oauth', requiresUrlCopy: true, supportsDeviceFlow: true },
+  anthropic: { authMethod: 'oauth', requiresUrlCopy: true },
+  codex: { authMethod: 'oauth', requiresUrlCopy: true },
+  openai: { authMethod: 'oauth', requiresUrlCopy: true },
   // Gemini uses terminal - CLI shows interactive menu for OAuth vs API key
   google: { authMethod: 'terminal' },
   opencode: { authMethod: 'terminal' },
   droid: { authMethod: 'terminal' },
-  cursor: { authMethod: 'terminal' },
+  cursor: { authMethod: 'oauth', requiresUrlCopy: true },
 };
 
 export interface ProviderConnectionListProps {
@@ -183,7 +180,6 @@ export function ProviderConnectionList({
               displayName: provider.displayName,
               color: provider.color,
               requiresUrlCopy: authConfig.requiresUrlCopy,
-              supportsDeviceFlow: authConfig.supportsDeviceFlow,
             }}
             workspaceId={workspaceId}
             csrfToken={csrfToken}
@@ -222,8 +218,8 @@ export function ProviderConnectionList({
           const isTerminal = authConfig?.authMethod === 'terminal';
           const isOAuth = authConfig?.authMethod === 'oauth';
 
-          // Expanded card for Claude/Codex when showDetailedInfo is true
-          if (showDetailedInfo && (provider.id === 'anthropic' || provider.id === 'codex')) {
+          // Expanded card for Claude/Codex/Cursor when showDetailedInfo is true
+          if (showDetailedInfo && (provider.id === 'anthropic' || provider.id === 'codex' || provider.id === 'cursor')) {
             return (
               <div
                 key={provider.id}
@@ -280,6 +276,7 @@ export function ProviderConnectionList({
                       </svg>
                       Connect with {provider.displayName}
                     </button>
+
                   </>
                 )}
               </div>
