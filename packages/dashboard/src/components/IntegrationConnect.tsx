@@ -345,7 +345,7 @@ export function IntegrationConnect({
                 {CATEGORY_INFO[category as ProviderCategory].label}
               </h3>
             </div>
-            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
               {categoryProviders.map(provider => (
                 <ProviderCard
                   key={provider.id}
@@ -362,7 +362,7 @@ export function IntegrationConnect({
         ))
       ) : (
         // Show flat grid for single category
-        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
           {filteredProviders.map(provider => (
             <ProviderCard
               key={provider.id}
