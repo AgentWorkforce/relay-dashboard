@@ -352,7 +352,7 @@ export function SettingsPage({
                       description="Default model when spawning Cursor agents"
                     >
                       <select
-                        value={settings.agentDefaults?.defaultModels?.cursor ?? 'opus-4.5-thinking'}
+                        value={settings.agentDefaults?.defaultModels?.cursor ?? 'opus-4.6-thinking'}
                         onChange={(e) => updateSettings((prev) => ({
                           ...prev,
                           agentDefaults: {
@@ -376,7 +376,7 @@ export function SettingsPage({
                       description="Default model when spawning Codex agents"
                     >
                       <select
-                        value={settings.agentDefaults?.defaultModels?.codex ?? 'gpt-5.2-codex'}
+                        value={settings.agentDefaults?.defaultModels?.codex ?? 'gpt-5.3-codex'}
                         onChange={(e) => updateSettings((prev) => ({
                           ...prev,
                           agentDefaults: {

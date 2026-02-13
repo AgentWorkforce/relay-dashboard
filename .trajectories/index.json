@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "lastUpdated": "2026-01-29T21:32:33.139Z",
+  "lastUpdated": "2026-02-13T20:18:46.504Z",
   "trajectories": {
     "traj_3q3jtxrg7enr": {
       "title": "Refactor channel system: remove legacy general broadcast, make Activity feed show events only, #general is real channel",
@@ -36,6 +36,12 @@
       "startedAt": "2026-01-29T21:31:14.998Z",
       "completedAt": "2026-01-29T21:32:33.124Z",
       "path": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/.trajectories/completed/2026-01/traj_zsduygra9rpy.json"
+    },
+    "traj_m8len6wgi8b6": {
+      "title": "Update dashboard models (Cursor + Codex) using Claude Code settings schema as reference",
+      "status": "active",
+      "startedAt": "2026-02-13T20:18:26.674Z",
+      "path": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/.trajectories/active/traj_m8len6wgi8b6.json"
     }
   }
 }

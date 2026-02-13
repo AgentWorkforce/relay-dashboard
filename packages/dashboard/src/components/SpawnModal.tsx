@@ -67,10 +67,18 @@ type ClaudeModel = string;
 
 /** Model options for Cursor agents */
 export const CURSOR_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'opus-4.5-thinking', label: 'Claude 4.5 Opus (Thinking)' },
-  { value: 'opus-4.5', label: 'Claude 4.5 Opus' },
-  { value: 'sonnet-4.5', label: 'Claude 4.5 Sonnet' },
-  { value: 'sonnet-4.5-thinking', label: 'Claude 4.5 Sonnet (Thinking)' },
+  { value: 'auto', label: 'Auto' },
+  { value: 'composer-1.5', label: 'Composer 1.5' },
+  { value: 'composer-1', label: 'Composer 1' },
+  { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
+  { value: 'gpt-5.3-codex-low', label: 'GPT-5.3 Codex Low' },
+  { value: 'gpt-5.3-codex-high', label: 'GPT-5.3 Codex High' },
+  { value: 'gpt-5.3-codex-xhigh', label: 'GPT-5.3 Codex Extra High' },
+  { value: 'gpt-5.3-codex-fast', label: 'GPT-5.3 Codex Fast' },
+  { value: 'gpt-5.3-codex-low-fast', label: 'GPT-5.3 Codex Low Fast' },
+  { value: 'gpt-5.3-codex-high-fast', label: 'GPT-5.3 Codex High Fast' },
+  { value: 'gpt-5.3-codex-xhigh-fast', label: 'GPT-5.3 Codex Extra High Fast' },
+  { value: 'gpt-5.2', label: 'GPT-5.2' },
   { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
   { value: 'gpt-5.2-codex-high', label: 'GPT-5.2 Codex High' },
   { value: 'gpt-5.2-codex-low', label: 'GPT-5.2 Codex Low' },
@@ -81,12 +89,16 @@ export const CURSOR_MODEL_OPTIONS: { value: string; label: string }[] = [
   { value: 'gpt-5.2-codex-xhigh-fast', label: 'GPT-5.2 Codex Extra High Fast' },
   { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
   { value: 'gpt-5.1-codex-max-high', label: 'GPT-5.1 Codex Max High' },
-  { value: 'gpt-5.2', label: 'GPT-5.2' },
+  { value: 'opus-4.6-thinking', label: 'Claude 4.6 Opus (Thinking)' },
+  { value: 'sonnet-4.5-thinking', label: 'Claude 4.5 Sonnet (Thinking)' },
   { value: 'gpt-5.2-high', label: 'GPT-5.2 High' },
+  { value: 'opus-4.6', label: 'Claude 4.6 Opus' },
+  { value: 'opus-4.5', label: 'Claude 4.5 Opus' },
+  { value: 'opus-4.5-thinking', label: 'Claude 4.5 Opus (Thinking)' },
+  { value: 'sonnet-4.5', label: 'Claude 4.5 Sonnet' },
   { value: 'gpt-5.1-high', label: 'GPT-5.1 High' },
   { value: 'gemini-3-pro', label: 'Gemini 3 Pro' },
   { value: 'gemini-3-flash', label: 'Gemini 3 Flash' },
-  { value: 'composer-1', label: 'Composer 1' },
   { value: 'grok', label: 'Grok' },
 ];
 
@@ -94,8 +106,9 @@ type CursorModel = string;
 
 /** Model options for Codex agents */
 export const CODEX_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex — Frontier agentic coding model' },
   { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex — Latest frontier agentic coding model' },
+  { value: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark — Ultra-fast coding model' },
+  { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex — Frontier agentic coding model' },
   { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max — Deep and fast reasoning' },
   { value: 'gpt-5.2', label: 'GPT-5.2 — Frontier model, knowledge & reasoning' },
   { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini — Cheaper, faster' },
@@ -195,8 +208,8 @@ export function SpawnModal({
   const [name, setName] = useState('');
   const [customCommand, setCustomCommand] = useState('');
   const [selectedModel, setSelectedModel] = useState<ClaudeModel>('sonnet');
-  const [selectedCursorModel, setSelectedCursorModel] = useState<CursorModel>('opus-4.5-thinking');
-  const [selectedCodexModel, setSelectedCodexModel] = useState<CodexModel>('gpt-5.2-codex');
+  const [selectedCursorModel, setSelectedCursorModel] = useState<CursorModel>('opus-4.6-thinking');
+  const [selectedCodexModel, setSelectedCodexModel] = useState<CodexModel>('gpt-5.3-codex');
   const [selectedGeminiModel, setSelectedGeminiModel] = useState<GeminiModel>('gemini-2.5-pro');
   const [cwd, setCwd] = useState('');
   const [selectedRepoId, setSelectedRepoId] = useState<string | undefined>(activeRepoId);
@@ -327,8 +340,8 @@ export function SpawnModal({
       setCustomCommand('');
       // Use settings-based model defaults with fallbacks
       setSelectedModel(agentDefaults?.defaultModels?.claude ?? 'sonnet');
-      setSelectedCursorModel(agentDefaults?.defaultModels?.cursor ?? 'opus-4.5-thinking');
-      setSelectedCodexModel(agentDefaults?.defaultModels?.codex ?? 'gpt-5.2-codex');
+      setSelectedCursorModel(agentDefaults?.defaultModels?.cursor ?? 'opus-4.6-thinking');
+      setSelectedCodexModel(agentDefaults?.defaultModels?.codex ?? 'gpt-5.3-codex');
       setSelectedGeminiModel(agentDefaults?.defaultModels?.gemini ?? 'gemini-2.5-pro');
       setCwd('');
       setSelectedRepoId(activeRepoId);
