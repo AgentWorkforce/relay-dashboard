@@ -12,6 +12,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import Nango from '@nangohq/frontend';
 import { cloudApi } from '../../lib/cloudApi';
 
 export interface SlackIntegrationPanelProps {
@@ -86,7 +87,7 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
     };
   }, []);
 
-  // Start OAuth flow
+  // Start OAuth flow using @nangohq/frontend SDK (same pattern as login/connect-repos)
   const handleConnect = useCallback(async () => {
     setIsConnecting(true);
     setError(null);
@@ -98,42 +99,54 @@ export function SlackIntegrationPanel({ workspaceId, csrfToken }: SlackIntegrati
       return;
     }
 
-    const { sessionToken, connectionId } = result.data;
-    setOauthConnectionId(connectionId);
+    const { sessionToken } = result.data;
 
-    // Open Nango connect UI in a popup
-    const nangoUrl = `https://connect.nango.dev/oauth?sessionToken=${encodeURIComponent(sessionToken)}`;
-    const popup = window.open(nangoUrl, 'slack-oauth', 'width=600,height=700,left=200,top=100');
+    try {
+      // Use Nango frontend SDK to trigger OAuth (avoids popup blocker issues)
+      const nango = new Nango({ connectSessionToken: sessionToken });
+      const authResult = await nango.auth('slack');
 
-    // Poll for completion
-    pollIntervalRef.current = setInterval(async () => {
-      const statusResult = await cloudApi.checkSlackOAuthStatus(connectionId);
-      if (statusResult.success && statusResult.data.ready) {
-        // OAuth complete
+      if (!authResult || !('connectionId' in authResult)) {
+        throw new Error('No connection ID returned from Slack auth');
+      }
+
+      const connectionId = authResult.connectionId;
+      setOauthConnectionId(connectionId);
+
+      // Poll for backend to finish processing the webhook
+      pollIntervalRef.current = setInterval(async () => {
+        const statusResult = await cloudApi.checkSlackOAuthStatus(connectionId);
+        if (statusResult.success && statusResult.data.ready) {
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
+          setIsConnecting(false);
+          setOauthConnectionId(null);
+          loadConnections();
+        }
+      }, 2000);
+
+      // Stop polling after 5 minutes
+      setTimeout(() => {
         if (pollIntervalRef.current) {
           clearInterval(pollIntervalRef.current);
           pollIntervalRef.current = null;
+          setIsConnecting(false);
+          setOauthConnectionId(null);
         }
+      }, 5 * 60 * 1000);
+    } catch (err: unknown) {
+      const authError = err as Error & { type?: string };
+      // Don't show error for user-cancelled auth
+      if (authError.type === 'user_cancelled' || authError.message?.includes('closed')) {
         setIsConnecting(false);
-        setOauthConnectionId(null);
-        if (popup && !popup.closed) {
-          popup.close();
-        }
-        // Refresh connections
-        loadConnections();
+        return;
       }
-    }, 2000);
-
-    // Stop polling after 5 minutes
-    setTimeout(() => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-        setIsConnecting(false);
-        setOauthConnectionId(null);
-      }
-    }, 5 * 60 * 1000);
-  }, [loadConnections]);
+      setError(authError.message || 'Slack authentication failed');
+      setIsConnecting(false);
+    }
+  }, [workspaceId, loadConnections]);
 
   // Cancel OAuth flow
   const handleCancelConnect = useCallback(() => {

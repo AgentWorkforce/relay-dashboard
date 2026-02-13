@@ -903,7 +903,7 @@ export const cloudApi = {
   async createSlackOAuthSession(workspaceId: string) {
     return cloudFetch<{
       sessionToken: string;
-      connectionId: string;
+      workspaceId: string;
     }>(`/api/slack/oauth/session?workspaceId=${encodeURIComponent(workspaceId)}`);
   },
 
