@@ -144,7 +144,7 @@ export function WorkspaceSettingsPanel({
   const [availableRepos, setAvailableRepos] = useState<AvailableRepo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'general' | 'providers' | 'repos' | 'github-access' | 'domain' | 'danger'>('general');
+  const [activeSection, setActiveSection] = useState<'general' | 'providers' | 'repos' | 'github-access' | 'automations' | 'domain' | 'danger'>('general');
 
   // Provider connection state
   const [providerStatus, setProviderStatus] = useState<Record<string, boolean>>({});
@@ -177,6 +177,26 @@ export function WorkspaceSettingsPanel({
     value: string;
     ttl: number;
   } | null>(null);
+
+  // PR Review config state
+  const [prReviewConfig, setPrReviewConfig] = useState<{
+    enabled: boolean;
+    reviewers: string[];
+    excludeLabels: string[];
+    excludeAuthors: string[];
+    maxFilesChanged: number;
+  }>({
+    enabled: false,
+    reviewers: ['claude'],
+    excludeLabels: ['wip', 'do-not-review'],
+    excludeAuthors: ['dependabot[bot]'],
+    maxFilesChanged: 50,
+  });
+  const [prReviewLoading, setPrReviewLoading] = useState(false);
+  const [prReviewError, setPrReviewError] = useState<string | null>(null);
+  const [prReviewSuccess, setPrReviewSuccess] = useState(false);
+  const [excludeLabelInput, setExcludeLabelInput] = useState('');
+  const [excludeAuthorInput, setExcludeAuthorInput] = useState('');
 
   // Load workspace details
   useEffect(() => {
@@ -224,11 +244,89 @@ export function WorkspaceSettingsPanel({
         setProviderStatus(connected);
       }
 
+      // Load PR review config
+      const configResult = await cloudApi.getWorkspaceConfig(workspaceId);
+      if (configResult.success && configResult.data.prReview) {
+        setPrReviewConfig(configResult.data.prReview);
+      }
+
       setIsLoading(false);
     }
 
     loadWorkspace();
   }, [workspaceId]);
+
+  // Save PR review config
+  const handleSavePrReviewConfig = useCallback(async () => {
+    if (!workspace) return;
+
+    setPrReviewLoading(true);
+    setPrReviewError(null);
+    setPrReviewSuccess(false);
+
+    const result = await cloudApi.updateWorkspaceConfig(workspace.id, {
+      prReview: prReviewConfig,
+    });
+
+    if (result.success) {
+      setPrReviewSuccess(true);
+      setTimeout(() => setPrReviewSuccess(false), 3000);
+    } else {
+      setPrReviewError(result.error);
+    }
+
+    setPrReviewLoading(false);
+  }, [workspace, prReviewConfig]);
+
+  // Toggle reviewer selection
+  const toggleReviewer = useCallback((reviewer: string) => {
+    setPrReviewConfig((prev) => ({
+      ...prev,
+      reviewers: prev.reviewers.includes(reviewer)
+        ? prev.reviewers.filter((r) => r !== reviewer)
+        : [...prev.reviewers, reviewer],
+    }));
+  }, []);
+
+  // Add exclude label
+  const addExcludeLabel = useCallback(() => {
+    const label = excludeLabelInput.trim();
+    if (label && !prReviewConfig.excludeLabels.includes(label)) {
+      setPrReviewConfig((prev) => ({
+        ...prev,
+        excludeLabels: [...prev.excludeLabels, label],
+      }));
+      setExcludeLabelInput('');
+    }
+  }, [excludeLabelInput, prReviewConfig.excludeLabels]);
+
+  // Remove exclude label
+  const removeExcludeLabel = useCallback((label: string) => {
+    setPrReviewConfig((prev) => ({
+      ...prev,
+      excludeLabels: prev.excludeLabels.filter((l) => l !== label),
+    }));
+  }, []);
+
+  // Add exclude author
+  const addExcludeAuthor = useCallback(() => {
+    const author = excludeAuthorInput.trim();
+    if (author && !prReviewConfig.excludeAuthors.includes(author)) {
+      setPrReviewConfig((prev) => ({
+        ...prev,
+        excludeAuthors: [...prev.excludeAuthors, author],
+      }));
+      setExcludeAuthorInput('');
+    }
+  }, [excludeAuthorInput, prReviewConfig.excludeAuthors]);
+
+  // Remove exclude author
+  const removeExcludeAuthor = useCallback((author: string) => {
+    setPrReviewConfig((prev) => ({
+      ...prev,
+      excludeAuthors: prev.excludeAuthors.filter((a) => a !== author),
+    }));
+  }, []);
 
   // Start CLI-based OAuth flow for a provider
   // This just sets state to show the ProviderAuthFlow component, which handles the actual auth
@@ -538,6 +636,7 @@ export function WorkspaceSettingsPanel({
     { id: 'general', label: 'General', icon: <SettingsGearIcon /> },
     { id: 'providers', label: 'AI Providers', icon: <ProviderIcon /> },
     { id: 'repos', label: 'Repositories', icon: <RepoIcon /> },
+    { id: 'automations', label: 'Automations', icon: <AutomationIcon /> },
     { id: 'domain', label: 'Domain', icon: <GlobeIcon /> },
     { id: 'danger', label: 'Danger', icon: <AlertIcon /> },
   ];
@@ -966,6 +1065,209 @@ export function WorkspaceSettingsPanel({
           </div>
         )}
 
+        {/* Automations Section */}
+        {activeSection === 'automations' && (
+          <div className="space-y-8">
+            <SectionHeader
+              title="Automations"
+              subtitle="Configure automated workflows for your workspace"
+            />
+
+            {/* PR Review Automation */}
+            <div className="p-5 bg-bg-tertiary rounded-xl border border-border-subtle">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent-purple to-accent-cyan flex items-center justify-center">
+                    <PullRequestIcon />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-semibold text-text-primary">Automated PR Reviews</h4>
+                    <p className="text-sm text-text-muted">AI-powered code review for pull requests</p>
+                  </div>
+                </div>
+                <Toggle
+                  checked={prReviewConfig.enabled}
+                  onChange={(v) => setPrReviewConfig((prev) => ({ ...prev, enabled: v }))}
+                />
+              </div>
+
+              {prReviewConfig.enabled && (
+                <div className="space-y-6 pt-4 border-t border-border-subtle">
+                  {/* Reviewers Selection */}
+                  <div>
+                    <label className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-3 block">
+                      Reviewers
+                    </label>
+                    <p className="text-xs text-text-muted mb-3">Select which AI agents will review PRs</p>
+                    <div className="flex flex-wrap gap-3">
+                      {[
+                        { id: 'claude', label: 'Claude', color: '#D97757' },
+                        { id: 'codex', label: 'Codex', color: '#10A37F' },
+                        { id: 'peer', label: 'Peer Review', color: '#7C3AED' },
+                      ].map((reviewer) => (
+                        <button
+                          key={reviewer.id}
+                          onClick={() => toggleReviewer(reviewer.id)}
+                          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border transition-all ${
+                            prReviewConfig.reviewers.includes(reviewer.id)
+                              ? 'bg-accent-cyan/10 border-accent-cyan/30 text-accent-cyan'
+                              : 'bg-bg-card border-border-subtle text-text-secondary hover:border-border-medium'
+                          }`}
+                        >
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: reviewer.color }}
+                          />
+                          {reviewer.label}
+                          {prReviewConfig.reviewers.includes(reviewer.id) && (
+                            <CheckIcon />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Exclude Labels */}
+                  <div>
+                    <label className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-3 block">
+                      Exclude Labels
+                    </label>
+                    <p className="text-xs text-text-muted mb-3">PRs with these labels will be skipped</p>
+                    <div className="flex gap-2 mb-3">
+                      <input
+                        type="text"
+                        value={excludeLabelInput}
+                        onChange={(e) => setExcludeLabelInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && addExcludeLabel()}
+                        placeholder="Add label (e.g., wip, draft)"
+                        className="flex-1 px-4 py-2.5 bg-bg-card border border-border-subtle rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-cyan focus:ring-1 focus:ring-accent-cyan/30 transition-all"
+                      />
+                      <button
+                        onClick={addExcludeLabel}
+                        disabled={!excludeLabelInput.trim()}
+                        className="px-4 py-2.5 bg-accent-cyan/10 border border-accent-cyan/30 text-accent-cyan rounded-lg text-sm font-medium hover:bg-accent-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      >
+                        Add
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {prReviewConfig.excludeLabels.map((label) => (
+                        <span
+                          key={label}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-400/10 border border-amber-400/30 text-amber-400 rounded-full text-xs font-medium"
+                        >
+                          {label}
+                          <button
+                            onClick={() => removeExcludeLabel(label)}
+                            className="hover:text-amber-200 transition-colors"
+                          >
+                            <CloseIcon />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Exclude Authors */}
+                  <div>
+                    <label className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-3 block">
+                      Exclude Authors
+                    </label>
+                    <p className="text-xs text-text-muted mb-3">PRs from these authors will be skipped</p>
+                    <div className="flex gap-2 mb-3">
+                      <input
+                        type="text"
+                        value={excludeAuthorInput}
+                        onChange={(e) => setExcludeAuthorInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && addExcludeAuthor()}
+                        placeholder="Add author (e.g., dependabot[bot])"
+                        className="flex-1 px-4 py-2.5 bg-bg-card border border-border-subtle rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-cyan focus:ring-1 focus:ring-accent-cyan/30 transition-all"
+                      />
+                      <button
+                        onClick={addExcludeAuthor}
+                        disabled={!excludeAuthorInput.trim()}
+                        className="px-4 py-2.5 bg-accent-cyan/10 border border-accent-cyan/30 text-accent-cyan rounded-lg text-sm font-medium hover:bg-accent-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      >
+                        Add
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {prReviewConfig.excludeAuthors.map((author) => (
+                        <span
+                          key={author}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-accent-purple/10 border border-accent-purple/30 text-accent-purple rounded-full text-xs font-medium"
+                        >
+                          {author}
+                          <button
+                            onClick={() => removeExcludeAuthor(author)}
+                            className="hover:text-accent-purple/70 transition-colors"
+                          >
+                            <CloseIcon />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Max Files Changed */}
+                  <div>
+                    <label className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-3 block">
+                      Max Files Changed
+                    </label>
+                    <p className="text-xs text-text-muted mb-3">Skip PRs that change more than this many files</p>
+                    <div className="flex items-center gap-4">
+                      <input
+                        type="range"
+                        min="10"
+                        max="200"
+                        step="10"
+                        value={prReviewConfig.maxFilesChanged}
+                        onChange={(e) =>
+                          setPrReviewConfig((prev) => ({
+                            ...prev,
+                            maxFilesChanged: parseInt(e.target.value, 10),
+                          }))
+                        }
+                        className="flex-1 h-2 bg-bg-hover rounded-full appearance-none cursor-pointer accent-accent-cyan"
+                      />
+                      <div className="w-16 px-3 py-2 bg-bg-card border border-border-subtle rounded-lg text-center">
+                        <span className="text-sm font-mono text-text-primary">
+                          {prReviewConfig.maxFilesChanged}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Save Button */}
+              <div className="mt-6 pt-4 border-t border-border-subtle">
+                {prReviewError && (
+                  <div className="mb-4 p-3 bg-error/10 border border-error/30 rounded-lg text-error text-sm flex items-center gap-2">
+                    <AlertIcon />
+                    {prReviewError}
+                  </div>
+                )}
+                {prReviewSuccess && (
+                  <div className="mb-4 p-3 bg-success/10 border border-success/30 rounded-lg text-success text-sm flex items-center gap-2">
+                    <CheckIcon />
+                    Settings saved successfully
+                  </div>
+                )}
+                <ActionButton
+                  onClick={handleSavePrReviewConfig}
+                  disabled={prReviewLoading}
+                  variant="primary"
+                  icon={prReviewLoading ? <SpinnerIcon /> : <CheckIcon />}
+                  fullWidth
+                >
+                  {prReviewLoading ? 'Saving...' : 'Save Automation Settings'}
+                </ActionButton>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Custom Domain Section */}
         {activeSection === 'domain' && (
           <div className="space-y-8">
@@ -1364,5 +1666,54 @@ function SyncIcon({ spinning = false }: { spinning?: boolean } = {}) {
       <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
       <path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" />
     </svg>
+  );
+}
+
+function AutomationIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2v4" />
+      <path d="M12 18v4" />
+      <path d="M4.93 4.93l2.83 2.83" />
+      <path d="M16.24 16.24l2.83 2.83" />
+      <path d="M2 12h4" />
+      <path d="M18 12h4" />
+      <path d="M4.93 19.07l2.83-2.83" />
+      <path d="M16.24 7.76l2.83-2.83" />
+    </svg>
+  );
+}
+
+function PullRequestIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+      <circle cx="18" cy="18" r="3" />
+      <circle cx="6" cy="6" r="3" />
+      <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+      <line x1="6" y1="9" x2="6" y2="21" />
+    </svg>
+  );
+}
+
+function Toggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <button
+      onClick={() => onChange(!checked)}
+      className={`relative w-12 h-6 rounded-full transition-colors ${
+        checked ? 'bg-accent-cyan' : 'bg-bg-hover'
+      }`}
+    >
+      <span
+        className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+          checked ? 'translate-x-7' : 'translate-x-1'
+        }`}
+      />
+    </button>
   );
 }
