@@ -1,0 +1,441 @@
+openapi: 3.0.0
+info:
+  title: Agent Relay Dashboard API
+  description: |
+    Dashboard server API for Agent Relay - WebSocket event subscriptions, proxy mode, and HTTP endpoints.
+  version: 1.0.0
+  contact:
+    name: Agent Relay
+    url: https://github.com/AgentWorkforce/relay-dashboard
+  license:
+    name: Apache 2.0
+
+servers:
+  - url: http://localhost:3889
+    description: Local dashboard server (standalone mode)
+  - url: http://localhost:5000
+    description: Proxy mode server
+  - url: http://localhost:6000
+    description: Mock mode server
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Bearer token for proxy mode
+    wsAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: WebSocket auth token
+
+  schemas:
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [agent_output, agent_status, message, error, system]
+        agent:
+          type: string
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+
+    MessageBuffer:
+      type: object
+      properties:
+        messageId:
+          type: string
+        agentName:
+          type: string
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    SystemStatus:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [standalone, proxy, mock]
+        connected:
+          type: boolean
+        agents:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              status:
+                type: string
+        uptime:
+          type: integer
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Dashboard server health status
+      tags:
+        - System
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  mode:
+                    type: string
+
+  /api/status:
+    get:
+      summary: Get system status
+      description: Get dashboard system status and connection info
+      tags:
+        - System
+      responses:
+        '200':
+          description: System status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatus'
+
+  /ws:
+    get:
+      summary: WebSocket upgrade
+      description: |
+        Upgrade connection to WebSocket for real-time message updates.
+
+        **Connection:**
+        - Establish WebSocket connection to `/ws`
+        - Optional query param: `workspaceId=<id>` to filter messages
+
+        **Authentication (proxy mode):**
+        - Pass `Authorization: Bearer <token>` header
+
+        **Message Format:**
+        ```json
+        {
+          "type": "subscribe|unsubscribe|message",
+          "agent": "agent_name",
+          "content": "...",
+          "metadata": {...}
+        }
+        ```
+
+        **Subscription:**
+        Subscribe to specific agent outputs:
+        ```json
+        {"type": "subscribe", "agent": "Lead"}
+        ```
+
+        **Unsubscription:**
+        Stop receiving agent output:
+        ```json
+        {"type": "unsubscribe", "agent": "Lead"}
+        ```
+      tags:
+        - WebSocket
+      security:
+        - wsAuth: []
+      parameters:
+        - name: workspaceId
+          in: query
+          schema:
+            type: string
+          description: Workspace ID to filter messages (proxy mode)
+      responses:
+        '101':
+          description: WebSocket connection established
+        '401':
+          description: Unauthorized (proxy mode)
+        '400':
+          description: Bad WebSocket upgrade request
+
+  /api/messages:
+    get:
+      summary: Get message history
+      description: Retrieve recent message history (available in standalone/mock modes)
+      tags:
+        - Messages
+      parameters:
+        - name: agent
+          in: query
+          schema:
+            type: string
+          description: Filter by agent name
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+          description: Number of messages to return
+      responses:
+        '200':
+          description: Message history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+        '501':
+          description: Not supported in this mode
+
+  /api/agents:
+    get:
+      summary: List agents
+      description: Get list of all connected agents (standalone/mock modes)
+      tags:
+        - Agents
+      responses:
+        '200':
+          description: List of agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    status:
+                      type: string
+                    model:
+                      type: string
+        '501':
+          description: Not supported in this mode
+
+  /api/agents/{name}:
+    get:
+      summary: Get agent details
+      description: Get detailed information about an agent
+      tags:
+        - Agents
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Agent details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  status:
+                    type: string
+                  model:
+                    type: string
+                  uptime:
+                    type: integer
+                  lastSeen:
+                    type: string
+                    format: date-time
+        '404':
+          description: Agent not found
+
+  /api/agents/{name}/logs:
+    get:
+      summary: Get agent logs
+      description: Retrieve logs for a specific agent
+      tags:
+        - Agents
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: lines
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Agent logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: array
+                    items:
+                      type: string
+
+  /api/daemon/info:
+    get:
+      summary: Get daemon info
+      description: Get information about the connected daemon
+      tags:
+        - Daemon
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Daemon information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  version:
+                    type: string
+                  uptime:
+                    type: integer
+        '401':
+          description: Unauthorized (proxy mode)
+        '503':
+          description: Daemon not connected
+
+  /api/proxy/{path}:
+    get:
+      summary: Proxy request to daemon
+      description: Proxy HTTP request to connected daemon (proxy mode)
+      tags:
+        - Proxy
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Path to proxy to daemon
+      responses:
+        '200':
+          description: Proxied response
+        '401':
+          description: Unauthorized
+        '503':
+          description: Daemon not available
+        '502':
+          description: Daemon proxy error
+
+    post:
+      summary: Proxy request to daemon
+      description: Proxy HTTP POST request to connected daemon (proxy mode)
+      tags:
+        - Proxy
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Proxied response
+        '401':
+          description: Unauthorized
+        '502':
+          description: Daemon proxy error
+
+  /api/mock/spawn:
+    post:
+      summary: Spawn mock agent
+      description: Spawn a mock agent for testing (mock mode only)
+      tags:
+        - Mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                behavior:
+                  type: string
+                  enum: [slow, fast, error, streaming]
+      responses:
+        '201':
+          description: Mock agent spawned
+        '405':
+          description: Not available in this mode
+
+  /api/mock/simulate:
+    post:
+      summary: Simulate events
+      description: Simulate agent events for testing (mock mode only)
+      tags:
+        - Mock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent:
+                  type: string
+                event:
+                  type: string
+                content:
+                  type: string
+      responses:
+        '201':
+          description: Event simulated
+        '405':
+          description: Not available in this mode
+
+tags:
+  - name: System
+    description: Dashboard system status
+  - name: WebSocket
+    description: Real-time WebSocket communication
+  - name: Messages
+    description: Message history and retrieval
+  - name: Agents
+    description: Agent information and logs
+  - name: Daemon
+    description: Daemon information (proxy mode)
+  - name: Proxy
+    description: Proxy requests to daemon (proxy mode)
+  - name: Mock
+    description: Mock agent simulation (mock mode)
