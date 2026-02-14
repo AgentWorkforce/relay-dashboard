@@ -5008,6 +5008,7 @@ export async function startDashboard(
     try {
       const statusPath = `/proc/${rootPid}/status`;
       if (!fs.existsSync(statusPath)) {
+        procTreeCpuSamples.delete(rootPid);
         return getPsTreeUsage(rootPid);
       }
 
