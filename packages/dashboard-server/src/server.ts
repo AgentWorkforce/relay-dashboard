@@ -4775,6 +4775,19 @@ export async function startDashboard(
   })();
 
   const procTreeCpuSamples = new Map<number, { timestampMs: number; totalJiffies: number }>();
+  const psTreeSnapshotCache = {
+    timestampMs: 0,
+    processByPid: new Map<
+      number,
+      {
+        ppid: number;
+        rssBytes: number;
+        cpuPercent: number;
+      }
+    >(),
+    childrenByPid: new Map<number, number[]>(),
+  };
+  const psTreeCacheTtlMs = 1000;
 
   const getProcStatusRssBytes = (pid: number): number => {
     try {
@@ -4840,13 +4853,33 @@ export async function startDashboard(
     return result;
   };
 
-  const getPsTreeUsage = (rootPid: number): ProcessUsage => {
+  const getPsTreeSnapshot = () => {
+    const nowMs = Date.now();
+    if (nowMs - psTreeSnapshotCache.timestampMs <= psTreeCacheTtlMs) {
+      return {
+        processByPid: psTreeSnapshotCache.processByPid,
+        childrenByPid: psTreeSnapshotCache.childrenByPid,
+      };
+    }
+
     try {
       const output = execSync('ps -axo pid=,ppid=,rss=,pcpu=', {
         encoding: 'utf8',
         timeout: 3000,
       }).trim();
-      if (!output) return { rssBytes: 0, cpuPercent: 0 };
+      if (!output) {
+        return {
+          processByPid: new Map<
+            number,
+            {
+              ppid: number;
+              rssBytes: number;
+              cpuPercent: number;
+            }
+          >(),
+          childrenByPid: new Map<number, number[]>(),
+        };
+      }
 
       const processByPid = new Map<
         number,
@@ -4878,6 +4911,33 @@ export async function startDashboard(
         const children = childrenByPid.get(Number.isFinite(ppid) ? ppid : 0) || [];
         children.push(pid);
         childrenByPid.set(Number.isFinite(ppid) ? ppid : 0, children);
+      }
+
+      psTreeSnapshotCache.timestampMs = nowMs;
+      psTreeSnapshotCache.processByPid = processByPid;
+      psTreeSnapshotCache.childrenByPid = childrenByPid;
+
+      return { processByPid, childrenByPid };
+    } catch {
+      return {
+        processByPid: new Map<
+          number,
+          {
+            ppid: number;
+            rssBytes: number;
+            cpuPercent: number;
+          }
+        >(),
+        childrenByPid: new Map<number, number[]>(),
+      };
+    }
+  };
+
+  const getPsTreeUsage = (rootPid: number): ProcessUsage => {
+    try {
+      const { processByPid, childrenByPid } = getPsTreeSnapshot();
+      if (processByPid.size === 0) {
+        return { rssBytes: 0, cpuPercent: 0 };
       }
 
       const queue = [rootPid];
