@@ -1,0 +1,87 @@
+{
+  "id": "traj_191ud9xwn44t",
+  "version": 1,
+  "task": {
+    "title": "Fix /metrics agent memory sampling correctness and performance regressions",
+    "source": {
+      "system": "plain",
+      "id": "PR-50"
+    }
+  },
+  "status": "completed",
+  "startedAt": "2026-02-14T13:32:04.308Z",
+  "agents": [
+    {
+      "name": "default",
+      "role": "lead",
+      "joinedAt": "2026-02-14T13:32:05.937Z"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "chap_nioahozuh399",
+      "title": "Work",
+      "agentName": "default",
+      "startedAt": "2026-02-14T13:32:05.937Z",
+      "events": [
+        {
+          "ts": 1771075925938,
+          "type": "decision",
+          "content": "Use cached ps tree snapshot for cloud getPsTreeUsage: Use cached ps tree snapshot for cloud getPsTreeUsage",
+          "raw": {
+            "question": "Use cached ps tree snapshot for cloud getPsTreeUsage",
+            "chosen": "Use cached ps tree snapshot for cloud getPsTreeUsage",
+            "alternatives": [
+              {
+                "option": "Recompute per worker (regression risk)",
+                "reason": ""
+              },
+              {
+                "option": "parse ps once in each handler",
+                "reason": ""
+              }
+            ],
+            "reasoning": "Avoid blocking the event loop by preventing execSync('ps -axo ...') from running once per worker; cache global process snapshot for short TTL and reuse across workers."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771075927280,
+          "type": "decision",
+          "content": "Clear stale CPU sample map entry when root pid disappears: Clear stale CPU sample map entry when root pid disappears",
+          "raw": {
+            "question": "Clear stale CPU sample map entry when root pid disappears",
+            "chosen": "Clear stale CPU sample map entry when root pid disappears",
+            "alternatives": [
+              {
+                "option": "Leave stale sample until next valid read",
+                "reason": ""
+              },
+              {
+                "option": "periodic map cleanup",
+                "reason": ""
+              }
+            ],
+            "reasoning": "Prevent PID-reuse CPU artifacts by deleting procTreeCpuSamples on dead process so a reused pid doesn\\''t inherit stale jiffies baseline."
+          },
+          "significance": "high"
+        }
+      ],
+      "endedAt": "2026-02-14T13:32:08.747Z"
+    }
+  ],
+  "commits": [],
+  "filesChanged": [],
+  "projectId": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard-fix-local-defaults",
+  "tags": [],
+  "_trace": {
+    "startRef": "4ec8522dcbc5cd79186b2932a64b4b5b16c64c26",
+    "endRef": "4ec8522dcbc5cd79186b2932a64b4b5b16c64c26"
+  },
+  "completedAt": "2026-02-14T13:32:08.747Z",
+  "retrospective": {
+    "summary": "Updated /metrics handlers in relay-dashboard to make memory/CPU sampling accurate and performant: added ps-tree snapshot caching, and removed stale cloud CPU sample state when monitored pids die.",
+    "approach": "Read Devin findings, inspected metrics code path, implemented minimal changes in server.ts, then pushed follow-up commits to fix regressions.",
+    "confidence": 0.86
+  }
+}
