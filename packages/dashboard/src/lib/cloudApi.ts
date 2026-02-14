@@ -890,4 +890,50 @@ export const cloudApi = {
       method: 'POST',
     });
   },
+
+  // ===== Workspace Config API =====
+
+  /**
+   * Get workspace config (including PR review settings)
+   */
+  async getWorkspaceConfig(workspaceId: string) {
+    return cloudFetch<{
+      prReview?: {
+        enabled: boolean;
+        reviewers: string[];
+        excludeLabels: string[];
+        excludeAuthors: string[];
+        maxFilesChanged: number;
+      };
+    }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/config`);
+  },
+
+  /**
+   * Update workspace config (PR review settings, etc.)
+   */
+  async updateWorkspaceConfig(workspaceId: string, config: {
+    prReview?: {
+      enabled: boolean;
+      reviewers: string[];
+      excludeLabels: string[];
+      excludeAuthors: string[];
+      maxFilesChanged: number;
+    };
+  }) {
+    return cloudFetch<{
+      success: boolean;
+      config: {
+        prReview?: {
+          enabled: boolean;
+          reviewers: string[];
+          excludeLabels: string[];
+          excludeAuthors: string[];
+          maxFilesChanged: number;
+        };
+      };
+    }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/config`, {
+      method: 'PATCH',
+      body: JSON.stringify(config),
+    });
+  },
 };
