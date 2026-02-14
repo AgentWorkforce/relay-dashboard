@@ -4983,7 +4983,7 @@ export async function startDashboard(
         }
       } else if (process.platform === 'darwin') {
         // macOS: Use ps command to get RSS and CPU
-        const psOutput = execSync(`ps -o rss=,pcpu= -p ${rootPid}`, { encoding: 'utf8' }).trim();
+        const psOutput = execSync(`ps -o rss=,pcpu= -p ${rootPid}`, { encoding: 'utf8', timeout: 3000 }).trim();
         if (psOutput) {
           const [rssStr, cpuStr] = psOutput.split(/\s+/);
           if (rssStr) rssBytes = parseInt(rssStr, 10) * 1024;
