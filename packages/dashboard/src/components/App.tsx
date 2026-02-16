@@ -225,14 +225,19 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
 
   // REST fallback: fetch initial data when WebSocket fails
   const [restData, setRestData] = useState<DashboardData | null>(null);
+  const [restFallbackFailed, setRestFallbackFailed] = useState(false);
   useEffect(() => {
     if (wsError && !wsData && !restData) {
       let cancelled = false;
+      setRestFallbackFailed(false);
       api.getData().then((resp) => {
-        if (!cancelled && resp.success && resp.data) {
+        if (cancelled) return;
+        if (resp.success && resp.data) {
           setRestData(resp.data as DashboardData);
+        } else {
+          setRestFallbackFailed(true);
         }
-      }).catch(() => { /* REST fallback also failed */ });
+      }).catch(() => { if (!cancelled) setRestFallbackFailed(true); });
       return () => { cancelled = true; };
     }
   }, [wsError, wsData, restData]);
@@ -2909,7 +2914,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
                 </div>
               </div>
             )}
-            {wsError && !data ? (
+            {wsError && !data && restFallbackFailed ? (
               <div className="flex flex-col items-center justify-center h-full text-text-muted text-center px-4">
                 <ErrorIcon />
                 <h2 className="m-0 mb-2 font-display text-text-primary">Connection Error</h2>
