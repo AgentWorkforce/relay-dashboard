@@ -38,6 +38,7 @@ import { UsageBanner } from './UsageBanner';
 import { useWebSocket, type DashboardData } from './hooks/useWebSocket';
 import { useAgents } from './hooks/useAgents';
 import { useMessages } from './hooks/useMessages';
+import { useThread } from './hooks/useThread';
 import { useOrchestrator } from './hooks/useOrchestrator';
 import { useTrajectory } from './hooks/useTrajectory';
 import { useRecentRepos } from './hooks/useRecentRepos';
@@ -232,8 +233,9 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     }
   }, [wsError, wsData, restData]);
 
-  // Local reaction overrides for optimistic UI updates
-  const [reactionOverrides, setReactionOverrides] = useState<Map<string, Reaction[]>>(new Map());
+  // Local reaction overrides for optimistic UI updates (TTL-based expiry)
+  const REACTION_OVERRIDE_TTL = 5000; // 5s — enough for API round-trip + WS echo
+  const [reactionOverrides, setReactionOverrides] = useState<Map<string, { reactions: Reaction[]; timestamp: number }>>(new Map());
 
   // Use WebSocket data if available, otherwise fall back to REST data
   // Merge in local reaction overrides
@@ -241,10 +243,17 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   const rawDataRef = useRef(rawData);
   rawDataRef.current = rawData;
 
-  // Clear stale reaction overrides when WebSocket delivers fresh data
+  // Expire stale reaction overrides when WebSocket delivers fresh data
   useEffect(() => {
     if (rawData && reactionOverrides.size > 0) {
-      setReactionOverrides(new Map());
+      const now = Date.now();
+      setReactionOverrides((prev) => {
+        const next = new Map<string, { reactions: Reaction[]; timestamp: number }>();
+        for (const [id, entry] of prev) {
+          if (now - entry.timestamp < REACTION_OVERRIDE_TTL) next.set(id, entry);
+        }
+        return next.size === prev.size ? prev : next;
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawData]);
@@ -254,8 +263,8 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     return {
       ...rawData,
       messages: rawData.messages.map((msg) => {
-        const override = reactionOverrides.get(msg.id);
-        return override ? { ...msg, reactions: override } : msg;
+        const entry = reactionOverrides.get(msg.id);
+        return entry ? { ...msg, reactions: entry.reactions } : msg;
       }),
     };
   }, [rawData, reactionOverrides]);
@@ -1009,6 +1018,12 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   } = useMessages({
     messages: data?.messages ?? [],
     senderName: currentUser?.displayName,
+  });
+
+  // Thread data (API-backed with client-side fallback)
+  const thread = useThread({
+    threadId: currentThread,
+    fallbackMessages: messages,
   });
 
   // Human context (DM inline view)
@@ -2014,7 +2029,8 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     setReactionOverrides((prev) => {
       const next = new Map(prev);
       const msg = rawDataRef.current?.messages.find((m: Message) => m.id === messageId);
-      const current = prev.get(messageId) || msg?.reactions || [];
+      const prevEntry = prev.get(messageId);
+      const current = prevEntry?.reactions || msg?.reactions || [];
       let updated: Reaction[];
 
       if (hasReacted) {
@@ -2038,7 +2054,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
         }
       }
 
-      next.set(messageId, updated);
+      next.set(messageId, { reactions: updated, timestamp: Date.now() });
       return next;
     });
 
@@ -2967,7 +2983,6 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
 
           {/* Thread Panel */}
           {currentThread && (() => {
-            // Determine which message list to search based on view mode
             const isChannelView = viewMode === 'channels';
 
             // Helper to convert ChannelMessage to Message format for ThreadPanel
@@ -2984,9 +2999,14 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
             });
 
             let originalMessage: Message | null = null;
+            let replies: Message[] = [];
             let isTopicThread = false;
+            let threadIsLoading = false;
+            let threadHasMore = false;
+            let threadLoadMore: (() => void) | undefined;
 
             if (isChannelView) {
+              // Channel view: use inline filtering (useThread doesn't handle ChannelApiMessage)
               const channelMsg = effectiveChannelMessages.find((m) => m.id === currentThread);
               if (channelMsg) {
                 originalMessage = convertChannelMessage(channelMsg);
@@ -2999,23 +3019,18 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
                   originalMessage = convertChannelMessage(threadMsgs[0]);
                 }
               }
+              replies = effectiveChannelMessages
+                .filter((m) => m.threadId === currentThread)
+                .map(convertChannelMessage);
             } else {
-              originalMessage = messages.find((m) => m.id === currentThread) ?? null;
+              // Non-channel view: use the useThread hook (API-backed with fallback)
+              originalMessage = thread.parentMessage;
+              replies = thread.replies;
               isTopicThread = !originalMessage;
-              if (!originalMessage) {
-                const threadMsgs = messages
-                  .filter((m) => m.thread === currentThread)
-                  .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-                originalMessage = threadMsgs[0] ?? null;
-              }
+              threadIsLoading = thread.isLoading;
+              threadHasMore = thread.hasMore;
+              threadLoadMore = thread.loadMore;
             }
-
-            // Get thread replies based on view mode
-            const replies: Message[] = isChannelView
-              ? effectiveChannelMessages
-                  .filter((m) => m.threadId === currentThread)
-                  .map(convertChannelMessage)
-              : threadMessages(currentThread);
 
             return (
               <div className="w-full md:w-[400px] md:min-w-[320px] md:max-w-[500px] flex-shrink-0">
@@ -3024,17 +3039,16 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
                     replies={replies}
                     onClose={() => setCurrentThread(null)}
                     showTimestamps={settings.display.showTimestamps}
+                    isLoading={threadIsLoading}
+                    hasMore={threadHasMore}
+                    onLoadMore={threadLoadMore}
                     onReply={async (content) => {
                     if (isChannelView && selectedChannel) {
-                      // For channels, send threaded message
                       await handleSendChannelMessage(content, currentThread);
                       return true;
                     }
-                    // For topic threads, broadcast to all; for reply chains, reply to the other participant
                     let recipient = '*';
                     if (!isTopicThread && originalMessage) {
-                      // If current user sent the original message, reply to the recipient
-                      // If someone else sent it, reply to the sender
                       const isFromCurrentUser = originalMessage.from === 'Dashboard' ||
                         (currentUser && originalMessage.from === currentUser.displayName);
                       recipient = isFromCurrentUser

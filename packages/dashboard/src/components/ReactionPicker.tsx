@@ -19,7 +19,10 @@ export function ReactionPicker({ onSelect, onClose, anchorRef }: ReactionPickerP
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      if (
+        ref.current && !ref.current.contains(e.target as Node) &&
+        !(anchorRef?.current?.contains(e.target as Node))
+      ) {
         onClose();
       }
     }

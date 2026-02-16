@@ -663,20 +663,21 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
       return;
     }
 
+    const agentName = req.body.from || mockUser.displayName;
     if (!message.reactions) message.reactions = [];
     const existing = message.reactions.find(r => r.emoji === emoji);
     if (existing) {
-      if (!existing.agents.includes('user')) {
-        existing.agents.push('user');
+      if (!existing.agents.includes(agentName)) {
+        existing.agents.push(agentName);
         existing.count++;
       }
     } else {
-      message.reactions.push({ emoji, count: 1, agents: ['user'] });
+      message.reactions.push({ emoji, count: 1, agents: [agentName] });
     }
 
     res.status(201).json({
       ok: true,
-      data: { id: `reaction-${Date.now()}`, message_id: id, emoji, agent_name: 'user', created_at: new Date().toISOString() },
+      data: { id: `reaction-${Date.now()}`, message_id: id, emoji, agent_name: agentName, created_at: new Date().toISOString() },
     });
   });
 
@@ -693,7 +694,7 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
     if (message.reactions) {
       const existing = message.reactions.find(r => r.emoji === emoji);
       if (existing) {
-        existing.agents = existing.agents.filter(a => a !== 'user');
+        existing.agents = existing.agents.filter(a => a !== mockUser.displayName);
         existing.count = existing.agents.length;
         if (existing.count === 0) {
           message.reactions = message.reactions.filter(r => r.emoji !== emoji);
@@ -753,13 +754,14 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
       return;
     }
 
+    const replyFrom = req.body.from || mockUser.displayName;
     const reply: Message = {
       id: `msg-reply-${Date.now()}`,
-      from: 'user',
-      to: parent.from === 'user' ? parent.to : parent.from,
+      from: replyFrom,
+      to: parent.from === replyFrom ? parent.to : parent.from,
       content: text,
       timestamp: new Date().toISOString(),
-      thread: id as string,
+      thread: id,
     };
 
     mockMessages.push(reply);
