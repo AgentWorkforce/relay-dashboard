@@ -1057,7 +1057,7 @@ export const api = {
       );
       if (response.ok) return { success: true, data: undefined };
       const data = await response.json();
-      return { success: false, error: data.error?.message || 'Failed to add reaction' };
+      return { success: false, error: data.error || 'Failed to add reaction' };
     } catch (_error) {
       return { success: false, error: 'Network error' };
     }
@@ -1076,7 +1076,7 @@ export const api = {
       );
       if (response.ok) return { success: true, data: undefined };
       const data = await response.json();
-      return { success: false, error: data.error?.message || 'Failed to remove reaction' };
+      return { success: false, error: data.error || 'Failed to remove reaction' };
     } catch (_error) {
       return { success: false, error: 'Network error' };
     }
@@ -1091,7 +1091,7 @@ export const api = {
       );
       const data = await response.json();
       if (response.ok) return { success: true, data: { reactions: data.data ?? [] } };
-      return { success: false, error: data.error?.message || 'Failed to get reactions' };
+      return { success: false, error: data.error || 'Failed to get reactions' };
     } catch (_error) {
       return { success: false, error: 'Network error' };
     }
@@ -1123,7 +1123,7 @@ export const api = {
       if (response.ok && data.ok !== false) {
         return { success: true, data: data.data ?? data };
       }
-      return { success: false, error: data.error?.message || 'Failed to get thread' };
+      return { success: false, error: data.error || 'Failed to get thread' };
     } catch (_error) {
       return { success: false, error: 'Network error' };
     }
@@ -1140,7 +1140,7 @@ export const api = {
       );
       const data = await response.json();
       if (response.ok) return { success: true, data: data.data ?? data };
-      return { success: false, error: data.error?.message || 'Failed to post reply' };
+      return { success: false, error: data.error || 'Failed to post reply' };
     } catch (_error) {
       return { success: false, error: 'Network error' };
     }

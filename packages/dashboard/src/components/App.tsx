@@ -238,6 +238,17 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   // Use WebSocket data if available, otherwise fall back to REST data
   // Merge in local reaction overrides
   const rawData = wsData || restData;
+  const rawDataRef = useRef(rawData);
+  rawDataRef.current = rawData;
+
+  // Clear stale reaction overrides when WebSocket delivers fresh data
+  useEffect(() => {
+    if (rawData && reactionOverrides.size > 0) {
+      setReactionOverrides(new Map());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawData]);
+
   const data = useMemo(() => {
     if (!rawData || reactionOverrides.size === 0) return rawData;
     return {
@@ -2002,22 +2013,22 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     const userName = currentUser?.displayName || 'user';
     setReactionOverrides((prev) => {
       const next = new Map(prev);
-      const msg = rawData?.messages.find((m) => m.id === messageId);
+      const msg = rawDataRef.current?.messages.find((m: Message) => m.id === messageId);
       const current = prev.get(messageId) || msg?.reactions || [];
       let updated: Reaction[];
 
       if (hasReacted) {
         updated = current
-          .map((r) =>
+          .map((r: Reaction) =>
             r.emoji === emoji
-              ? { ...r, count: r.count - 1, agents: r.agents.filter((a) => a !== userName) }
+              ? { ...r, count: r.count - 1, agents: r.agents.filter((a: string) => a !== userName) }
               : r
           )
-          .filter((r) => r.count > 0);
+          .filter((r: Reaction) => r.count > 0);
       } else {
-        const existing = current.find((r) => r.emoji === emoji);
+        const existing = current.find((r: Reaction) => r.emoji === emoji);
         if (existing) {
-          updated = current.map((r) =>
+          updated = current.map((r: Reaction) =>
             r.emoji === emoji
               ? { ...r, count: r.count + 1, agents: [...r.agents, userName] }
               : r
@@ -2037,7 +2048,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     } else {
       api.addReaction(messageId, emoji).catch(() => undefined);
     }
-  }, [currentUser?.displayName, rawData]);
+  }, [currentUser?.displayName]);
 
   // Load more messages (pagination) handler
   const handleLoadMoreMessages = useCallback(async () => {

@@ -34,7 +34,8 @@ export function ReactionPicker({ onSelect, onClose, anchorRef }: ReactionPickerP
     };
   }, [onClose]);
 
-  // Compute position from anchor element
+  // Compute position from anchor element using fixed positioning
+  // (fixed = relative to viewport, unaffected by scroll)
   let top = 0;
   let left = 0;
   if (anchorRef?.current) {
@@ -42,18 +43,18 @@ export function ReactionPicker({ onSelect, onClose, anchorRef }: ReactionPickerP
     const pickerHeight = 80; // approximate height of 2-row grid
     // Prefer opening above; fall back to below if not enough space
     if (rect.top > pickerHeight + 8) {
-      top = rect.top - pickerHeight - 4 + window.scrollY;
+      top = rect.top - pickerHeight - 4;
     } else {
-      top = rect.bottom + 4 + window.scrollY;
+      top = rect.bottom + 4;
     }
-    left = rect.left + window.scrollX;
+    left = rect.left;
   }
 
   return createPortal(
     <div
       ref={ref}
       style={{
-        position: 'absolute',
+        position: 'fixed',
         top,
         left,
         zIndex: 9999,
