@@ -762,7 +762,7 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
       to: parent.from === replyFrom ? parent.to : parent.from,
       content: text,
       timestamp: new Date().toISOString(),
-      thread: id,
+      thread: id as string,
     };
 
     mockMessages.push(reply);
