@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import type { Agent, Project, Message, AgentSummary, ActivityEvent } from '../types';
+import type { Agent, Project, Message, AgentSummary, ActivityEvent, Reaction } from '../types';
 import { ActivityFeed } from './ActivityFeed';
 import { Sidebar } from './layout/Sidebar';
 import { Header } from './layout/Header';
@@ -35,7 +35,7 @@ import { useDirectMessage } from './hooks/useDirectMessage';
 import { CoordinatorPanel } from './CoordinatorPanel';
 import { BillingResult } from './BillingResult';
 import { UsageBanner } from './UsageBanner';
-import { useWebSocket } from './hooks/useWebSocket';
+import { useWebSocket, type DashboardData } from './hooks/useWebSocket';
 import { useAgents } from './hooks/useAgents';
 import { useMessages } from './hooks/useMessages';
 import { useOrchestrator } from './hooks/useOrchestrator';
@@ -221,7 +221,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   });
 
   // REST fallback: fetch initial data when WebSocket fails
-  const [restData, setRestData] = useState<{ agents: Agent[]; messages: Message[]; sessions?: never[] } | null>(null);
+  const [restData, setRestData] = useState<DashboardData | null>(null);
   useEffect(() => {
     if (wsError && !wsData && !restData) {
       api.getData().then((resp) => {
@@ -233,7 +233,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   }, [wsError, wsData, restData]);
 
   // Local reaction overrides for optimistic UI updates
-  const [reactionOverrides, setReactionOverrides] = useState<Map<string, import('../types').Reaction[]>>(new Map());
+  const [reactionOverrides, setReactionOverrides] = useState<Map<string, Reaction[]>>(new Map());
 
   // Use WebSocket data if available, otherwise fall back to REST data
   // Merge in local reaction overrides
@@ -2004,7 +2004,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
       const next = new Map(prev);
       const msg = rawData?.messages.find((m) => m.id === messageId);
       const current = prev.get(messageId) || msg?.reactions || [];
-      let updated: import('../types').Reaction[];
+      let updated: Reaction[];
 
       if (hasReacted) {
         updated = current

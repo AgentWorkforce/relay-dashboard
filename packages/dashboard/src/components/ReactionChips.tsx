@@ -57,7 +57,11 @@ export function ReactionChips({
       {showPicker && (
         <ReactionPicker
           anchorRef={addBtnRef}
-          onSelect={(emoji) => onToggleReaction(messageId, emoji, false)}
+          onSelect={(emoji) => {
+            const existing = reactions.find((r) => r.emoji === emoji);
+            const alreadyReacted = !!(currentUser && existing?.agents.includes(currentUser));
+            onToggleReaction(messageId, emoji, alreadyReacted);
+          }}
           onClose={() => setShowPicker(false)}
         />
       )}

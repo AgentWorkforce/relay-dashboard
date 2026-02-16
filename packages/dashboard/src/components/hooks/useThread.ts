@@ -36,6 +36,7 @@ export function useThread({ threadId, fallbackMessages }: UseThreadOptions): Use
       setHasMore(false);
       setCursor(undefined);
       setUseFallback(false);
+      prevThreadId.current = null;
       return;
     }
 
