@@ -101,6 +101,13 @@ export interface Attachment {
 }
 
 
+// Reaction Types
+export interface Reaction {
+  emoji: string;
+  count: number;
+  agents: string[];
+}
+
 // Message Types
 export interface Message {
   id: string;
@@ -119,6 +126,8 @@ export interface Message {
   attachments?: Attachment[];
   /** Channel context for routing (e.g., 'general' for broadcasts) */
   channel?: string;
+  /** Aggregated reactions on this message */
+  reactions?: Reaction[];
 }
 
 export interface Thread {

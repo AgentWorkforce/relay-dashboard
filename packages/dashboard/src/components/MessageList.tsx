@@ -7,13 +7,14 @@
 
 import React, { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react';
 import { ACTIVITY_FEED_ID } from './App';
-import type { Message, Agent, Attachment } from '../types';
+import type { Message, Agent, Attachment, Reaction } from '../types';
 import type { UserPresence } from './hooks/usePresence';
 import { MessageStatusIndicator } from './MessageStatusIndicator';
 import { ThinkingIndicator } from './ThinkingIndicator';
 import { MessageSenderName } from './MessageSenderName';
 import { formatMessageBody } from './utils/messageFormatting';
 import { AgentLogPreview } from './AgentLogPreview';
+import { ReactionChips } from './ReactionChips';
 
 // Provider icons and colors matching landing page
 const PROVIDER_CONFIG: Record<string, { icon: string; color: string }> = {
@@ -76,6 +77,8 @@ export interface MessageListProps {
   onLogsClick?: (agent: Agent) => void;
   /** Online users list for profile lookup */
   onlineUsers?: UserPresence[];
+  /** Callback when a reaction is toggled on a message */
+  onReaction?: (messageId: string, emoji: string, hasReacted: boolean) => void;
 }
 
 export function MessageList({
@@ -94,6 +97,7 @@ export function MessageList({
   onUserClick,
   onLogsClick,
   onlineUsers = [],
+  onReaction,
 }: MessageListProps) {
   // Build a map of agent name -> processing state for quick lookup
   const processingAgents = new Map<string, { isProcessing: boolean; processingStartedAt?: number }>();
@@ -345,6 +349,7 @@ export function MessageList({
               onAgentClick={onAgentClick}
               onUserClick={onUserClick}
               onLogsClick={onLogsClick}
+              onReaction={onReaction}
             />
           );
         })}
@@ -373,6 +378,8 @@ interface MessageItemProps {
   onUserClick?: (user: UserPresence) => void;
   /** Callback when logs should open for an agent */
   onLogsClick?: (agent: Agent) => void;
+  /** Callback when a reaction is toggled */
+  onReaction?: (messageId: string, emoji: string, hasReacted: boolean) => void;
 }
 
 function MessageItem({
@@ -388,6 +395,7 @@ function MessageItem({
   onAgentClick,
   onUserClick,
   onLogsClick,
+  onReaction,
 }: MessageItemProps) {
   const timestamp = formatTimestamp(message.timestamp);
 
@@ -558,6 +566,16 @@ function MessageItem({
         {/* Attachments */}
         {message.attachments && message.attachments.length > 0 && (
           <MessageAttachments attachments={message.attachments} />
+        )}
+
+        {/* Reactions */}
+        {onReaction && (
+          <ReactionChips
+            reactions={message.reactions || []}
+            messageId={message.id}
+            currentUser={currentUser?.displayName || 'user'}
+            onToggleReaction={onReaction}
+          />
         )}
 
         {/* Live log preview while the recipient agent is processing */}

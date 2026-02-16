@@ -43,7 +43,21 @@ export {
   type DashboardData,
 } from './lib/api.js';
 
-// React Components (when using React)
-// Note: These require React to be installed
-// export { AgentCard, agentCardStyles } from './components/AgentCard.js';
-// export { AgentList, agentListStyles } from './components/AgentList.js';
+// Reaction components
+export { ReactionChips } from './components/ReactionChips.js';
+export { ReactionPicker } from './components/ReactionPicker.js';
+
+// Thread hook
+export { useThread } from './components/hooks/useThread.js';
+
+// React Components
+// These require React to be installed. For Next.js consumers, use
+// transpilePackages: ['@agent-relay/dashboard'] and import from
+// '@agent-relay/dashboard/components/App' etc.
+export { App } from './components/App.js';
+export type { AppProps } from './components/App.js';
+export { MessageList } from './components/MessageList.js';
+export { ThreadPanel } from './components/ThreadPanel.js';
+
+// Config
+export { config, getWebSocketUrl, getApiBaseUrl } from './lib/config.js';

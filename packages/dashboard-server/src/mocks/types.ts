@@ -15,6 +15,12 @@ export interface Agent {
   projectPath?: string;
 }
 
+export interface Reaction {
+  emoji: string;
+  count: number;
+  agents: string[];
+}
+
 export interface Message {
   id: string;
   from: string;
@@ -25,6 +31,7 @@ export interface Message {
   isBroadcast?: boolean;
   isUrgent?: boolean;
   status?: string;
+  replyCount?: number;
   data?: Record<string, unknown>;
   attachments?: Array<{
     id: string;
@@ -32,6 +39,7 @@ export interface Message {
     mimeType: string;
     size: number;
   }>;
+  reactions?: Reaction[];
 }
 
 export interface Session {

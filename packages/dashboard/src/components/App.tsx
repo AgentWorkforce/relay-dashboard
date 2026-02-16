@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import type { Agent, Project, Message, AgentSummary, ActivityEvent } from '../types';
+import type { Agent, Project, Message, AgentSummary, ActivityEvent, Reaction } from '../types';
 import { ActivityFeed } from './ActivityFeed';
 import { Sidebar } from './layout/Sidebar';
 import { Header } from './layout/Header';
@@ -35,9 +35,10 @@ import { useDirectMessage } from './hooks/useDirectMessage';
 import { CoordinatorPanel } from './CoordinatorPanel';
 import { BillingResult } from './BillingResult';
 import { UsageBanner } from './UsageBanner';
-import { useWebSocket } from './hooks/useWebSocket';
+import { useWebSocket, type DashboardData } from './hooks/useWebSocket';
 import { useAgents } from './hooks/useAgents';
 import { useMessages } from './hooks/useMessages';
+import { useThread } from './hooks/useThread';
 import { useOrchestrator } from './hooks/useOrchestrator';
 import { useTrajectory } from './hooks/useTrajectory';
 import { useRecentRepos } from './hooks/useRecentRepos';
@@ -203,9 +204,13 @@ export interface AppProps {
   wsUrl?: string;
   /** Orchestrator API URL (optional, defaults to localhost:3456) */
   orchestratorUrl?: string;
+  /** Enable reaction UI on messages (default: false) */
+  enableReactions?: boolean;
 }
 
-export function App({ wsUrl, orchestratorUrl }: AppProps) {
+const REACTION_OVERRIDE_TTL = 5000; // 5s — enough for API round-trip + WS echo
+
+export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProps) {
   // Ref to hold event handler - needed because handlePresenceEvent is defined later
   // but we need to pass it to useWebSocket which is called first
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -213,10 +218,64 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
 
   // WebSocket connection for real-time data (per-project daemon)
   // Pass event handler for direct_message/channel_message events in local mode
-  const { data, isConnected, error: wsError } = useWebSocket({
+  const { data: wsData, isConnected, error: wsError } = useWebSocket({
     url: wsUrl,
     onEvent: (event) => wsEventHandlerRef.current?.(event),
   });
+
+  // REST fallback: fetch initial data when WebSocket fails
+  const [restData, setRestData] = useState<DashboardData | null>(null);
+  const [restFallbackFailed, setRestFallbackFailed] = useState(false);
+  useEffect(() => {
+    if (wsError && !wsData && !restData) {
+      let cancelled = false;
+      setRestFallbackFailed(false);
+      api.getData().then((resp) => {
+        if (cancelled) return;
+        if (resp.success && resp.data) {
+          setRestData(resp.data as DashboardData);
+        } else {
+          setRestFallbackFailed(true);
+        }
+      }).catch(() => { if (!cancelled) setRestFallbackFailed(true); });
+      return () => { cancelled = true; };
+    }
+  }, [wsError, wsData, restData]);
+
+  // Local reaction overrides for optimistic UI updates (TTL-based expiry)
+  const [reactionOverrides, setReactionOverrides] = useState<Map<string, { reactions: Reaction[]; timestamp: number }>>(new Map());
+
+  // Use WebSocket data if available, otherwise fall back to REST data
+  // Merge in local reaction overrides
+  const rawData = wsData || restData;
+  const rawDataRef = useRef(rawData);
+  rawDataRef.current = rawData;
+
+  // Expire stale reaction overrides when WebSocket delivers fresh data
+  useEffect(() => {
+    if (rawData && reactionOverrides.size > 0) {
+      const now = Date.now();
+      setReactionOverrides((prev) => {
+        const next = new Map<string, { reactions: Reaction[]; timestamp: number }>();
+        for (const [id, entry] of prev) {
+          if (now - entry.timestamp < REACTION_OVERRIDE_TTL) next.set(id, entry);
+        }
+        return next.size === prev.size ? prev : next;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawData]);
+
+  const data = useMemo(() => {
+    if (!rawData || reactionOverrides.size === 0) return rawData;
+    return {
+      ...rawData,
+      messages: rawData.messages.map((msg) => {
+        const entry = reactionOverrides.get(msg.id);
+        return entry ? { ...msg, reactions: entry.reactions } : msg;
+      }),
+    };
+  }, [rawData, reactionOverrides]);
 
   // Orchestrator for multi-workspace management
   const {
@@ -967,6 +1026,13 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
   } = useMessages({
     messages: data?.messages ?? [],
     senderName: currentUser?.displayName,
+  });
+
+  // Thread data (API-backed with client-side fallback)
+  // Skip API calls for channel-view threads (useThread doesn't handle ChannelApiMessage)
+  const thread = useThread({
+    threadId: viewMode === 'channels' ? null : currentThread,
+    fallbackMessages: messages,
   });
 
   // Human context (DM inline view)
@@ -1965,6 +2031,50 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     }
   }, [effectiveActiveWorkspaceId, selectedChannelId, currentUser?.displayName, appendChannelMessage]);
 
+  // Handle reaction toggle on a message
+  const handleReaction = useCallback(async (messageId: string, emoji: string, hasReacted: boolean) => {
+    // Optimistic update
+    const userName = currentUser?.displayName || 'user';
+    setReactionOverrides((prev) => {
+      const next = new Map(prev);
+      const msg = rawDataRef.current?.messages.find((m: Message) => m.id === messageId);
+      const prevEntry = prev.get(messageId);
+      const current = prevEntry?.reactions || msg?.reactions || [];
+      let updated: Reaction[];
+
+      if (hasReacted) {
+        updated = current
+          .map((r: Reaction) =>
+            r.emoji === emoji
+              ? { ...r, count: r.count - 1, agents: r.agents.filter((a: string) => a !== userName) }
+              : r
+          )
+          .filter((r: Reaction) => r.count > 0);
+      } else {
+        const existing = current.find((r: Reaction) => r.emoji === emoji);
+        if (existing) {
+          updated = current.map((r: Reaction) =>
+            r.emoji === emoji
+              ? { ...r, count: r.count + 1, agents: [...r.agents, userName] }
+              : r
+          );
+        } else {
+          updated = [...current, { emoji, count: 1, agents: [userName] }];
+        }
+      }
+
+      next.set(messageId, { reactions: updated, timestamp: Date.now() });
+      return next;
+    });
+
+    // Fire API call in background
+    if (hasReacted) {
+      api.removeReaction(messageId, emoji).catch(() => undefined);
+    } else {
+      api.addReaction(messageId, emoji).catch(() => undefined);
+    }
+  }, [currentUser?.displayName]);
+
   // Load more messages (pagination) handler
   const handleLoadMoreMessages = useCallback(async () => {
     // Pagination not yet supported for daemon channels
@@ -2804,7 +2914,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
                 </div>
               </div>
             )}
-            {wsError ? (
+            {wsError && !data && restFallbackFailed ? (
               <div className="flex flex-col items-center justify-center h-full text-text-muted text-center px-4">
                 <ErrorIcon />
                 <h2 className="m-0 mb-2 font-display text-text-primary">Connection Error</h2>
@@ -2875,13 +2985,13 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
                 onUserClick={setSelectedUserProfile}
                 onLogsClick={handleLogsClick}
                 onlineUsers={onlineUsers}
+                onReaction={enableReactions ? handleReaction : undefined}
               />
             )}
           </div>
 
           {/* Thread Panel */}
           {currentThread && (() => {
-            // Determine which message list to search based on view mode
             const isChannelView = viewMode === 'channels';
 
             // Helper to convert ChannelMessage to Message format for ThreadPanel
@@ -2898,9 +3008,14 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
             });
 
             let originalMessage: Message | null = null;
+            let replies: Message[] = [];
             let isTopicThread = false;
+            let threadIsLoading = false;
+            let threadHasMore = false;
+            let threadLoadMore: (() => void) | undefined;
 
             if (isChannelView) {
+              // Channel view: use inline filtering (useThread doesn't handle ChannelApiMessage)
               const channelMsg = effectiveChannelMessages.find((m) => m.id === currentThread);
               if (channelMsg) {
                 originalMessage = convertChannelMessage(channelMsg);
@@ -2913,42 +3028,36 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
                   originalMessage = convertChannelMessage(threadMsgs[0]);
                 }
               }
+              replies = effectiveChannelMessages
+                .filter((m) => m.threadId === currentThread)
+                .map(convertChannelMessage);
             } else {
-              originalMessage = messages.find((m) => m.id === currentThread) ?? null;
+              // Non-channel view: use the useThread hook (API-backed with fallback)
+              originalMessage = thread.parentMessage;
+              replies = thread.replies;
               isTopicThread = !originalMessage;
-              if (!originalMessage) {
-                const threadMsgs = messages
-                  .filter((m) => m.thread === currentThread)
-                  .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-                originalMessage = threadMsgs[0] ?? null;
-              }
+              threadIsLoading = thread.isLoading;
+              threadHasMore = thread.hasMore;
+              threadLoadMore = thread.loadMore;
             }
 
-            // Get thread replies based on view mode
-            const replies: Message[] = isChannelView
-              ? effectiveChannelMessages
-                  .filter((m) => m.threadId === currentThread)
-                  .map(convertChannelMessage)
-              : threadMessages(currentThread);
-
             return (
-              <div className="w-full md:w-[400px] md:min-w-[320px] md:max-w-[500px] flex-shrink-0">
+              <div className="w-full md:w-[400px] md:min-w-[320px] md:max-w-[500px] flex-shrink-0 h-full overflow-hidden">
                   <ThreadPanel
                     originalMessage={originalMessage}
                     replies={replies}
                     onClose={() => setCurrentThread(null)}
                     showTimestamps={settings.display.showTimestamps}
+                    isLoading={threadIsLoading}
+                    hasMore={threadHasMore}
+                    onLoadMore={threadLoadMore}
                     onReply={async (content) => {
                     if (isChannelView && selectedChannel) {
-                      // For channels, send threaded message
                       await handleSendChannelMessage(content, currentThread);
                       return true;
                     }
-                    // For topic threads, broadcast to all; for reply chains, reply to the other participant
                     let recipient = '*';
                     if (!isTopicThread && originalMessage) {
-                      // If current user sent the original message, reply to the recipient
-                      // If someone else sent it, reply to the sender
                       const isFromCurrentUser = originalMessage.from === 'Dashboard' ||
                         (currentUser && originalMessage.from === currentUser.displayName);
                       recipient = isFromCurrentUser
