@@ -37,29 +37,36 @@ export function ReactionPicker({ onSelect, onClose, anchorRef }: ReactionPickerP
     };
   }, [onClose]);
 
-  // Compute position from anchor element using fixed positioning
-  // (fixed = relative to viewport, unaffected by scroll)
-  let top = 0;
-  let left = 0;
-  if (anchorRef?.current) {
+  // Track position from anchor element, updating on scroll/resize
+  const [pos, setPos] = React.useState({ top: 0, left: 0 });
+
+  const updatePosition = React.useCallback(() => {
+    if (!anchorRef?.current) return;
     const rect = anchorRef.current.getBoundingClientRect();
     const pickerHeight = 80; // approximate height of 2-row grid
-    // Prefer opening above; fall back to below if not enough space
-    if (rect.top > pickerHeight + 8) {
-      top = rect.top - pickerHeight - 4;
-    } else {
-      top = rect.bottom + 4;
-    }
-    left = rect.left;
-  }
+    const top = rect.top > pickerHeight + 8
+      ? rect.top - pickerHeight - 4
+      : rect.bottom + 4;
+    setPos({ top, left: rect.left });
+  }, [anchorRef]);
+
+  useEffect(() => {
+    updatePosition();
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [updatePosition]);
 
   return createPortal(
     <div
       ref={ref}
       style={{
         position: 'fixed',
-        top,
-        left,
+        top: pos.top,
+        left: pos.left,
         zIndex: 9999,
         background: 'var(--color-bg-elevated, #202030)',
         border: '1px solid var(--color-border-subtle, rgba(255,255,255,0.06))',

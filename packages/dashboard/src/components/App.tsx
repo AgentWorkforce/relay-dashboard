@@ -1024,8 +1024,9 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   });
 
   // Thread data (API-backed with client-side fallback)
+  // Skip API calls for channel-view threads (useThread doesn't handle ChannelApiMessage)
   const thread = useThread({
-    threadId: currentThread,
+    threadId: viewMode === 'channels' ? null : currentThread,
     fallbackMessages: messages,
   });
 

@@ -694,7 +694,8 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
     if (message.reactions) {
       const existing = message.reactions.find(r => r.emoji === emoji);
       if (existing) {
-        existing.agents = existing.agents.filter(a => a !== mockUser.displayName);
+        const agentToRemove = (req.body && req.body.from) || mockUser.displayName;
+      existing.agents = existing.agents.filter(a => a !== agentToRemove);
         existing.count = existing.agents.length;
         if (existing.count === 0) {
           message.reactions = message.reactions.filter(r => r.emoji !== emoji);

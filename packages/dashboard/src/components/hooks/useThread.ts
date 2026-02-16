@@ -48,7 +48,10 @@ export function useThread({ threadId, fallbackMessages }: UseThreadOptions): Use
     setIsLoading(true);
 
     api.getThread(threadId, { limit: 50 }).then((result) => {
-      if (cancelled) return;
+      if (cancelled) {
+        setIsLoading(false);
+        return;
+      }
       setIsLoading(false);
 
       if (result.success && result.data) {
@@ -70,8 +73,13 @@ export function useThread({ threadId, fallbackMessages }: UseThreadOptions): Use
   }, [threadId]);
 
   // Use fallback messages when API is unavailable
+  // For topic threads, the threadId is not the id of any message — it's the `thread` field on replies.
+  // So we also check for the first reply whose thread matches.
   const effectiveParent = useFallback
-    ? fallbackMessages?.find((m) => m.id === threadId) ?? null
+    ? (fallbackMessages?.find((m) => m.id === threadId)
+      ?? fallbackMessages?.filter((m) => m.thread === threadId)
+          .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())[0]
+      ?? null)
     : parentMessage;
 
   const effectiveReplies = useFallback
