@@ -17,6 +17,7 @@ import type {
   SpawnAgentResponse,
   ApiResponse,
   Attachment,
+  Reaction,
 } from '../types';
 
 /**
@@ -1038,6 +1039,108 @@ export const api = {
       }
 
       return { success: false, error: data.error || 'Failed to send message' };
+    } catch (_error) {
+      return { success: false, error: 'Network error' };
+    }
+  },
+
+  // --- Reactions API ---
+
+  async addReaction(
+    messageId: string,
+    emoji: string,
+  ): Promise<ApiResponse<void>> {
+    try {
+      const response = await apiFetch(
+        getApiUrl(`/api/messages/${encodeURIComponent(messageId)}/reactions`),
+        { method: 'POST', body: JSON.stringify({ emoji }) },
+      );
+      if (response.ok) return { success: true, data: undefined };
+      const data = await response.json();
+      return { success: false, error: data.error?.message || 'Failed to add reaction' };
+    } catch (_error) {
+      return { success: false, error: 'Network error' };
+    }
+  },
+
+  async removeReaction(
+    messageId: string,
+    emoji: string,
+  ): Promise<ApiResponse<void>> {
+    try {
+      const response = await apiFetch(
+        getApiUrl(
+          `/api/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(emoji)}`,
+        ),
+        { method: 'DELETE' },
+      );
+      if (response.ok) return { success: true, data: undefined };
+      const data = await response.json();
+      return { success: false, error: data.error?.message || 'Failed to remove reaction' };
+    } catch (_error) {
+      return { success: false, error: 'Network error' };
+    }
+  },
+
+  async getReactions(
+    messageId: string,
+  ): Promise<ApiResponse<{ reactions: Reaction[] }>> {
+    try {
+      const response = await apiFetch(
+        getApiUrl(`/api/messages/${encodeURIComponent(messageId)}/reactions`),
+      );
+      const data = await response.json();
+      if (response.ok) return { success: true, data: { reactions: data.data ?? [] } };
+      return { success: false, error: data.error?.message || 'Failed to get reactions' };
+    } catch (_error) {
+      return { success: false, error: 'Network error' };
+    }
+  },
+
+  // --- Thread API ---
+
+  async getThread(
+    messageId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<
+    ApiResponse<{
+      parent: Message & { reply_count: number };
+      replies: Message[];
+      nextCursor?: string;
+    }>
+  > {
+    try {
+      const params = new URLSearchParams();
+      if (opts?.cursor) params.set('before', opts.cursor);
+      if (opts?.limit) params.set('limit', String(opts.limit));
+      const qs = params.toString();
+      const response = await apiFetch(
+        getApiUrl(
+          `/api/messages/${encodeURIComponent(messageId)}/replies${qs ? `?${qs}` : ''}`,
+        ),
+      );
+      const data = await response.json();
+      if (response.ok && data.ok !== false) {
+        return { success: true, data: data.data ?? data };
+      }
+      return { success: false, error: data.error?.message || 'Failed to get thread' };
+    } catch (_error) {
+      return { success: false, error: 'Network error' };
+    }
+  },
+
+  async postReply(
+    messageId: string,
+    text: string,
+  ): Promise<ApiResponse<Message>> {
+    try {
+      const response = await apiFetch(
+        getApiUrl(`/api/messages/${encodeURIComponent(messageId)}/replies`),
+        { method: 'POST', body: JSON.stringify({ text }) },
+      );
+      const data = await response.json();
+      if (response.ok) return { success: true, data: data.data ?? data };
+      return { success: false, error: data.error?.message || 'Failed to post reply' };
     } catch (_error) {
       return { success: false, error: 'Network error' };
     }

@@ -13,11 +13,17 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./components/*": "./src/components/*.tsx",
+    "./hooks/*": "./src/components/hooks/*.ts",
+    "./lib/*": "./src/lib/*.ts",
+    "./types": "./src/types/index.ts",
+    "./src/app/*.css": "./src/app/*.css",
     "./out/*": "./out/*"
   },
   "files": [
     "out",
     "dist",
+    "src",
     "README.md"
   ],
   "scripts": {

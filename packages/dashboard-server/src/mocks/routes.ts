@@ -6,6 +6,7 @@
  */
 
 import type { Express, Request, Response } from 'express';
+import type { Message } from './types.js';
 import {
   mockAgents,
   mockMessages,
@@ -649,6 +650,130 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
     });
   });
 
+  // ===== Reactions =====
+
+  app.post('/api/messages/:id/reactions', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { emoji } = req.body || {};
+    log(`POST /api/messages/${id}/reactions - ${emoji}`);
+
+    const message = mockMessages.find(m => m.id === id);
+    if (!message) {
+      res.status(404).json({ ok: false, error: { code: 'message_not_found', message: 'Message not found' } });
+      return;
+    }
+
+    if (!message.reactions) message.reactions = [];
+    const existing = message.reactions.find(r => r.emoji === emoji);
+    if (existing) {
+      if (!existing.agents.includes('user')) {
+        existing.agents.push('user');
+        existing.count++;
+      }
+    } else {
+      message.reactions.push({ emoji, count: 1, agents: ['user'] });
+    }
+
+    res.status(201).json({
+      ok: true,
+      data: { id: `reaction-${Date.now()}`, message_id: id, emoji, agent_name: 'user', created_at: new Date().toISOString() },
+    });
+  });
+
+  app.delete('/api/messages/:id/reactions/:emoji', (req: Request, res: Response) => {
+    const { id, emoji } = req.params;
+    log(`DELETE /api/messages/${id}/reactions/${emoji}`);
+
+    const message = mockMessages.find(m => m.id === id);
+    if (!message) {
+      res.status(404).json({ ok: false, error: { code: 'message_not_found', message: 'Message not found' } });
+      return;
+    }
+
+    if (message.reactions) {
+      const existing = message.reactions.find(r => r.emoji === emoji);
+      if (existing) {
+        existing.agents = existing.agents.filter(a => a !== 'user');
+        existing.count = existing.agents.length;
+        if (existing.count === 0) {
+          message.reactions = message.reactions.filter(r => r.emoji !== emoji);
+        }
+      }
+    }
+
+    res.status(204).end();
+  });
+
+  app.get('/api/messages/:id/reactions', (req: Request, res: Response) => {
+    const { id } = req.params;
+    log(`GET /api/messages/${id}/reactions`);
+
+    const message = mockMessages.find(m => m.id === id);
+    if (!message) {
+      res.status(404).json({ ok: false, error: { code: 'message_not_found', message: 'Message not found' } });
+      return;
+    }
+
+    res.json({ ok: true, data: message.reactions || [] });
+  });
+
+  // ===== Thread Replies =====
+
+  app.get('/api/messages/:id/replies', (req: Request, res: Response) => {
+    const { id } = req.params;
+    log(`GET /api/messages/${id}/replies`);
+
+    const parent = mockMessages.find(m => m.id === id);
+    if (!parent) {
+      res.status(404).json({ ok: false, error: { code: 'message_not_found', message: 'Message not found' } });
+      return;
+    }
+
+    const replies = mockMessages
+      .filter(m => m.thread === id)
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    res.json({
+      ok: true,
+      data: {
+        parent: { ...parent, reply_count: replies.length },
+        replies,
+      },
+    });
+  });
+
+  app.post('/api/messages/:id/replies', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { text } = req.body || {};
+    log(`POST /api/messages/${id}/replies`);
+
+    const parent = mockMessages.find(m => m.id === id);
+    if (!parent) {
+      res.status(404).json({ ok: false, error: { code: 'message_not_found', message: 'Message not found' } });
+      return;
+    }
+
+    const reply: Message = {
+      id: `msg-reply-${Date.now()}`,
+      from: 'user',
+      to: parent.from === 'user' ? parent.to : parent.from,
+      content: text,
+      timestamp: new Date().toISOString(),
+      thread: id as string,
+    };
+
+    mockMessages.push(reply);
+
+    // Update parent reply count
+    if (parent.replyCount !== undefined) {
+      parent.replyCount++;
+    } else {
+      parent.replyCount = mockMessages.filter(m => m.thread === id).length;
+    }
+
+    res.status(201).json({ ok: true, data: reply });
+  });
+
   // ===== Relay Message =====
 
   app.post('/api/relay/send', (req: Request, res: Response) => {
@@ -1175,6 +1300,25 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
     (app as unknown as { handle(req: Request, res: Response, next: () => void): void }).handle(req, res, () => {
       // If no route matched, return 404
       res.status(404).json({ error: `Mock proxy: no handler for ${req.method} ${mockPath}` });
+    });
+  });
+
+  // ===== Relaycast compatibility (v1 API) =====
+
+  app.get('/v1/workspace', (req: Request, res: Response) => {
+    const auth = req.headers.authorization;
+    log(`GET /v1/workspace - auth: ${auth ? 'present' : 'missing'}`);
+    if (!auth?.startsWith('Bearer rk_live_')) {
+      res.status(401).json({ ok: false, error: { code: 'unauthorized', message: 'Invalid API key' } });
+      return;
+    }
+    res.json({
+      ok: true,
+      data: {
+        id: mockWorkspaces[0].id,
+        name: mockWorkspaces[0].name,
+        status: 'active',
+      },
     });
   });
 

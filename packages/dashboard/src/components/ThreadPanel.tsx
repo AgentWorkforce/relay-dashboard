@@ -26,6 +26,12 @@ export interface ThreadPanelProps {
   currentUser?: CurrentUser;
   /** Show timestamps for messages */
   showTimestamps?: boolean;
+  /** Whether thread data is loading */
+  isLoading?: boolean;
+  /** Whether there are more (older) replies to load */
+  hasMore?: boolean;
+  /** Load more (older) replies */
+  onLoadMore?: () => void;
 }
 
 export function ThreadPanel({
@@ -36,6 +42,9 @@ export function ThreadPanel({
   isSending = false,
   currentUser,
   showTimestamps = true,
+  isLoading = false,
+  hasMore = false,
+  onLoadMore,
 }: ThreadPanelProps) {
   const [replyContent, setReplyContent] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -124,7 +133,23 @@ export function ThreadPanel({
 
         {/* Replies */}
         <div className="p-4 space-y-3">
-          {replies.length === 0 ? (
+          {hasMore && (
+            <div className="text-center pb-2">
+              <button
+                type="button"
+                onClick={onLoadMore}
+                disabled={isLoading}
+                className="text-xs text-accent-cyan hover:text-accent-cyan/80 transition-colors cursor-pointer bg-transparent border-none disabled:opacity-50"
+              >
+                {isLoading ? 'Loading...' : 'Load earlier replies'}
+              </button>
+            </div>
+          )}
+          {isLoading && replies.length === 0 ? (
+            <div className="text-center text-text-muted text-sm py-8">
+              Loading thread...
+            </div>
+          ) : replies.length === 0 ? (
             <div className="text-center text-text-muted text-sm py-8">
               No replies yet. Be the first to reply!
             </div>

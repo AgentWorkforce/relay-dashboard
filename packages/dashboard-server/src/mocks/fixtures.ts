@@ -56,6 +56,10 @@ export const mockMessages: Message[] = [
     to: 'claude-1',
     content: 'Please implement user authentication with JWT tokens',
     timestamp: new Date(Date.now() - 300000).toISOString(),
+    reactions: [
+      { emoji: '👍', count: 2, agents: ['claude-1', 'architect'] },
+      { emoji: '🚀', count: 1, agents: ['reviewer'] },
+    ],
   },
   {
     id: 'msg-002',
@@ -64,6 +68,9 @@ export const mockMessages: Message[] = [
     content: 'I\'ll implement JWT authentication. Let me start by creating the auth middleware.',
     timestamp: new Date(Date.now() - 295000).toISOString(),
     thread: 'msg-001',
+    reactions: [
+      { emoji: '✅', count: 1, agents: ['user'] },
+    ],
   },
   {
     id: 'msg-003',
@@ -71,6 +78,7 @@ export const mockMessages: Message[] = [
     to: 'architect',
     content: 'What\'s the preferred token expiration time for the JWT implementation?',
     timestamp: new Date(Date.now() - 290000).toISOString(),
+    replyCount: 2,
   },
   {
     id: 'msg-004',
@@ -81,12 +89,27 @@ export const mockMessages: Message[] = [
     thread: 'msg-003',
   },
   {
+    id: 'msg-004b',
+    from: 'claude-1',
+    to: 'architect',
+    content: 'Got it, implementing with those values. Will add refresh token rotation too.',
+    timestamp: new Date(Date.now() - 270000).toISOString(),
+    thread: 'msg-003',
+    reactions: [
+      { emoji: '👍', count: 1, agents: ['architect'] },
+    ],
+  },
+  {
     id: 'msg-005',
     from: 'reviewer',
     to: '*',
     content: 'PR #42 has been reviewed. Ready for merge.',
     timestamp: new Date(Date.now() - 200000).toISOString(),
     isBroadcast: true,
+    reactions: [
+      { emoji: '🎉', count: 3, agents: ['user', 'claude-1', 'architect'] },
+      { emoji: '👏', count: 1, agents: ['user'] },
+    ],
   },
 ];
 

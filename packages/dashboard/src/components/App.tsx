@@ -203,9 +203,11 @@ export interface AppProps {
   wsUrl?: string;
   /** Orchestrator API URL (optional, defaults to localhost:3456) */
   orchestratorUrl?: string;
+  /** Enable reaction UI on messages (default: false) */
+  enableReactions?: boolean;
 }
 
-export function App({ wsUrl, orchestratorUrl }: AppProps) {
+export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProps) {
   // Ref to hold event handler - needed because handlePresenceEvent is defined later
   // but we need to pass it to useWebSocket which is called first
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -213,10 +215,39 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
 
   // WebSocket connection for real-time data (per-project daemon)
   // Pass event handler for direct_message/channel_message events in local mode
-  const { data, isConnected, error: wsError } = useWebSocket({
+  const { data: wsData, isConnected, error: wsError } = useWebSocket({
     url: wsUrl,
     onEvent: (event) => wsEventHandlerRef.current?.(event),
   });
+
+  // REST fallback: fetch initial data when WebSocket fails
+  const [restData, setRestData] = useState<{ agents: Agent[]; messages: Message[]; sessions?: never[] } | null>(null);
+  useEffect(() => {
+    if (wsError && !wsData && !restData) {
+      api.getData().then((resp) => {
+        if (resp.success && resp.data) {
+          setRestData(resp.data as { agents: Agent[]; messages: Message[] });
+        }
+      }).catch(() => { /* REST fallback also failed */ });
+    }
+  }, [wsError, wsData, restData]);
+
+  // Local reaction overrides for optimistic UI updates
+  const [reactionOverrides, setReactionOverrides] = useState<Map<string, import('../types').Reaction[]>>(new Map());
+
+  // Use WebSocket data if available, otherwise fall back to REST data
+  // Merge in local reaction overrides
+  const rawData = wsData || restData;
+  const data = useMemo(() => {
+    if (!rawData || reactionOverrides.size === 0) return rawData;
+    return {
+      ...rawData,
+      messages: rawData.messages.map((msg) => {
+        const override = reactionOverrides.get(msg.id);
+        return override ? { ...msg, reactions: override } : msg;
+      }),
+    };
+  }, [rawData, reactionOverrides]);
 
   // Orchestrator for multi-workspace management
   const {
@@ -1965,6 +1996,49 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
     }
   }, [effectiveActiveWorkspaceId, selectedChannelId, currentUser?.displayName, appendChannelMessage]);
 
+  // Handle reaction toggle on a message
+  const handleReaction = useCallback(async (messageId: string, emoji: string, hasReacted: boolean) => {
+    // Optimistic update
+    const userName = currentUser?.displayName || 'user';
+    setReactionOverrides((prev) => {
+      const next = new Map(prev);
+      const msg = rawData?.messages.find((m) => m.id === messageId);
+      const current = prev.get(messageId) || msg?.reactions || [];
+      let updated: import('../types').Reaction[];
+
+      if (hasReacted) {
+        updated = current
+          .map((r) =>
+            r.emoji === emoji
+              ? { ...r, count: r.count - 1, agents: r.agents.filter((a) => a !== userName) }
+              : r
+          )
+          .filter((r) => r.count > 0);
+      } else {
+        const existing = current.find((r) => r.emoji === emoji);
+        if (existing) {
+          updated = current.map((r) =>
+            r.emoji === emoji
+              ? { ...r, count: r.count + 1, agents: [...r.agents, userName] }
+              : r
+          );
+        } else {
+          updated = [...current, { emoji, count: 1, agents: [userName] }];
+        }
+      }
+
+      next.set(messageId, updated);
+      return next;
+    });
+
+    // Fire API call in background
+    if (hasReacted) {
+      api.removeReaction(messageId, emoji).catch(() => undefined);
+    } else {
+      api.addReaction(messageId, emoji).catch(() => undefined);
+    }
+  }, [currentUser?.displayName, rawData]);
+
   // Load more messages (pagination) handler
   const handleLoadMoreMessages = useCallback(async () => {
     // Pagination not yet supported for daemon channels
@@ -2804,7 +2878,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
                 </div>
               </div>
             )}
-            {wsError ? (
+            {wsError && !data ? (
               <div className="flex flex-col items-center justify-center h-full text-text-muted text-center px-4">
                 <ErrorIcon />
                 <h2 className="m-0 mb-2 font-display text-text-primary">Connection Error</h2>
@@ -2875,6 +2949,7 @@ export function App({ wsUrl, orchestratorUrl }: AppProps) {
                 onUserClick={setSelectedUserProfile}
                 onLogsClick={handleLogsClick}
                 onlineUsers={onlineUsers}
+                onReaction={enableReactions ? handleReaction : undefined}
               />
             )}
           </div>
