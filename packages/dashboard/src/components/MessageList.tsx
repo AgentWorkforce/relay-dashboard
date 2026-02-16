@@ -573,7 +573,7 @@ function MessageItem({
           <ReactionChips
             reactions={message.reactions || []}
             messageId={message.id}
-            currentUser={currentUser?.displayName}
+            currentUser={currentUser?.displayName || 'user'}
             onToggleReaction={onReaction}
           />
         )}

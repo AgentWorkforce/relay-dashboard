@@ -26,32 +26,36 @@ export function useThread({ threadId, fallbackMessages }: UseThreadOptions): Use
   const [hasMore, setHasMore] = useState(false);
   const [cursor, setCursor] = useState<string | undefined>();
   const [useFallback, setUseFallback] = useState(false);
-  const prevThreadId = useRef<string | null>(null);
+
+  // Use a ref to track the active threadId for cancellation of loadMore
+  const activeThreadIdRef = useRef<string | null>(null);
 
   // Fetch thread from API when threadId changes
   useEffect(() => {
+    activeThreadIdRef.current = threadId;
+
     if (!threadId) {
       setParentMessage(null);
       setReplies([]);
       setHasMore(false);
       setCursor(undefined);
       setUseFallback(false);
-      prevThreadId.current = null;
+      setIsLoading(false);
       return;
     }
 
-    // Only refetch if threadId changed
-    if (threadId === prevThreadId.current) return;
-    prevThreadId.current = threadId;
+    // Reset state immediately when switching threads to avoid stale data flash
+    setParentMessage(null);
+    setReplies([]);
+    setHasMore(false);
+    setCursor(undefined);
+    setUseFallback(false);
 
     let cancelled = false;
     setIsLoading(true);
 
     api.getThread(threadId, { limit: 50 }).then((result) => {
-      if (cancelled) {
-        setIsLoading(false);
-        return;
-      }
+      if (cancelled) return;
       setIsLoading(false);
 
       if (result.success && result.data) {
@@ -88,8 +92,11 @@ export function useThread({ threadId, fallbackMessages }: UseThreadOptions): Use
 
   const loadMore = useCallback(async () => {
     if (!threadId || !hasMore || !cursor || useFallback) return;
+    const loadingThreadId = threadId;
     setIsLoading(true);
     const result = await api.getThread(threadId, { cursor, limit: 50 });
+    // If thread changed while loading, discard the stale response
+    if (activeThreadIdRef.current !== loadingThreadId) return;
     setIsLoading(false);
     if (result.success && result.data) {
       setReplies((prev) => [...result.data!.replies, ...prev]);
