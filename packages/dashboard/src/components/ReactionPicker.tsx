@@ -38,7 +38,7 @@ export function ReactionPicker({ onSelect, onClose, anchorRef }: ReactionPickerP
   }, [onClose]);
 
   // Track position from anchor element, updating on scroll/resize
-  const [pos, setPos] = React.useState({ top: 0, left: 0 });
+  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
 
   const updatePosition = React.useCallback(() => {
     if (!anchorRef?.current) return;
@@ -65,9 +65,10 @@ export function ReactionPicker({ onSelect, onClose, anchorRef }: ReactionPickerP
       ref={ref}
       style={{
         position: 'fixed',
-        top: pos.top,
-        left: pos.left,
+        top: pos?.top ?? 0,
+        left: pos?.left ?? 0,
         zIndex: 9999,
+        visibility: pos ? 'visible' : 'hidden',
         background: 'var(--color-bg-elevated, #202030)',
         border: '1px solid var(--color-border-subtle, rgba(255,255,255,0.06))',
         borderRadius: 8,

@@ -87,7 +87,7 @@ export function useThread({ threadId, fallbackMessages }: UseThreadOptions): Use
     : parentMessage;
 
   const effectiveReplies = useFallback
-    ? (fallbackMessages?.filter((m) => m.thread === threadId) ?? [])
+    ? (fallbackMessages?.filter((m) => m.thread === threadId && m.id !== effectiveParent?.id) ?? [])
     : replies;
 
   const loadMore = useCallback(async () => {

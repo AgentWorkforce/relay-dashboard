@@ -3042,7 +3042,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
             }
 
             return (
-              <div className="w-full md:w-[400px] md:min-w-[320px] md:max-w-[500px] flex-shrink-0">
+              <div className="w-full md:w-[400px] md:min-w-[320px] md:max-w-[500px] flex-shrink-0 h-full overflow-hidden">
                   <ThreadPanel
                     originalMessage={originalMessage}
                     replies={replies}

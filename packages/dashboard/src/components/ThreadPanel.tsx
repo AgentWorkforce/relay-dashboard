@@ -56,7 +56,7 @@ export function ThreadPanel({
     requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     });
-  }, [replies.length]);
+  }, [replies?.length]);
 
   // Focus input when panel opens
   useEffect(() => {
@@ -96,7 +96,26 @@ export function ThreadPanel({
   };
 
   if (!originalMessage) {
-    return null;
+    return (
+      <div className="flex flex-col h-full bg-bg-primary border-l border-border">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-bg-secondary">
+          <div className="flex items-center gap-2">
+            <ThreadIcon />
+            <span className="font-semibold text-sm text-text-primary">Thread</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded hover:bg-bg-hover transition-colors text-text-muted hover:text-text-primary"
+            title="Close thread"
+          >
+            <CloseIcon />
+          </button>
+        </div>
+        <div className="flex-1 flex items-center justify-center text-text-muted text-sm">
+          {isLoading ? 'Loading thread...' : 'Thread not found'}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -107,7 +126,7 @@ export function ThreadPanel({
           <ThreadIcon />
           <span className="font-semibold text-sm text-text-primary">Thread</span>
           <span className="text-text-muted text-xs">
-            {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
+            {replies?.length || 0} {replies?.length === 1 ? 'reply' : 'replies'}
           </span>
         </div>
         <button

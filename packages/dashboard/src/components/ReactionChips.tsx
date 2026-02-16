@@ -24,7 +24,7 @@ export function ReactionChips({
     <div className="flex flex-wrap items-center gap-1 mt-1.5">
       {hasReactions && reactions.map((reaction) => {
         const hasReacted = currentUser
-          ? reaction.agents.includes(currentUser)
+          ? (reaction.agents || []).includes(currentUser)
           : false;
         return (
           <button
