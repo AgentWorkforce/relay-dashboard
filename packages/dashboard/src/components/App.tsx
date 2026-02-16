@@ -208,6 +208,8 @@ export interface AppProps {
   enableReactions?: boolean;
 }
 
+const REACTION_OVERRIDE_TTL = 5000; // 5s — enough for API round-trip + WS echo
+
 export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProps) {
   // Ref to hold event handler - needed because handlePresenceEvent is defined later
   // but we need to pass it to useWebSocket which is called first
@@ -225,16 +227,17 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   const [restData, setRestData] = useState<DashboardData | null>(null);
   useEffect(() => {
     if (wsError && !wsData && !restData) {
+      let cancelled = false;
       api.getData().then((resp) => {
-        if (resp.success && resp.data) {
-          setRestData(resp.data as { agents: Agent[]; messages: Message[] });
+        if (!cancelled && resp.success && resp.data) {
+          setRestData(resp.data as DashboardData);
         }
       }).catch(() => { /* REST fallback also failed */ });
+      return () => { cancelled = true; };
     }
   }, [wsError, wsData, restData]);
 
   // Local reaction overrides for optimistic UI updates (TTL-based expiry)
-  const REACTION_OVERRIDE_TTL = 5000; // 5s — enough for API round-trip + WS echo
   const [reactionOverrides, setReactionOverrides] = useState<Map<string, { reactions: Reaction[]; timestamp: number }>>(new Map());
 
   // Use WebSocket data if available, otherwise fall back to REST data
