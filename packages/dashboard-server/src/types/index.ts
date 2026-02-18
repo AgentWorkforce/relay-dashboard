@@ -7,6 +7,7 @@
 import type { Express } from 'express';
 import type { Server } from 'http';
 import type { WebSocketServer } from 'ws';
+import type { RelayAdapter } from '@agent-relay/broker-sdk';
 
 /**
  * Interface for spawn manager read operations.
@@ -66,6 +67,12 @@ export interface DashboardOptions {
    * This solves relay-pty binary resolution issues in npx/global installs.
    */
   spawnManager?: SpawnManagerLike;
+  /**
+   * RelayAdapter instance for broker SDK mode.
+   * When provided, replaces socket-based RelayClient, AgentSpawner,
+   * and MultiProjectClient with the broker binary via stdio.
+   */
+  relayAdapter?: RelayAdapter;
 }
 
 /**
