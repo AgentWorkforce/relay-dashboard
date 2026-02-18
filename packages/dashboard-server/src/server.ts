@@ -462,7 +462,25 @@ export async function startDashboard(
     ? { port: portOrOptions, dataDir: dataDirArg!, teamDir: teamDirArg!, dbPath: dbPathArg }
     : portOrOptions;
 
-  const { port, dataDir, teamDir, dbPath, enableSpawner, projectRoot, tmuxSession, onMarkSpawning, onClearSpawning, verbose, spawnManager: externalSpawnManager, relayAdapter } = options;
+  const { port, dataDir, teamDir, dbPath, enableSpawner, projectRoot, tmuxSession, onMarkSpawning, onClearSpawning, verbose, spawnManager: externalSpawnManager } = options;
+  let { relayAdapter } = options;
+
+  // Auto-create a RelayAdapter when projectRoot is available and no adapter/spawnManager is passed.
+  // This makes the dashboard self-contained — `relay-dashboard-server --integrated --project-root .`
+  // works without the CLI.
+  if (!relayAdapter && !externalSpawnManager && enableSpawner && projectRoot) {
+    try {
+      const brokerSdk = await import('@agent-relay/broker-sdk');
+      relayAdapter = new brokerSdk.RelayAdapter({
+        cwd: projectRoot,
+        clientName: 'dashboard',
+      });
+      console.log('[dashboard] Auto-created RelayAdapter for broker mode');
+    } catch {
+      // @agent-relay/broker-sdk not installed — fall back to legacy AgentSpawner
+    }
+  }
+
   const useBrokerAdapter = !!relayAdapter;
 
   // Debug logging helper - only logs when verbose is true or VERBOSE env var is set
