@@ -12,6 +12,9 @@ import type { SpawnManagerLike } from '../types/index.js';
 /** Max lines of output to buffer per agent (matches xterm scrollback). */
 const MAX_OUTPUT_LINES = 10_000;
 
+/** Max bytes for the raw output buffer per agent (5 MB). */
+const MAX_RAW_BYTES = 5_000_000;
+
 interface CachedAgent {
   name: string;
   cli: string;
@@ -86,9 +89,15 @@ export class BrokerSpawnReader implements SpawnManagerLike {
             this.outputBuffers.set(event.name, [event.chunk]);
           }
 
-          // Append to raw buffer
-          const raw = this.rawOutputBuffers.get(event.name) ?? '';
-          this.rawOutputBuffers.set(event.name, raw + event.chunk + '\n');
+          // Append to raw buffer (capped at MAX_RAW_BYTES)
+          let raw = (this.rawOutputBuffers.get(event.name) ?? '') + event.chunk + '\n';
+          if (raw.length > MAX_RAW_BYTES) {
+            // Trim from the front, keeping from the first newline after the cut point
+            const trimPoint = raw.length - MAX_RAW_BYTES;
+            const newlineIdx = raw.indexOf('\n', trimPoint);
+            raw = newlineIdx !== -1 ? raw.slice(newlineIdx + 1) : raw.slice(trimPoint);
+          }
+          this.rawOutputBuffers.set(event.name, raw);
           break;
         }
       }
