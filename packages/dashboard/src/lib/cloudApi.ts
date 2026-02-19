@@ -60,6 +60,11 @@ export function getCsrfToken(): string | null {
   return csrfToken;
 }
 
+export async function getOnboardingNextStep() {
+  const res = await fetch('/api/onboarding/next-step', { credentials: 'include' });
+  return res.json();
+}
+
 /**
  * Capture CSRF token from response headers
  * Also syncs with the api.ts library for dashboard requests

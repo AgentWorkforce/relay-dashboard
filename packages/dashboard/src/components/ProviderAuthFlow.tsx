@@ -2,18 +2,11 @@
  * Provider Auth Flow Component
  *
  * Shared component for AI provider authentication via SSH tunnel.
- * Used by both the onboarding page and workspace settings.
- *
- * Flow:
- * 1. Calls /api/auth/ssh/init to get a CLI command with one-time token
- * 2. User copies and runs the command in their local terminal
- * 3. CLI establishes SSH to workspace and runs the provider's auth command
- * 4. User completes interactive auth (OAuth in browser, etc.)
- * 5. CLI calls /api/auth/ssh/complete to mark provider as connected
- * 6. Dashboard polls /api/auth/ssh/status/:workspaceId to detect completion
+ * Supports both workspace mode and onboarding mode.
  */
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { getOnboardingNextStep } from '../lib/cloudApi';
 
 export interface ProviderInfo {
   id: string;
@@ -27,11 +20,18 @@ export interface ProviderInfo {
 
 export interface ProviderAuthFlowProps {
   provider: ProviderInfo;
-  workspaceId: string;
+  workspaceId?: string;
+  mode?: 'workspace' | 'onboarding';
   csrfToken?: string;
+  showManualDone?: boolean;
   onSuccess: () => void;
   onCancel: () => void;
   onError: (error: string) => void;
+}
+
+interface OnboardingNextStepResponse {
+  nextStep?: string;
+  connectedProviders?: string[];
 }
 
 type AuthStatus = 'idle' | 'starting' | 'waiting' | 'success' | 'error';
@@ -39,7 +39,7 @@ type AuthStatus = 'idle' | 'starting' | 'waiting' | 'success' | 'error';
 /**
  * Map dashboard provider IDs to SSH backend provider names.
  * The SSH status endpoint uses PROVIDER_COMMANDS keys (anthropic, openai, google, etc.)
- * while the dashboard uses its own IDs (anthropic, codex, google, etc.)
+ * while the dashboard may use codex for OpenAI.
  */
 const PROVIDER_STATUS_MAP: Record<string, string> = {
   codex: 'openai',
@@ -49,10 +49,21 @@ function getStatusProviderName(providerId: string): string {
   return PROVIDER_STATUS_MAP[providerId] || providerId;
 }
 
+function getStatusProviderNames(providerId: string): string[] {
+  const mapped = getStatusProviderName(providerId);
+  return Array.from(new Set([mapped, providerId]));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function ProviderAuthFlow({
   provider,
   workspaceId,
+  mode,
   csrfToken,
+  showManualDone,
   onSuccess,
   onCancel,
   onError,
@@ -61,11 +72,124 @@ export function ProviderAuthFlow({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [cliCommand, setCliCommand] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [statusWorkspaceId, setStatusWorkspaceId] = useState<string | null>(workspaceId || null);
+
   const pollingRef = useRef(false);
   const completingRef = useRef(false);
 
+  const effectiveMode = mode ?? (workspaceId ? 'workspace' : 'onboarding');
+  const shouldShowManualDone = showManualDone ?? effectiveMode === 'onboarding';
+
   const backendProviderId = provider.id;
-  const statusProviderId = getStatusProviderName(backendProviderId);
+  const statusProviderNames = useMemo(
+    () => getStatusProviderNames(backendProviderId),
+    [backendProviderId]
+  );
+
+  const completeSuccess = useCallback(() => {
+    if (completingRef.current) {
+      return;
+    }
+
+    completingRef.current = true;
+    setStatus('success');
+    setTimeout(() => onSuccess(), 1200);
+  }, [onSuccess]);
+
+  const isProviderConnectedFromStatus = useCallback(
+    (providers: Array<{ name: string; status: string }> | undefined): boolean => {
+      if (!providers || !Array.isArray(providers)) {
+        return false;
+      }
+
+      return statusProviderNames.some((providerName) =>
+        providers.some((providerStatus) => providerStatus.name === providerName && providerStatus.status === 'connected')
+      );
+    },
+    [statusProviderNames]
+  );
+
+  const isProviderConnectedFromOnboarding = useCallback(
+    (data: OnboardingNextStepResponse): boolean => {
+      if (data.nextStep && data.nextStep !== 'connect_ai_provider') {
+        return true;
+      }
+
+      const connectedProviders = Array.isArray(data.connectedProviders)
+        ? data.connectedProviders
+        : [];
+
+      return statusProviderNames.some((providerName) => connectedProviders.includes(providerName));
+    },
+    [statusProviderNames]
+  );
+
+  const checkConnected = useCallback(
+    async (currentWorkspaceId?: string): Promise<boolean> => {
+      if (currentWorkspaceId) {
+        try {
+          const res = await fetch(`/api/auth/ssh/status/${currentWorkspaceId}`, {
+            credentials: 'include',
+          });
+
+          if (res.ok) {
+            const data = (await res.json()) as {
+              providers?: Array<{ name: string; status: string }>;
+            };
+
+            if (isProviderConnectedFromStatus(data.providers)) {
+              return true;
+            }
+          }
+        } catch {
+          // Fall through to onboarding check
+        }
+      }
+
+      if (effectiveMode !== 'onboarding') {
+        return false;
+      }
+
+      try {
+        const stepData = (await getOnboardingNextStep()) as OnboardingNextStepResponse;
+        return isProviderConnectedFromOnboarding(stepData);
+      } catch {
+        return false;
+      }
+    },
+    [effectiveMode, isProviderConnectedFromOnboarding, isProviderConnectedFromStatus]
+  );
+
+  const pollUntilConnected = useCallback(
+    async (workspaceForStatus?: string | null): Promise<void> => {
+      if (pollingRef.current) {
+        return;
+      }
+
+      pollingRef.current = true;
+
+      const maxAttempts = 120; // 10 minutes at 5s intervals
+      let attempts = 0;
+
+      while (pollingRef.current && attempts < maxAttempts) {
+        const connected = await checkConnected(workspaceForStatus || undefined);
+        if (connected) {
+          pollingRef.current = false;
+          completeSuccess();
+          return;
+        }
+
+        attempts += 1;
+        await sleep(5000);
+      }
+
+      pollingRef.current = false;
+      setErrorMessage('Authentication timed out. Please try again.');
+      setStatus('error');
+      onError('Authentication timed out');
+    },
+    [checkConnected, completeSuccess, onError]
+  );
 
   // Start the SSH auth flow
   const startAuth = useCallback(async () => {
@@ -75,99 +199,75 @@ export function ProviderAuthFlow({
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+      if (csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken;
+      }
+
+      const payload: Record<string, unknown> = {
+        provider: backendProviderId,
+      };
+
+      if (workspaceId) {
+        payload.workspaceId = workspaceId;
+      }
+
+      if (effectiveMode === 'onboarding') {
+        payload.mode = 'onboarding';
+      }
 
       const res = await fetch('/api/auth/ssh/init', {
         method: 'POST',
         credentials: 'include',
         headers,
-        body: JSON.stringify({
-          provider: backendProviderId,
-          workspaceId,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as {
+        command?: string;
+        commandWithUrl?: string;
+        workspaceId?: string;
+        error?: string;
+      };
 
       if (!res.ok) {
         throw new Error(data.error || 'Failed to start authentication');
       }
 
       const rawCommand = data.commandWithUrl || data.command;
-      // Prepend npx if not already present
       const commandWithNpx = rawCommand && !rawCommand.trim().startsWith('npx ')
         ? `npx ${rawCommand}`
         : rawCommand;
+
+      if (!commandWithNpx) {
+        throw new Error('Auth command missing in response');
+      }
+
       setCliCommand(commandWithNpx);
       setStatus('waiting');
 
-      // Start polling for completion
-      if (data.workspaceId) {
-        startPolling(data.workspaceId);
-      }
+      const resolvedWorkspaceId = data.workspaceId || workspaceId || null;
+      setStatusWorkspaceId(resolvedWorkspaceId);
+
+      void pollUntilConnected(resolvedWorkspaceId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to start authentication';
       setErrorMessage(msg);
       setStatus('error');
       onError(msg);
     }
-  }, [backendProviderId, workspaceId, csrfToken, onError]);
+  }, [backendProviderId, workspaceId, effectiveMode, csrfToken, onError, pollUntilConnected]);
 
-  // Poll SSH auth status endpoint to detect when provider is connected
-  const startPolling = useCallback((wsId: string) => {
-    if (pollingRef.current) return;
-    pollingRef.current = true;
+  const handleManualDone = useCallback(async () => {
+    const connected = await checkConnected(statusWorkspaceId || undefined);
+    if (connected) {
+      completeSuccess();
+      return;
+    }
 
-    const maxAttempts = 120; // 10 minutes at 5s intervals
-    let attempts = 0;
-
-    const poll = async () => {
-      if (attempts >= maxAttempts || !pollingRef.current) {
-        pollingRef.current = false;
-        if (attempts >= maxAttempts) {
-          setErrorMessage('Authentication timed out. Please try again.');
-          setStatus('error');
-          onError('Authentication timed out');
-        }
-        return;
-      }
-
-      try {
-        const res = await fetch(`/api/auth/ssh/status/${wsId}`, {
-          credentials: 'include',
-        });
-
-        if (res.ok) {
-          const data = await res.json() as {
-            providers: Array<{ name: string; status: string }>;
-          };
-
-          const providerStatus = data.providers?.find(
-            (p) => p.name === statusProviderId
-          );
-
-          if (providerStatus?.status === 'connected') {
-            pollingRef.current = false;
-            if (!completingRef.current) {
-              completingRef.current = true;
-              setStatus('success');
-              setTimeout(() => onSuccess(), 1500);
-            }
-            return;
-          }
-        }
-
-        attempts++;
-        setTimeout(poll, 5000);
-      } catch (err) {
-        console.error('Poll error:', err);
-        attempts++;
-        setTimeout(poll, 5000);
-      }
-    };
-
-    poll();
-  }, [statusProviderId, onError, onSuccess]);
+    const message = 'Authentication is still in progress. Finish the CLI flow and try again.';
+    setErrorMessage(message);
+    onError(message);
+  }, [checkConnected, statusWorkspaceId, completeSuccess, onError]);
 
   // Cancel auth flow
   const handleCancel = useCallback(() => {
@@ -191,7 +291,7 @@ export function ProviderAuthFlow({
   // Start auth when component mounts
   useEffect(() => {
     if (status === 'idle') {
-      startAuth();
+      void startAuth();
     }
   }, [startAuth, status]);
 
@@ -281,7 +381,7 @@ export function ProviderAuthFlow({
               <strong>Step 4:</strong> Wait for the {provider.displayName} input prompt, then type <code className="px-1 py-0.5 bg-bg-deep rounded">exit</code>
             </p>
             <p className="text-xs text-amber-400/80">
-              Do NOT close the terminal early. After sign-in completes, wait until you see the {provider.displayName} input screen (e.g. the <code className="px-1 py-0.5 bg-bg-deep rounded">&gt;</code> prompt). Then type <code className="px-1 py-0.5 bg-bg-deep rounded">exit</code> and press Enter. This page will update automatically.
+              Do not close the terminal early. After sign-in completes, wait until you see the input screen prompt, then type <code className="px-1 py-0.5 bg-bg-deep rounded">exit</code> and press Enter.
             </p>
           </div>
 
@@ -293,6 +393,15 @@ export function ProviderAuthFlow({
             </svg>
             <span>Waiting for authentication to complete...</span>
           </div>
+
+          {shouldShowManualDone && (
+            <button
+              onClick={handleManualDone}
+              className="w-full py-2 px-4 bg-accent-cyan text-bg-deep font-semibold rounded-lg hover:bg-accent-cyan/90 transition-colors"
+            >
+              Done
+            </button>
+          )}
 
           {/* Cancel button */}
           <button
