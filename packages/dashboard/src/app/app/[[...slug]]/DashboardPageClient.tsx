@@ -162,9 +162,12 @@ export default function DashboardPageClient() {
 
         // Check for previously connected workspace (stored in localStorage)
         // This enables seamless reconnection on page reload
-        const savedWorkspaceId = typeof window !== 'undefined'
+        const rawSavedId = typeof window !== 'undefined'
           ? localStorage.getItem('agentrelay_workspace_id')
           : null;
+        // Reject placeholder values like "default" that aren't real UUIDs
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const savedWorkspaceId = rawSavedId && UUID_RE.test(rawSavedId) ? rawSavedId : null;
 
         if (savedWorkspaceId) {
           const savedWorkspace = runningWorkspaces.find((w: Workspace) => w.id === savedWorkspaceId);
@@ -180,12 +183,11 @@ export default function DashboardPageClient() {
           connectToWorkspace(runningWorkspaces[0]);
         } else if (runningWorkspaces.length > 1) {
           setState('select-workspace');
-        } else if ((workspacesData.workspaces || []).length > 0) {
-          // Has workspaces but none running
-          setState('select-workspace');
         } else if ((reposData.repositories || []).length > 0) {
-          // Has repos but no workspaces - show create workspace
-          setState('no-workspaces');
+          // No running workspaces but has repos — onboarding handles
+          // both "no workspace" and "workspace exists but not running" cases
+          window.location.href = '/app/onboarding';
+          return;
         } else {
           // No repos, no workspaces - redirect to connect repos
           window.location.href = '/connect-repos';

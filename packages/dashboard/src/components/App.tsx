@@ -370,56 +370,69 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     return () => clearInterval(interval);
   }, [cloudSession?.user, activeCloudWorkspaceId]);
 
-  // Fetch local agents for the active workspace
+  // Fetch agents for the active workspace.
+  // Cloud users: poll GET /api/workspaces/:id/agents (backed by Relaycast WS on server)
+  // Non-cloud users: poll GET /api/daemons/workspace/:id/agents (linked daemon mode)
   useEffect(() => {
-    if (!cloudSession?.user || !activeCloudWorkspaceId) {
+    if (!activeCloudWorkspaceId) {
       setLocalAgents([]);
       return;
     }
 
-    const fetchLocalAgents = async () => {
-      try {
-        const result = await api.get<{
-          agents: Array<{
-            name: string;
-            status: string;
-            isLocal: boolean;
-            isHuman?: boolean;
-            avatarUrl?: string;
-            daemonId: string;
-            daemonName: string;
-            daemonStatus: string;
-            machineId: string;
-            lastSeenAt: string | null;
-          }>;
-        }>(`/api/daemons/workspace/${activeCloudWorkspaceId}/agents`);
+    const isCloud = !!cloudSession?.user;
 
-        if (result.agents) {
-          // Convert API response to Agent format
-          // Agent status is 'online' when daemon is online (agent is connected to daemon)
-          const agents: Agent[] = result.agents.map((a) => ({
-            name: a.name,
-            status: a.daemonStatus === 'online' ? 'online' : 'offline',
-            // Only mark AI agents as "local" (from linked daemon), not human users
-            isLocal: !a.isHuman,
-            isHuman: a.isHuman,
-            avatarUrl: a.avatarUrl,
-            // Don't include daemon info for human users
-            daemonName: a.isHuman ? undefined : a.daemonName,
-            machineId: a.isHuman ? undefined : a.machineId,
-            lastSeen: a.lastSeenAt || undefined,
-          }));
-          setLocalAgents(agents);
+    const fetchAgents = async () => {
+      try {
+        if (isCloud) {
+          // Cloud mode: agents tracked via Relaycast on the server
+          const result = await cloudApi.getAgents(activeCloudWorkspaceId);
+          if (result.success && result.data?.agents) {
+            const agents: Agent[] = result.data.agents.map((a) => ({
+              name: a.name,
+              status: a.status === 'online' ? 'online' : 'offline',
+              isLocal: false,
+            }));
+            setLocalAgents(agents);
+          }
+        } else {
+          // Non-cloud: linked daemon mode
+          const result = await api.get<{
+            agents: Array<{
+              name: string;
+              status: string;
+              isLocal: boolean;
+              isHuman?: boolean;
+              avatarUrl?: string;
+              daemonId: string;
+              daemonName: string;
+              daemonStatus: string;
+              machineId: string;
+              lastSeenAt: string | null;
+            }>;
+          }>(`/api/daemons/workspace/${activeCloudWorkspaceId}/agents`);
+
+          if (result.agents) {
+            const agents: Agent[] = result.agents.map((a) => ({
+              name: a.name,
+              status: a.daemonStatus === 'online' ? 'online' : 'offline',
+              isLocal: !a.isHuman,
+              isHuman: a.isHuman,
+              avatarUrl: a.avatarUrl,
+              daemonName: a.isHuman ? undefined : a.daemonName,
+              machineId: a.isHuman ? undefined : a.machineId,
+              lastSeen: a.lastSeenAt || undefined,
+            }));
+            setLocalAgents(agents);
+          }
         }
       } catch (err) {
-        console.error('Failed to fetch local agents:', err);
+        console.error('Failed to fetch agents:', err);
         setLocalAgents([]);
       }
     };
 
-    fetchLocalAgents();
-    // Poll for updates every 15 seconds
-    const interval = setInterval(fetchLocalAgents, 15000);
+    fetchAgents();
+    const interval = setInterval(fetchAgents, isCloud ? 5000 : 15000);
     return () => clearInterval(interval);
   }, [cloudSession?.user, activeCloudWorkspaceId]);
 
@@ -794,8 +807,22 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProject, setCurrentProject] = useState<string | undefined>();
 
-  // Spawn modal state
-  const [isSpawnModalOpen, setIsSpawnModalOpen] = useState(false);
+  // Spawn modal state — auto-open if ?spawn=true (from onboarding)
+  const [isSpawnModalOpen, setIsSpawnModalOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('spawn') === 'true') {
+        // Clean up the URL param
+        params.delete('spawn');
+        const newUrl = params.toString()
+          ? `${window.location.pathname}?${params.toString()}`
+          : window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+        return true;
+      }
+    }
+    return false;
+  });
   const [isSpawning, setIsSpawning] = useState(false);
   const [spawnError, setSpawnError] = useState<string | null>(null);
 
@@ -2307,7 +2334,29 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     setIsSpawning(true);
     setSpawnError(null);
     try {
-      // Use orchestrator if workspaces are available
+      // Parse command string into provider + model
+      // e.g. "codex --model gpt-5.2-codex" → provider="codex", model="gpt-5.2-codex"
+      const commandParts = config.command.trim().split(/\s+/);
+      const provider = commandParts[0];
+      const modelIdx = commandParts.indexOf('--model');
+      const model = modelIdx !== -1 && commandParts[modelIdx + 1] ? commandParts[modelIdx + 1] : undefined;
+
+      // Cloud mode: use cloudApi directly (adapter pattern)
+      if (isCloudMode && activeCloudWorkspaceId) {
+        const result = await cloudApi.spawnAgent(activeCloudWorkspaceId, {
+          name: config.name,
+          provider,
+          model,
+          cwd: config.cwd,
+        });
+        if (!result.success) {
+          setSpawnError(result.error || 'Failed to spawn agent');
+          return false;
+        }
+        return true;
+      }
+
+      // Use orchestrator if workspaces are available (local mode)
       if (workspaces.length > 0 && activeWorkspaceId) {
         await orchestratorSpawnAgent(config.name, undefined, config.command, config.cwd);
         return true;
@@ -2336,7 +2385,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     } finally {
       setIsSpawning(false);
     }
-  }, [workspaces.length, activeWorkspaceId, orchestratorSpawnAgent]);
+  }, [isCloudMode, activeCloudWorkspaceId, workspaces.length, activeWorkspaceId, orchestratorSpawnAgent]);
 
   // Handle release/kill agent
   const handleReleaseAgent = useCallback(async (agent: Agent) => {
@@ -2346,7 +2395,13 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     if (!confirmed) return;
 
     try {
-      // Use orchestrator if workspaces are available
+      // Cloud mode: use cloudApi directly (adapter pattern)
+      if (isCloudMode && activeCloudWorkspaceId) {
+        await cloudApi.stopAgent(activeCloudWorkspaceId, agent.name);
+        return;
+      }
+
+      // Use orchestrator if workspaces are available (local mode)
       if (workspaces.length > 0 && activeWorkspaceId) {
         await orchestratorStopAgent(agent.name);
         return;
@@ -2360,7 +2415,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     } catch (err) {
       console.error('Failed to release agent:', err);
     }
-  }, [workspaces.length, activeWorkspaceId, orchestratorStopAgent]);
+  }, [isCloudMode, activeCloudWorkspaceId, workspaces.length, activeWorkspaceId, orchestratorStopAgent]);
 
   // Handle logs click - open log viewer panel
   const handleLogsClick = useCallback((agent: Agent) => {
@@ -3132,6 +3187,10 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
         agentDefaults={settings.agentDefaults}
         repos={workspaceRepos}
         activeRepoId={workspaceRepos.find(r => r.id === currentProject)?.id ?? workspaceRepos[0]?.id}
+        connectedProviders={cloudSession?.user?.connectedProviders?.map(p => {
+          const BACKEND_TO_FRONTEND_MAP: Record<string, string> = { openai: 'codex' };
+          return BACKEND_TO_FRONTEND_MAP[p.provider] ?? p.provider;
+        })}
       />
 
       {/* Add Workspace Modal */}

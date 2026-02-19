@@ -53,6 +53,8 @@ export interface SpawnModalProps {
   repos?: Array<{ id: string; githubFullName: string }>;
   /** Currently active repo ID (cloud mode) */
   activeRepoId?: string;
+  /** Connected provider IDs (cloud mode) - used to disable unconnected providers */
+  connectedProviders?: string[];
 }
 
 /** Model options for Claude agents */
@@ -189,6 +191,7 @@ export function SpawnModal({
   agentDefaults,
   repos,
   activeRepoId,
+  connectedProviders,
 }: SpawnModalProps) {
   const [selectedTemplate, setSelectedTemplate] = useState(AGENT_TEMPLATES[0]);
   const [name, setName] = useState('');
@@ -253,10 +256,18 @@ export function SpawnModal({
   useEffect(() => {
     if (isOpen) {
       // Determine default template based on settings
+      // In cloud mode, also skip templates whose provider isn't connected
+      const isTemplateAvailable = (t: typeof AGENT_TEMPLATES[number]) => {
+        if (t.comingSoon && isCloudMode) return false;
+        if (connectedProviders && t.providerId && !connectedProviders.includes(t.providerId)) return false;
+        return true;
+      };
       const defaultTemplateId = agentDefaults?.defaultCliType;
       const defaultTemplate = defaultTemplateId
-        ? AGENT_TEMPLATES.find(t => t.id === defaultTemplateId && !t.comingSoon) ?? AGENT_TEMPLATES[0]
-        : AGENT_TEMPLATES[0];
+        ? AGENT_TEMPLATES.find(t => t.id === defaultTemplateId && isTemplateAvailable(t))
+          ?? AGENT_TEMPLATES.find(t => isTemplateAvailable(t))
+          ?? AGENT_TEMPLATES[0]
+        : AGENT_TEMPLATES.find(t => isTemplateAvailable(t)) ?? AGENT_TEMPLATES[0];
 
       setSelectedTemplate(defaultTemplate);
       setName('');
@@ -390,13 +401,34 @@ export function SpawnModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6">
+          {/* No providers connected warning */}
+          {connectedProviders && connectedProviders.length === 0 && (
+            <div className="mb-5 p-4 rounded-lg border border-red-400/30 bg-red-400/10">
+              <p className="text-sm text-red-400 font-medium mb-1">No AI providers connected</p>
+              <p className="text-xs text-text-muted">
+                Connect an AI provider in your{' '}
+                <a
+                  href={workspaceId ? `/app?workspace=${workspaceId}&tab=providers` : '/providers'}
+                  className="text-accent underline"
+                >
+                  workspace settings
+                </a>
+                {' '}to spawn agents.
+              </p>
+            </div>
+          )}
           {/* Agent Type Selection */}
           <div className="mb-5">
             <label className="block text-sm font-semibold text-text-primary mb-2">Agent Type</label>
             <div className="grid grid-cols-3 gap-2">
               {AGENT_TEMPLATES.map((template) => {
                 // Only disable "coming soon" providers in cloud mode - locally they might be available
-                const isDisabled = template.comingSoon && isCloudMode;
+                const isComingSoon = template.comingSoon && isCloudMode;
+                // In cloud mode, disable providers that aren't connected (skip for custom/null providerId)
+                const isProviderMissing = connectedProviders && template.providerId
+                  ? !connectedProviders.includes(template.providerId)
+                  : false;
+                const isDisabled = isComingSoon || isProviderMissing;
                 return (
                 <button
                   key={template.id}
@@ -413,9 +445,14 @@ export function SpawnModal({
                   `}
                   onClick={() => !isDisabled && setSelectedTemplate(template)}
                 >
-                  {isDisabled && (
+                  {isComingSoon && (
                     <span className="absolute top-1 right-1 px-1.5 py-0.5 bg-amber-400/20 text-amber-400 text-[10px] font-medium rounded">
                       Soon
+                    </span>
+                  )}
+                  {isProviderMissing && !isComingSoon && (
+                    <span className="absolute top-1 right-1 px-1.5 py-0.5 bg-red-400/20 text-red-400 text-[10px] font-medium rounded">
+                      Not Connected
                     </span>
                   )}
                   <span className={`text-2xl ${isDisabled ? 'grayscale' : ''}`}>{template.icon}</span>

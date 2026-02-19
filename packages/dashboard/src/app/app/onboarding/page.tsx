@@ -12,7 +12,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { LogoIcon } from '../../../components/Logo';
-import { WorkspaceStatusIndicator } from '../../../components/WorkspaceStatusIndicator';
+import { ProvisioningProgress } from '../../../components/ProvisioningProgress';
 import { getOnboardingNextStep } from '../../../lib/cloudApi';
 
 interface Repository {
@@ -35,7 +35,7 @@ interface NextStepResponse {
 }
 
 type OnboardingReason = 'new' | 'deleted';
-type ProviderId = 'anthropic' | 'openai' | 'google';
+type ProviderId = 'anthropic' | 'openai' | 'google' | 'cursor' | 'opencode' | 'droid';
 type AuthMode = 'api_key' | 'cli';
 type WorkspaceLifecycleState = 'idle' | 'provisioning' | 'running' | 'error';
 
@@ -66,18 +66,40 @@ const PROVIDERS: ProviderOption[] = [
     color: '#10A37F',
   },
   {
+    id: 'cursor',
+    label: 'Cursor',
+    description: 'Cursor AI editor',
+    color: '#7C3AED',
+  },
+  {
     id: 'google',
     label: 'Google',
     description: 'Gemini models via Google AI',
     color: '#4285F4',
+  },
+  {
+    id: 'opencode',
+    label: 'OpenCode',
+    description: 'Coming soon',
+    color: '#6B7280',
+  },
+  {
+    id: 'droid',
+    label: 'Droid',
+    description: 'Coming soon',
+    color: '#6B7280',
   },
 ];
 
 const PROVIDER_STATUS_NAMES: Record<ProviderId, string[]> = {
   anthropic: ['anthropic'],
   openai: ['openai', 'codex'],
+  cursor: ['cursor'],
   google: ['google'],
+  opencode: ['opencode'],
+  droid: ['droid'],
 };
+
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -111,12 +133,14 @@ function OnboardingContent() {
   const reason = (searchParams.get('reason') as OnboardingReason) || 'new';
 
   const [repos, setRepos] = useState<Repository[]>([]);
-  const [selectedRepo, setSelectedRepo] = useState('');
+  const [selectedRepos, setSelectedRepos] = useState<Set<string>>(new Set());
   const [nextStep, setNextStep] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<ProviderId>('anthropic');
   const [authMode, setAuthMode] = useState<AuthMode>('api_key');
   const [apiKey, setApiKey] = useState('');
   const [cliCommand, setCliCommand] = useState<string | null>(null);
+
+  const [connectedProviders, setConnectedProviders] = useState<Set<ProviderId>>(new Set());
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmittingProvider, setIsSubmittingProvider] = useState(false);
@@ -130,6 +154,7 @@ function OnboardingContent() {
   const [error, setError] = useState<string | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [providerFeedback, setProviderFeedback] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const cliPollingRef = useRef(false);
   const workspacePollingRef = useRef(false);
@@ -152,7 +177,7 @@ function OnboardingContent() {
     [csrfToken]
   );
 
-  const resolveSelectedRepo = useCallback((repositories: Repository[], stepData: NextStepResponse | null): string => {
+  const resolveSelectedRepos = useCallback((repositories: Repository[], stepData: NextStepResponse | null): Set<string> => {
     const stepRepo =
       stepData?.selectedRepo ||
       stepData?.repositoryFullName ||
@@ -160,10 +185,10 @@ function OnboardingContent() {
       '';
 
     if (stepRepo && repositories.some((repo) => repo.fullName === stepRepo)) {
-      return stepRepo;
+      return new Set([stepRepo]);
     }
 
-    return repositories[0]?.fullName || '';
+    return repositories.length > 0 ? new Set([repositories[0].fullName]) : new Set();
   }, []);
 
   const refreshNextStep = useCallback(async (): Promise<NextStepResponse | null> => {
@@ -228,29 +253,60 @@ function OnboardingContent() {
     try {
       const maxAttempts = 150; // 5 minutes at 2s intervals
       let attempts = 0;
+      let consecutiveErrors = 0;
 
       while (workspacePollingRef.current && attempts < maxAttempts) {
-        const statusRes = await fetch(`/api/workspaces/${createdWorkspaceId}/status`, {
-          credentials: 'include',
-        });
+        try {
+          const statusRes = await fetch(`/api/workspaces/${createdWorkspaceId}/status`, {
+            credentials: 'include',
+          });
 
-        const statusData = (await statusRes.json()) as {
-          status?: string;
-          errorMessage?: string;
-          provisioning?: { stage?: string | null };
-        };
+          if (!statusRes.ok) {
+            consecutiveErrors++;
+            console.warn(`[onboarding] Status poll returned ${statusRes.status} (attempt ${consecutiveErrors})`);
+            if (consecutiveErrors >= 5) {
+              throw new Error(`Workspace status check failed (HTTP ${statusRes.status})`);
+            }
+            await sleep(2000);
+            attempts += 1;
+            continue;
+          }
 
-        if (statusData.provisioning?.stage) {
-          setProvisioningStage(statusData.provisioning.stage);
-        }
+          consecutiveErrors = 0;
 
-        if (statusData.status === 'running') {
-          setWorkspaceState('running');
-          return;
-        }
+          const statusData = (await statusRes.json()) as {
+            status?: string;
+            errorMessage?: string;
+            provisioning?: { stage?: string | null };
+          };
 
-        if (statusData.status === 'error') {
-          throw new Error(statusData.errorMessage || 'Workspace provisioning failed');
+          if (statusData.provisioning?.stage) {
+            setProvisioningStage(statusData.provisioning.stage);
+          }
+
+          if (statusData.status === 'running') {
+            setWorkspaceState('running');
+            return;
+          }
+
+          if (statusData.status === 'error' || statusData.status === 'stopped') {
+            throw new Error(statusData.errorMessage || `Workspace ${statusData.status === 'stopped' ? 'stopped unexpectedly' : 'provisioning failed'}`);
+          }
+        } catch (fetchErr) {
+          // Re-throw our intentional errors
+          if (fetchErr instanceof Error && (
+            fetchErr.message.includes('provisioning failed') ||
+            fetchErr.message.includes('stopped unexpectedly') ||
+            fetchErr.message.includes('status check failed')
+          )) {
+            throw fetchErr;
+          }
+          // Network errors — keep trying
+          consecutiveErrors++;
+          console.warn(`[onboarding] Status poll network error (attempt ${consecutiveErrors}):`, fetchErr);
+          if (consecutiveErrors >= 5) {
+            throw new Error('Unable to reach workspace status endpoint');
+          }
         }
 
         await sleep(2000);
@@ -264,10 +320,10 @@ function OnboardingContent() {
   }, []);
 
   const startWorkspaceCreation = useCallback(
-    async (repoFullName?: string) => {
-      const repository = repoFullName || selectedRepo;
+    async (repoNames?: string[]) => {
+      const repositories = repoNames && repoNames.length > 0 ? repoNames : Array.from(selectedRepos);
 
-      if (!repository || isCreatingWorkspace || workspaceState === 'provisioning' || workspaceState === 'running') {
+      if (repositories.length === 0 || isCreatingWorkspace || workspaceState === 'provisioning' || workspaceState === 'running') {
         return;
       }
 
@@ -276,14 +332,14 @@ function OnboardingContent() {
       setProvisioningStage(null);
       setIsCreatingWorkspace(true);
 
-      trackEvent('onboarding_repo_selected', { repository });
+      trackEvent('onboarding_repo_selected', { repositories });
 
       try {
         const res = await fetch('/api/workspaces/quick', {
           method: 'POST',
           credentials: 'include',
           headers: buildHeaders(),
-          body: JSON.stringify({ repositoryFullName: repository }),
+          body: JSON.stringify({ repositories }),
         });
 
         const data = await res.json();
@@ -301,7 +357,7 @@ function OnboardingContent() {
 
         trackEvent('onboarding_workspace_created', {
           workspaceId: data.workspaceId,
-          repository,
+          repositories,
         });
       } catch (err) {
         setWorkspaceState('error');
@@ -310,7 +366,7 @@ function OnboardingContent() {
         setIsCreatingWorkspace(false);
       }
     },
-    [selectedRepo, isCreatingWorkspace, workspaceState, trackEvent, buildHeaders, pollWorkspaceUntilRunning]
+    [selectedRepos, isCreatingWorkspace, workspaceState, trackEvent, buildHeaders, pollWorkspaceUntilRunning]
   );
 
   const pollForCliCompletion = useCallback(
@@ -365,14 +421,9 @@ function OnboardingContent() {
           return;
         }
 
-        const workspacesRes = await fetch('/api/workspaces', { credentials: 'include' });
-        if (workspacesRes.ok) {
-          const workspacesData = await workspacesRes.json();
-          if ((workspacesData.workspaces || []).length > 0) {
-            window.location.href = '/app';
-            return;
-          }
-        }
+        // Note: we intentionally do NOT redirect to /app if workspaces exist.
+        // DashboardPageClient redirects here when no running workspaces, so redirecting
+        // back would cause an infinite loop. The onboarding page handles all states.
 
         const reposRes = await fetch('/api/github-app/repos', { credentials: 'include' });
         const repositories: Repository[] = [];
@@ -396,7 +447,23 @@ function OnboardingContent() {
           (repositories.length > 0 ? 'connect_ai_provider' : 'connect_repos');
 
         setNextStep(calculatedStep);
-        setSelectedRepo(resolveSelectedRepo(repositories, nextStepData));
+        setSelectedRepos(resolveSelectedRepos(repositories, nextStepData));
+
+        // Initialize connected providers from API response
+        if (Array.isArray(nextStepData?.connectedProviders)) {
+          const providerMap: Record<string, ProviderId> = {
+            anthropic: 'anthropic',
+            openai: 'openai',
+            google: 'google',
+            cursor: 'cursor',
+          };
+          const initialConnected = new Set<ProviderId>();
+          for (const p of nextStepData.connectedProviders) {
+            const mapped = providerMap[p];
+            if (mapped) initialConnected.add(mapped);
+          }
+          setConnectedProviders(initialConnected);
+        }
 
         trackEvent('onboarding_page_view', { reason, nextStep: calculatedStep });
         setIsLoading(false);
@@ -412,25 +479,26 @@ function OnboardingContent() {
       cliPollingRef.current = false;
       workspacePollingRef.current = false;
     };
-  }, [reason, resolveSelectedRepo, trackEvent]);
+  }, [reason, resolveSelectedRepos, trackEvent]);
 
   useEffect(() => {
     if (
       !isLoading &&
       repos.length > 0 &&
-      selectedRepo &&
+      selectedRepos.size > 0 &&
       nextStep !== null &&
       nextStep !== 'connect_ai_provider' &&
+      nextStep !== 'provider_connected' &&
       !workspaceId &&
       workspaceState === 'idle' &&
       !isCreatingWorkspace
     ) {
-      startWorkspaceCreation(selectedRepo);
+      startWorkspaceCreation(Array.from(selectedRepos));
     }
   }, [
     isLoading,
     repos.length,
-    selectedRepo,
+    selectedRepos,
     nextStep,
     workspaceId,
     workspaceState,
@@ -449,8 +517,8 @@ function OnboardingContent() {
       return;
     }
 
-    if (!selectedRepo) {
-      setProviderFeedback({ type: 'error', text: 'Select a repository before connecting a provider.' });
+    if (selectedRepos.size === 0) {
+      setProviderFeedback({ type: 'error', text: 'Select at least one repository before connecting a provider.' });
       return;
     }
 
@@ -485,9 +553,10 @@ function OnboardingContent() {
       }
 
       setApiKey('');
-      setProviderFeedback({ type: 'success', text: `${selectedProviderMeta.label} connected.` });
-      setNextStep('create_workspace');
-      await startWorkspaceCreation(selectedRepo);
+      setAuthMode('api_key');
+      setConnectedProviders(prev => new Set([...prev, selectedProvider]));
+      setProviderFeedback({ type: 'success', text: `${selectedProviderMeta.label} connected! Add another provider or continue to create your workspace.` });
+      setNextStep('provider_connected');
     } catch (err) {
       setProviderFeedback({
         type: 'error',
@@ -496,11 +565,11 @@ function OnboardingContent() {
     } finally {
       setIsSubmittingProvider(false);
     }
-  }, [apiKey, selectedRepo, selectedProvider, selectedProviderMeta.label, buildHeaders, startWorkspaceCreation]);
+  }, [apiKey, selectedRepos, selectedProvider, selectedProviderMeta.label, buildHeaders]);
 
   const handleStartCliAuth = useCallback(async () => {
-    if (!selectedRepo) {
-      setProviderFeedback({ type: 'error', text: 'Select a repository before starting provider auth.' });
+    if (selectedRepos.size === 0) {
+      setProviderFeedback({ type: 'error', text: 'Select at least one repository before starting provider auth.' });
       return;
     }
 
@@ -554,7 +623,10 @@ function OnboardingContent() {
 
       const connected = await pollForCliCompletion(initData.workspaceId);
       if (connected) {
-        await startWorkspaceCreation(selectedRepo);
+        setAuthMode('api_key');
+        setConnectedProviders(prev => new Set([...prev, selectedProvider]));
+        setCliCommand(null);
+        setNextStep('provider_connected');
       } else {
         setProviderFeedback({
           type: 'error',
@@ -569,7 +641,14 @@ function OnboardingContent() {
     } finally {
       setIsSubmittingProvider(false);
     }
-  }, [buildHeaders, selectedProvider, selectedRepo, pollForCliCompletion, startWorkspaceCreation]);
+  }, [buildHeaders, selectedProvider, selectedRepos, pollForCliCompletion]);
+
+  const switchToCliMode = useCallback(() => {
+    setAuthMode('cli');
+    if (!cliCommand && !isSubmittingProvider && selectedRepos.size > 0) {
+      handleStartCliAuth();
+    }
+  }, [cliCommand, isSubmittingProvider, selectedRepos, handleStartCliAuth]);
 
   const handleCliDone = useCallback(async () => {
     setIsSubmittingProvider(true);
@@ -583,20 +662,23 @@ function OnboardingContent() {
         return;
       }
 
-      setProviderFeedback({ type: 'success', text: `${selectedProviderMeta.label} connected.` });
-      setNextStep('create_workspace');
-      await startWorkspaceCreation(selectedRepo);
+      setAuthMode('api_key');
+      setConnectedProviders(prev => new Set([...prev, selectedProvider]));
+      setCliCommand(null);
+      setProviderFeedback({ type: 'success', text: `${selectedProviderMeta.label} connected! Add another provider or continue to create your workspace.` });
+      setNextStep('provider_connected');
     } finally {
       setIsSubmittingProvider(false);
     }
-  }, [selectedProviderMeta.label, selectedRepo, startWorkspaceCreation, verifyProviderConnected]);
+  }, [selectedProviderMeta.label, selectedProvider, verifyProviderConnected]);
 
   const handleCopyCommand = useCallback(async () => {
     if (!cliCommand) {
       return;
     }
     await navigator.clipboard.writeText(cliCommand);
-    setProviderFeedback({ type: 'info', text: 'CLI command copied to clipboard.' });
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }, [cliCommand]);
 
   if (isLoading) {
@@ -616,39 +698,13 @@ function OnboardingContent() {
   if (workspaceState === 'provisioning' || isCreatingWorkspace) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#0a0a0f] via-[#0d1117] to-[#0a0a0f] flex items-center justify-center p-4">
-        <div className="w-full max-w-2xl bg-bg-primary/80 backdrop-blur-sm border border-border-subtle rounded-2xl p-8">
-          <div className="text-center mb-6">
-            <LogoIcon size={48} withGlow={true} />
-            <h1 className="mt-4 text-2xl font-bold text-white">Provisioning Workspace</h1>
-            <p className="mt-2 text-text-muted">
-              Setting up your environment for <span className="text-white">{selectedRepo}</span>.
-            </p>
-          </div>
-
-          <WorkspaceStatusIndicator expanded={true} className="mb-6" />
-
-          <div className="flex items-center gap-3 p-4 bg-accent-cyan/10 border border-accent-cyan/30 rounded-xl">
-            <svg className="w-5 h-5 text-accent-cyan animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            <div>
-              <p className="text-sm text-white font-medium">Creating compute resources</p>
-              <p className="text-xs text-text-muted">
-                {provisioningStage ? `Stage: ${provisioningStage}` : 'Preparing machine and services...'}
-              </p>
-            </div>
-          </div>
-
-          {workspaceId && (
-            <p className="mt-4 text-xs text-text-muted text-center">Workspace ID: {workspaceId}</p>
-          )}
-
-          {error && (
-            <div className="mt-4 p-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error">
-              {error}
-            </div>
-          )}
+        <div className="w-full max-w-2xl">
+          <ProvisioningProgress
+            currentStage={provisioningStage}
+            isProvisioning={true}
+            workspaceName={Array.from(selectedRepos).join(', ')}
+            error={error}
+          />
         </div>
       </div>
     );
@@ -668,7 +724,7 @@ function OnboardingContent() {
             Your workspace is running and ready for your first agent.
           </p>
           <a
-            href={`/app?workspace=${workspaceId}`}
+            href={`/app?workspace=${workspaceId}&spawn=true`}
             className="mt-6 inline-flex items-center gap-2 py-3 px-6 bg-gradient-to-r from-accent-cyan to-[#00b8d9] text-bg-deep font-semibold rounded-xl hover:shadow-glow-cyan transition-all"
           >
             Spawn your first agent
@@ -679,7 +735,7 @@ function OnboardingContent() {
   }
 
   const isDeletedWorkspace = reason === 'deleted';
-  const showProviderStep = repos.length > 0 && nextStep === 'connect_ai_provider';
+  const showProviderStep = repos.length > 0 && (nextStep === 'connect_ai_provider' || nextStep === 'provider_connected');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0f] via-[#0d1117] to-[#0a0a0f] flex flex-col items-center justify-center p-4">
@@ -716,7 +772,7 @@ function OnboardingContent() {
         <div className="bg-bg-primary/80 backdrop-blur-sm border border-border-subtle rounded-2xl p-8">
           {repos.length > 0 && (
             <div className="flex items-center justify-center gap-3 mb-8">
-              <StepBadge label="Repository" active={Boolean(selectedRepo)} done={Boolean(selectedRepo)} />
+              <StepBadge label="Repository" active={selectedRepos.size > 0} done={selectedRepos.size > 0} />
               <div className="w-12 h-px bg-border-subtle" />
               <StepBadge
                 label="Provider"
@@ -744,41 +800,100 @@ function OnboardingContent() {
           ) : showProviderStep ? (
             <div className="space-y-6">
               <div>
-                <label className="block text-sm text-text-muted mb-2">Repository</label>
-                <select
-                  value={selectedRepo}
-                  onChange={(event) => setSelectedRepo(event.target.value)}
-                  className="w-full px-4 py-3 bg-bg-tertiary border border-border-subtle rounded-xl text-white focus:outline-none focus:border-accent-cyan/50"
-                >
+                <label className="block text-sm text-text-muted mb-2">Repositories</label>
+                <div className="max-h-48 overflow-y-auto space-y-2 p-3 bg-bg-tertiary border border-border-subtle rounded-xl">
                   {repos.map((repo) => (
-                    <option key={repo.id} value={repo.fullName}>
-                      {repo.fullName}
-                    </option>
+                    <label
+                      key={repo.id}
+                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-bg-card cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedRepos.has(repo.fullName)}
+                        onChange={() => {
+                          setSelectedRepos(prev => {
+                            const next = new Set(prev);
+                            if (next.has(repo.fullName)) {
+                              next.delete(repo.fullName);
+                            } else {
+                              next.add(repo.fullName);
+                            }
+                            return next;
+                          });
+                        }}
+                        className="w-4 h-4 rounded border-border-subtle text-accent-cyan focus:ring-accent-cyan/50 bg-bg-deep"
+                      />
+                      <span className="text-white text-sm">{repo.fullName}</span>
+                      {repo.isPrivate && (
+                        <span className="text-xs text-text-muted bg-bg-deep px-1.5 py-0.5 rounded">private</span>
+                      )}
+                    </label>
                   ))}
-                </select>
+                </div>
+                <p className="text-xs text-text-muted mt-1">{selectedRepos.size} selected</p>
               </div>
 
               <div>
                 <p className="text-sm text-text-muted mb-3">Select AI provider</p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {PROVIDERS.map((provider) => (
-                    <button
-                      key={provider.id}
-                      type="button"
-                      onClick={() => setSelectedProvider(provider.id)}
-                      className={`p-3 rounded-xl border text-left transition-colors ${
-                        selectedProvider === provider.id
-                          ? 'border-accent-cyan bg-accent-cyan/10'
-                          : 'border-border-subtle bg-bg-tertiary hover:border-accent-cyan/40'
-                      }`}
-                    >
-                      <p className="text-white font-medium">{provider.label}</p>
-                      <p className="text-xs text-text-muted mt-1">{provider.description}</p>
-                    </button>
-                  ))}
+                  {PROVIDERS.map((provider) => {
+                    const isConnected = connectedProviders.has(provider.id);
+                    return (
+                      <button
+                        key={provider.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedProvider(provider.id);
+                          // Reset auth state so user can connect this provider
+                          setCliCommand(null);
+                          setApiKey('');
+                          setProviderFeedback(null);
+                          if (authMode !== 'api_key') setAuthMode('api_key');
+                        }}
+                        className={`p-3 rounded-xl border text-left transition-colors relative ${
+                          isConnected
+                            ? 'border-success/50 bg-success/10'
+                            : selectedProvider === provider.id
+                              ? 'border-accent-cyan bg-accent-cyan/10'
+                              : 'border-border-subtle bg-bg-tertiary hover:border-accent-cyan/40'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <p className="text-white font-medium">{provider.label}</p>
+                          {isConnected && (
+                            <span className="flex items-center gap-1 text-xs text-success font-medium">
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                              </svg>
+                              Connected
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-text-muted mt-1">{provider.description}</p>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
+              {/* Show "Continue" button when at least one provider is connected */}
+              {connectedProviders.size > 0 && nextStep === 'provider_connected' && (
+                <div className="flex items-center justify-between p-4 bg-success/10 border border-success/30 rounded-xl">
+                  <p className="text-sm text-success">
+                    {connectedProviders.size} provider{connectedProviders.size > 1 ? 's' : ''} connected.
+                    {' '}Add more or continue to create your workspace.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => startWorkspaceCreation()}
+                    className="px-5 py-2.5 bg-gradient-to-r from-accent-cyan to-[#00b8d9] text-bg-deep font-semibold rounded-xl hover:shadow-glow-cyan transition-all text-sm"
+                  >
+                    Create Workspace
+                  </button>
+                </div>
+              )}
+
+              {!connectedProviders.has(selectedProvider) && (
               <div className="flex gap-2 p-1 bg-bg-tertiary rounded-xl border border-border-subtle">
                 <button
                   type="button"
@@ -791,7 +906,7 @@ function OnboardingContent() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAuthMode('cli')}
+                  onClick={switchToCliMode}
                   className={`flex-1 py-2.5 px-4 text-sm rounded-lg transition-colors ${
                     authMode === 'cli' ? 'bg-accent-cyan text-bg-deep font-semibold' : 'text-text-muted hover:text-white'
                   }`}
@@ -799,8 +914,9 @@ function OnboardingContent() {
                   Authenticate via CLI
                 </button>
               </div>
+              )}
 
-              {authMode === 'api_key' ? (
+              {connectedProviders.has(selectedProvider) ? null : authMode === 'api_key' ? (
                 <div className="space-y-3">
                   <label className="block text-sm text-text-muted">{selectedProviderMeta.label} API Key</label>
                   <div className="flex gap-3">
@@ -823,28 +939,23 @@ function OnboardingContent() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <button
-                    type="button"
-                    onClick={handleStartCliAuth}
-                    disabled={isSubmittingProvider}
-                    className="w-full py-3 px-4 bg-gradient-to-r from-accent-cyan to-[#00b8d9] text-bg-deep font-semibold rounded-xl hover:shadow-glow-cyan transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {isSubmittingProvider ? 'Starting auth...' : 'Authenticate via CLI'}
-                  </button>
-
-                  {cliCommand && (
-                    <div className="p-3 bg-bg-tertiary border border-border-subtle rounded-xl space-y-3">
-                      <p className="text-xs text-text-muted">Run this command in your terminal:</p>
-                      <code className="block px-3 py-2 bg-bg-deep rounded-lg text-xs text-white overflow-x-auto">
+                  {cliCommand ? (
+                    <div className="p-4 bg-bg-tertiary border border-border-subtle rounded-xl space-y-3">
+                      <p className="text-sm text-text-muted">Run this command in your terminal:</p>
+                      <code className="block px-3 py-2 bg-bg-deep rounded-lg text-sm text-white overflow-x-auto">
                         {cliCommand}
                       </code>
                       <div className="flex gap-2">
                         <button
                           type="button"
                           onClick={handleCopyCommand}
-                          className="px-3 py-2 bg-bg-card border border-border-subtle text-text-muted rounded-lg text-xs hover:text-white hover:border-accent-cyan/50 transition-colors"
+                          className={`px-3 py-2 border rounded-lg text-xs transition-colors ${
+                            copied
+                              ? 'bg-success/20 border-success/50 text-success'
+                              : 'bg-bg-card border-border-subtle text-text-muted hover:text-white hover:border-accent-cyan/50'
+                          }`}
                         >
-                          Copy command
+                          {copied ? 'Copied!' : 'Copy command'}
                         </button>
                         <button
                           type="button"
@@ -855,6 +966,14 @@ function OnboardingContent() {
                           Done
                         </button>
                       </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 p-4 bg-bg-tertiary border border-border-subtle rounded-xl">
+                      <svg className="w-5 h-5 text-accent-cyan animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      <span className="text-sm text-text-muted">Fetching CLI command...</span>
                     </div>
                   )}
 

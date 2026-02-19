@@ -509,6 +509,42 @@ export const cloudApi = {
     });
   },
 
+  // ===== Credential Assignment API =====
+
+  /**
+   * Get all user credentials with workspace assignments
+   */
+  async getUserCredentials() {
+    return cloudFetch<{ credentials: Array<{
+      id: string;
+      provider: string;
+      providerAccountEmail?: string;
+      createdAt: string;
+      updatedAt: string;
+      workspaces: Array<{ id: string; name: string }>;
+    }> }>('/api/providers/credentials');
+  },
+
+  /**
+   * Assign a credential to a workspace
+   */
+  async assignCredentialToWorkspace(credentialId: string, workspaceId: string) {
+    return cloudFetch<{ success: boolean }>(
+      `/api/providers/credentials/${encodeURIComponent(credentialId)}/workspaces/${encodeURIComponent(workspaceId)}`,
+      { method: 'POST' },
+    );
+  },
+
+  /**
+   * Unassign a credential from a workspace
+   */
+  async unassignCredentialFromWorkspace(credentialId: string, workspaceId: string) {
+    return cloudFetch<{ success: boolean }>(
+      `/api/providers/credentials/${encodeURIComponent(credentialId)}/workspaces/${encodeURIComponent(workspaceId)}`,
+      { method: 'DELETE' },
+    );
+  },
+
   // ===== Team API =====
 
   /**
@@ -894,5 +930,57 @@ export const cloudApi = {
     }>(`/api/repos/${encodeURIComponent(repoId)}/sync`, {
       method: 'POST',
     });
+  },
+
+  // ===== Agent Spawn API =====
+
+  /**
+   * Spawn an agent in a workspace's Daytona sandbox
+   */
+  async spawnAgent(workspaceId: string, params: {
+    name: string;
+    provider?: string;
+    task?: string;
+    cwd?: string;
+    model?: string;
+  }) {
+    return cloudFetch<{
+      name: string;
+      sandboxId: string;
+      status: string;
+      cli: string;
+      workspaceId: string;
+      createdAt: string;
+    }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/agents`, {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  /**
+   * List agents in a workspace
+   */
+  async getAgents(workspaceId: string) {
+    return cloudFetch<{
+      agents: Array<{
+        name: string;
+        sandboxId: string;
+        status: string;
+        cli: string;
+        workspaceId: string;
+        createdAt: string;
+      }>;
+      workspaceId: string;
+    }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/agents`);
+  },
+
+  /**
+   * Stop/release an agent in a workspace
+   */
+  async stopAgent(workspaceId: string, agentName: string) {
+    return cloudFetch<{ success: boolean }>(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentName)}`,
+      { method: 'DELETE' }
+    );
   },
 };

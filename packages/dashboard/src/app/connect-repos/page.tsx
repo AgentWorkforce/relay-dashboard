@@ -161,10 +161,16 @@ export default function ConnectReposPage() {
       const error = err as Error & { type?: string };
       console.error('GitHub App auth error:', error);
 
-      // Don't show error for user-cancelled auth
-      if (error.type === 'user_cancelled' || error.message?.includes('closed')) {
+      // Don't show error for user-cancelled auth or stale OAuth state
+      const isUserCancelled = error.type === 'user_cancelled' || error.message?.includes('closed');
+      const isStaleState = error.message?.includes('invalid_oauth_state');
+
+      if (isUserCancelled || isStaleState) {
         setStatusMessage('');
-        // Re-initialize for next attempt
+        if (isStaleState) {
+          setError('Session expired. Click Connect to try again.');
+        }
+        // Re-initialize Nango session for next attempt
         fetch('/api/auth/nango/repo-session', { credentials: 'include' })
           .then(res => res.json())
           .then(data => {
