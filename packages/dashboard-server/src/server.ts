@@ -2911,7 +2911,7 @@ export async function startDashboard(
       });
     }
 
-    ws.on('message', (data) => {
+    ws.on('message', async (data) => {
       try {
         const msg = JSON.parse(data.toString());
 
@@ -2962,7 +2962,7 @@ export async function startDashboard(
 
           // Check if this is a spawned agent (we can only send input to spawned agents)
           if (spawnReader?.hasWorker(agentName)) {
-            const success = spawnReader.sendWorkerInput(agentName, msg.data);
+            const success = await spawnReader.sendWorkerInput(agentName, msg.data);
             if (!success) {
               console.warn(`[dashboard] Failed to send input to agent ${agentName}`);
             }
@@ -6318,7 +6318,7 @@ Start by greeting the project leads and asking for status updates.`;
    * Sends ESC ESC (0x1b 0x1b) to the agent's PTY to interrupt the current operation.
    * This is useful for breaking agents out of stuck loops without terminating them.
    */
-  app.post('/api/agents/by-name/:name/interrupt', (req, res) => {
+  app.post('/api/agents/by-name/:name/interrupt', async (req, res) => {
     if (!spawnReader) {
       return res.status(503).json({
         success: false,
@@ -6339,7 +6339,7 @@ Start by greeting the project leads and asking for status updates.`;
     try {
       // Send ESC ESC sequence to interrupt the agent
       // ESC = 0x1b in hexadecimal
-      const success = spawnReader.sendWorkerInput(name, '\x1b\x1b');
+      const success = await spawnReader.sendWorkerInput(name, '\x1b\x1b');
 
       if (success) {
         console.log(`[api] Sent interrupt (ESC ESC) to agent ${name}`);

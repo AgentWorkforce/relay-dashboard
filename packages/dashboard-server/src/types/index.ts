@@ -28,7 +28,7 @@ export interface SpawnManagerLike {
     spawnedAt: number;
     pid?: number;
   }>;
-  sendWorkerInput(name: string, data: string): boolean;
+  sendWorkerInput(name: string, data: string): boolean | Promise<boolean>;
 }
 
 /**

@@ -130,10 +130,14 @@ export class BrokerSpawnReader implements SpawnManagerLike {
     return this.rawOutputBuffers.get(name);
   }
 
-  sendWorkerInput(name: string, data: string): boolean {
-    // Fire-and-forget to match the sync interface
-    this.adapter.sendInput(name, data).catch(() => {});
-    return true;
+  async sendWorkerInput(name: string, data: string): Promise<boolean> {
+    try {
+      await this.adapter.sendInput(name, data);
+      return true;
+    } catch (err) {
+      console.error(`[broker-spawn-reader] Failed to send input to ${name}:`, err);
+      return false;
+    }
   }
 
   /** Refresh the agent cache from the broker. */
