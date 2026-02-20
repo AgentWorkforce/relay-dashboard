@@ -157,6 +157,41 @@ describe('SpawnModal', () => {
     });
   });
 
+  describe('resume previous session', () => {
+    it('includes continueFrom when toggle is enabled', async () => {
+      const onSpawn = vi.fn().mockResolvedValue(true);
+      renderSpawnModal({ onSpawn });
+
+      // Enable the resume toggle
+      const resumeSection = screen.getByText('Resume Previous Session');
+      const toggle = resumeSection.closest('div')?.parentElement?.querySelector('button[aria-pressed]');
+      if (toggle) fireEvent.click(toggle);
+
+      fireEvent.submit(getForm());
+
+      await waitFor(() => {
+        expect(onSpawn).toHaveBeenCalled();
+      });
+
+      const config = onSpawn.mock.calls[0][0];
+      expect(config.continueFrom).toBe('claude-1'); // default suggested name
+    });
+
+    it('does not include continueFrom when toggle is disabled', async () => {
+      const onSpawn = vi.fn().mockResolvedValue(true);
+      renderSpawnModal({ onSpawn });
+
+      fireEvent.submit(getForm());
+
+      await waitFor(() => {
+        expect(onSpawn).toHaveBeenCalled();
+      });
+
+      const config = onSpawn.mock.calls[0][0];
+      expect(config.continueFrom).toBeUndefined();
+    });
+  });
+
   describe('working directory (local mode)', () => {
     it('shows working directory input when not in cloud mode', () => {
       renderSpawnModal({ isCloudMode: false });

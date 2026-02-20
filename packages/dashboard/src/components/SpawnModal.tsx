@@ -20,6 +20,7 @@ export interface SpawnConfig {
   shadowAgent?: string;
   shadowTriggers?: SpeakOnTrigger[];
   shadowSpeakOn?: SpeakOnTrigger[];
+  continueFrom?: string;
 }
 
 function deriveShadowMode(command: string): 'subagent' | 'process' {
@@ -203,6 +204,7 @@ export function SpawnModal({
   const [cwd, setCwd] = useState('');
   const [selectedRepoId, setSelectedRepoId] = useState<string | undefined>(activeRepoId);
   const [team, setTeam] = useState('');
+  const [continueFromPrevious, setContinueFromPrevious] = useState(false);
   const [isShadow, setIsShadow] = useState(false);
   const [shadowOf, setShadowOf] = useState('');
   const [shadowAgent, setShadowAgent] = useState('');
@@ -280,6 +282,7 @@ export function SpawnModal({
       setCwd('');
       setSelectedRepoId(activeRepoId);
       setTeam('');
+      setContinueFromPrevious(false);
       setIsShadow(false);
       setShadowOf('');
       setShadowAgent('');
@@ -354,6 +357,7 @@ export function SpawnModal({
       shadowAgent: shadowAgent.trim() || undefined,
       shadowTriggers: isShadow ? shadowSpeakOn : undefined,
       shadowSpeakOn: isShadow ? shadowSpeakOn : undefined,
+      continueFrom: continueFromPrevious ? finalName : undefined,
     });
 
     if (success) {
@@ -658,6 +662,37 @@ export function SpawnModal({
               />
             </div>
           )}
+
+          {/* Resume from Previous Session */}
+          <div className="mb-5 p-4 border border-border rounded-lg bg-bg-hover/50">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="block text-sm font-semibold text-text-primary">
+                  Resume Previous Session
+                </label>
+                <span className="text-xs text-text-muted">
+                  Inject context from this agent's last session
+                </span>
+              </div>
+              <button
+                type="button"
+                className={`
+                  relative w-11 h-6 rounded-full transition-colors duration-200
+                  ${continueFromPrevious ? 'bg-accent' : 'bg-bg-active'}
+                `}
+                onClick={() => setContinueFromPrevious(!continueFromPrevious)}
+                disabled={isSpawning}
+                aria-pressed={continueFromPrevious}
+              >
+                <span
+                  className={`
+                    absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform duration-200 shadow-sm
+                    ${continueFromPrevious ? 'translate-x-5' : 'translate-x-0'}
+                  `}
+                />
+              </button>
+            </div>
+          </div>
 
           {/* Shadow Agent Configuration */}
           <div className="mb-5 p-4 border border-border rounded-lg bg-bg-hover/50">

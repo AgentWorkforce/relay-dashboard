@@ -246,8 +246,10 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   const [reactionOverrides, setReactionOverrides] = useState<Map<string, { reactions: Reaction[]; timestamp: number }>>(new Map());
 
   // Use WebSocket data if available, otherwise fall back to REST data
+  // In cloud mode (wsUrl set), provide empty data so UI renders without WS
+  const cloudFallbackData: DashboardData | null = wsUrl ? { agents: [], messages: [] } : null;
   // Merge in local reaction overrides
-  const rawData = wsData || restData;
+  const rawData = wsData || restData || cloudFallbackData;
   const rawDataRef = useRef(rawData);
   rawDataRef.current = rawData;
 
@@ -379,7 +381,11 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
       return;
     }
 
-    const isCloud = !!cloudSession?.user;
+    // Determine cloud mode: use cloudSession if available, otherwise
+    // infer from wsUrl prop (cloud mode always provides a wsUrl)
+    // Use wsUrl prop as cloud mode signal — it's set immediately by DashboardPageClient
+    // while cloudSession?.user may not have loaded yet
+    const isCloud = !!cloudSession?.user || !!wsUrl;
 
     const fetchAgents = async () => {
       try {
@@ -391,6 +397,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
               name: a.name,
               status: a.status === 'online' ? 'online' : 'offline',
               isLocal: false,
+              isSpawned: true,
             }));
             setLocalAgents(agents);
           }
@@ -2373,6 +2380,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
         shadowAgent: config.shadowAgent,
         shadowTriggers: config.shadowTriggers,
         shadowSpeakOn: config.shadowSpeakOn,
+        continueFrom: config.continueFrom,
       });
       if (!result.success) {
         setSpawnError(result.error || 'Failed to spawn agent');

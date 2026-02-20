@@ -43,6 +43,9 @@ export interface CloudSessionProviderProps {
 function detectCloudMode(): boolean {
   if (typeof window === 'undefined') return false;
 
+  // Check for explicit cloud mode env var (set in Docker/deployment)
+  if (process.env.NEXT_PUBLIC_CLOUD_MODE === 'true') return true;
+
   // Check for cloud URL patterns
   const hostname = window.location.hostname;
   if (hostname.includes('agent-relay.com')) return true;
