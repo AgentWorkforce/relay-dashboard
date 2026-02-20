@@ -3499,6 +3499,7 @@ export async function startDashboard(
    */
   app.get('/api/channels', async (req, res) => {
     const username = req.query.username as string | undefined;
+    const joinedOnly = req.query.joinedOnly !== 'false';
     const workspaceId = resolveWorkspaceId(req);
 
     if (!storage) {
@@ -3518,6 +3519,7 @@ export async function startDashboard(
           unreadCount: 0,
           hasMentions: false,
           isDm: id.startsWith('dm:'),
+          isJoined: true,
         })),
         archivedChannels: [],
       });
@@ -3539,14 +3541,15 @@ export async function startDashboard(
         hasMentions: boolean;
         lastMessage?: { content: string; from: string; timestamp: string };
         isDm: boolean;
+        isJoined: boolean;
         dmParticipants?: string[];
       };
       const activeChannels: ChannelResponse[] = [];
       const archivedChannels: ChannelResponse[] = [];
 
       for (const record of channelMap.values()) {
-        const isMember = !username || record.members.has(username) || record.id === '#general';
-        if (!isMember) {
+        const isMember = Boolean(username && record.members.has(username));
+        if (joinedOnly && !isMember) {
           continue;
         }
 
@@ -3564,6 +3567,7 @@ export async function startDashboard(
           hasMentions: false,
           lastMessage: record.lastMessage,
           isDm: record.id.startsWith('dm:'),
+          isJoined: isMember,
           dmParticipants: record.dmParticipants,
         };
 
@@ -7169,48 +7173,29 @@ Start by greeting the project leads and asking for status updates.`;
     }
   }
 
-  // Try to find an available port, starting from the requested port
-  const findAvailablePort = async (startPort: number, maxAttempts = 10): Promise<number> => {
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const portToTry = startPort + attempt;
-      const isAvailable = await new Promise<boolean>((resolve) => {
-        const testServer = http.createServer();
-        testServer.once('error', () => resolve(false));
-        testServer.once('listening', () => {
-          testServer.close();
-          resolve(true);
-        });
-        testServer.listen(portToTry);
-      });
-
-      if (isAvailable) {
-        return portToTry;
-      }
-      console.log(`Port ${portToTry} in use, trying ${portToTry + 1}...`);
-    }
-    throw new Error(`Could not find available port after trying ${startPort}-${startPort + maxAttempts - 1}`);
-  };
-
-  const availablePort = await findAvailablePort(port);
-  if (availablePort !== port) {
-    console.log(`Requested dashboard port ${port} is busy; switching to ${availablePort}.`);
-  }
-
+  // Try to listen on the requested port, automatically incrementing on EADDRINUSE
   return new Promise((resolve, reject) => {
     const host = getBindHost();
+    let currentPort = port;
+    let attempts = 0;
+    const maxAttempts = 10;
+
     const listenCallback = async () => {
-      console.log(`Dashboard running at http://${host || 'localhost'}:${availablePort} (build: cloud-channels-v2)`);
+      if (currentPort !== port) {
+        console.log(`Requested dashboard port ${port} is busy; switching to ${currentPort}.`);
+      }
+      console.log(`Dashboard running at http://${host || 'localhost'}:${currentPort} (build: cloud-channels-v2)`);
       console.log(`Monitoring: ${dataDir}`);
 
       // Set the dashboard port on local spawner so spawned agents can use the API for nested spawns
       // Not needed when using external SpawnManager (daemon handles this)
       if (spawner && !useExternalSpawnManager) {
-        spawner.setDashboardPort(availablePort);
+        spawner.setDashboardPort(currentPort);
       }
 
       // Start health worker on separate thread for reliable health checks
       // This ensures health checks respond even when main event loop is blocked
-      const healthPort = getHealthPort(availablePort);
+      const healthPort = getHealthPort(currentPort);
       const healthWorker = new HealthWorkerManager(
         { port: healthPort },
         {
@@ -7241,19 +7226,29 @@ Start by greeting the project leads and asking for status updates.`;
         }
       }
 
-      resolve(availablePort);
+      resolve(currentPort);
     };
 
-    // Bind to specified host in cloud environments, or let Node.js default for local
-    if (host) {
-      server.listen(availablePort, host, listenCallback);
-    } else {
-      server.listen(availablePort, listenCallback);
-    }
+    const attemptListen = () => {
+      if (host) {
+        server.listen(currentPort, host, listenCallback);
+      } else {
+        server.listen(currentPort, listenCallback);
+      }
+    };
 
-    server.on('error', (err) => {
-      console.error('Server error:', err);
-      reject(err);
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE' && attempts < maxAttempts) {
+        attempts++;
+        console.log(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
+        currentPort++;
+        attemptListen();
+      } else {
+        console.error('Server error:', err);
+        reject(err);
+      }
     });
+
+    attemptListen();
   });
 }

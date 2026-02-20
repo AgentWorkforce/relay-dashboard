@@ -18,6 +18,7 @@
     "test": "npm run test --workspaces",
     "test:watch": "npm run test:watch --workspaces",
     "test:coverage": "npm run test:coverage --workspaces",
+    "watch": "npm run watch -w @agent-relay/dashboard",
     "clean": "npm run clean --workspaces && rm -rf node_modules",
     "publish:dashboard": "npm publish -w @agent-relay/dashboard",
     "publish:server": "npm publish -w @agent-relay/dashboard-server",

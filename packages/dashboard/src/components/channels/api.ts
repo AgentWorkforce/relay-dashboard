@@ -53,18 +53,29 @@ export class ApiError extends Error {
 // Channel API Functions - daemon-backed with minimal placeholders
 // =============================================================================
 
+export interface ListChannelsOptions {
+  /** Return only channels joined by the current user (default: true) */
+  joinedOnly?: boolean;
+}
+
 /**
- * List all channels for a workspace
- * Channels are workspace-scoped, not user-scoped
+ * List channels for a workspace.
+ * Defaults to joined channels only. Pass joinedOnly=false to browse all.
  */
-export async function listChannels(workspaceId?: string): Promise<ListChannelsResponse> {
+export async function listChannels(
+  workspaceId?: string,
+  options: ListChannelsOptions = {}
+): Promise<ListChannelsResponse> {
   // Ensure workspace ID is initialized for proper URL routing
   initializeWorkspaceId();
+  const username = getCurrentUsername();
   const params = new URLSearchParams();
   // workspaceId is required for cloud mode
   if (workspaceId) {
     params.set('workspaceId', workspaceId);
   }
+  params.set('username', username);
+  params.set('joinedOnly', options.joinedOnly === false ? 'false' : 'true');
   const url = getApiUrl(`/api/channels?${params.toString()}`);
 
   try {

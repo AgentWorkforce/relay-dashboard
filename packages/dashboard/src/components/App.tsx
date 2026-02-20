@@ -31,6 +31,7 @@ import { MessageComposer } from './MessageComposer';
 import { OnlineUsersIndicator } from './OnlineUsersIndicator';
 import { UserProfilePanel } from './UserProfilePanel';
 import { AgentProfilePanel } from './AgentProfilePanel';
+import { ChannelBrowser } from './ChannelBrowser';
 import { useDirectMessage } from './hooks/useDirectMessage';
 import { CoordinatorPanel } from './CoordinatorPanel';
 import { BillingResult } from './BillingResult';
@@ -66,6 +67,7 @@ import {
 import { useWorkspaceMembers, filterOnlineUsersByWorkspace } from './hooks/useWorkspaceMembers';
 import { useCloudSessionOptional } from './CloudSessionProvider';
 import { WorkspaceProvider } from './WorkspaceContext';
+import type { BrowseChannel } from './hooks/useChannelBrowser';
 import { api, convertApiDecision, setActiveWorkspaceId as setApiWorkspaceId, getActiveWorkspaceId, getCsrfToken } from '../lib/api';
 import { cloudApi } from '../lib/cloudApi';
 import { mergeAgentsForDashboard } from '../lib/agent-merge';
@@ -750,36 +752,13 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [channelUnreadState, setChannelUnreadState] = useState<UnreadState | undefined>();
 
-  // Default channel IDs that should always be visible
-  const DEFAULT_CHANNEL_IDS = ['#general', '#engineering'];
-
   const setChannelListsFromResponse = useCallback((response: { channels: Channel[]; archivedChannels?: Channel[] }) => {
     const archived = [
       ...(response.archivedChannels || []),
       ...response.channels.filter(c => c.status === 'archived'),
     ];
     const apiActive = response.channels.filter(c => c.status !== 'archived');
-
-    // Merge with default channels to ensure #general is always visible
-    // Default channels are added if not present in API response
-    const apiChannelIds = new Set(apiActive.map(c => c.id));
-    const defaultChannelsToAdd: Channel[] = DEFAULT_CHANNEL_IDS
-      .filter(id => !apiChannelIds.has(id))
-      .map(id => ({
-        id,
-        name: id.replace('#', ''),
-        description: id === '#general' ? 'General discussion for all agents' : 'Engineering discussion',
-        visibility: 'public' as const,
-        memberCount: 0,
-        unreadCount: 0,
-        hasMentions: false,
-        createdAt: new Date().toISOString(),
-        status: 'active' as const,
-        createdBy: 'system',
-        isDm: false,
-      }));
-
-    setChannelsList([...defaultChannelsToAdd, ...apiActive]);
+    setChannelsList(apiActive);
     setArchivedChannelsList(archived);
   }, []);
 
@@ -807,6 +786,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   // Create channel modal state
   const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
   const [isCreatingChannel, setIsCreatingChannel] = useState(false);
+  const [isChannelBrowserOpen, setIsChannelBrowserOpen] = useState(false);
 
   // Invite to channel modal state
   const [isInviteChannelOpen, setIsInviteChannelOpen] = useState(false);
@@ -1720,6 +1700,11 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     },
   ], []);
 
+  const refreshWorkspaceChannels = useCallback(async (workspaceId: string) => {
+    const response = await listChannels(workspaceId);
+    setChannelListsFromResponse(response);
+  }, [setChannelListsFromResponse]);
+
   // Load channels on mount (they're always visible in sidebar, collapsed by default)
   useEffect(() => {
     // Not in cloud mode or no workspace - show default channels only
@@ -1729,15 +1714,14 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
       return;
     }
 
-    // Cloud mode with workspace - fetch from API and merge with defaults
-    setChannelsList(defaultChannels);
+    // Cloud mode with workspace - fetch joined channels from API
+    setChannelsList([]);
     setArchivedChannelsList([]);
     setIsChannelsLoading(true);
 
     const fetchChannels = async () => {
       try {
-        const response = await listChannels(effectiveActiveWorkspaceId);
-        setChannelListsFromResponse(response);
+        await refreshWorkspaceChannels(effectiveActiveWorkspaceId);
       } catch (err) {
         console.error('Failed to fetch channels:', err);
       } finally {
@@ -1746,7 +1730,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     };
 
     fetchChannels();
-  }, [effectiveActiveWorkspaceId, isCloudMode, defaultChannels, setChannelListsFromResponse]);
+  }, [defaultChannels, effectiveActiveWorkspaceId, isCloudMode, refreshWorkspaceChannels]);
 
   // Load messages when a channel is selected (persisted + live)
   useEffect(() => {
@@ -1809,10 +1793,34 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     }
   }, [closeSidebarOnMobile, effectiveActiveWorkspaceId, navigateToChannel]);
 
-  // Create channel handler - opens the create channel modal
-  const handleCreateChannel = useCallback(() => {
+  const handleOpenCreateChannelModal = useCallback(() => {
     setIsCreateChannelOpen(true);
   }, []);
+
+  // Sidebar + button handler:
+  // in cloud mode open the join modal, in local mode open create modal.
+  const handleSidebarAddChannel = useCallback(() => {
+    if (isCloudMode && effectiveActiveWorkspaceId) {
+      setIsChannelBrowserOpen(true);
+      return;
+    }
+    handleOpenCreateChannelModal();
+  }, [effectiveActiveWorkspaceId, handleOpenCreateChannelModal, isCloudMode]);
+
+  const handleChannelJoined = useCallback(async (channel: BrowseChannel) => {
+    if (!effectiveActiveWorkspaceId) return;
+
+    try {
+      await refreshWorkspaceChannels(effectiveActiveWorkspaceId);
+
+      const normalizedChannelId = channel.id.startsWith('#') ? channel.id : `#${channel.id}`;
+      setSelectedChannelId(normalizedChannelId);
+      setViewMode('channels');
+      navigateToChannel(normalizedChannelId);
+    } catch (err) {
+      console.error('Failed to refresh channels after join:', err);
+    }
+  }, [effectiveActiveWorkspaceId, navigateToChannel, refreshWorkspaceChannels]);
 
   // Handler for creating a new channel via API
   const handleCreateChannelSubmit = useCallback(async (request: CreateChannelRequest) => {
@@ -1821,8 +1829,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     try {
       const result = await createChannel(effectiveActiveWorkspaceId, request);
       // Refresh channels list after successful creation
-      const response = await listChannels(effectiveActiveWorkspaceId);
-      setChannelListsFromResponse(response);
+      await refreshWorkspaceChannels(effectiveActiveWorkspaceId);
       if (result.channel?.id) {
         setSelectedChannelId(result.channel.id);
       }
@@ -1833,7 +1840,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     } finally {
       setIsCreatingChannel(false);
     }
-  }, [effectiveActiveWorkspaceId]);
+  }, [effectiveActiveWorkspaceId, refreshWorkspaceChannels]);
 
   // Handler for opening the invite to channel modal
   const handleInviteToChannel = useCallback((channel: Channel) => {
@@ -2221,7 +2228,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
       },
     });
 
-    // Create new channel
+    // Create channel
     commands.push({
       id: 'channels-create',
       label: 'Create Channel',
@@ -2229,7 +2236,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
       category: 'channels',
       action: () => {
         setViewMode('channels');
-        handleCreateChannel();
+        handleOpenCreateChannelModal();
       },
     });
 
@@ -2249,7 +2256,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     });
 
     return commands;
-  }, [channelsList, handleCreateChannel]);
+  }, [channelsList, handleOpenCreateChannelModal]);
 
   // Handle send from new conversation modal - select the channel after sending
   const handleNewConversationSend = useCallback(async (to: string, content: string): Promise<boolean> => {
@@ -2801,7 +2808,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
               setViewMode('channels');
             }
           }}
-          onCreateChannel={handleCreateChannel}
+          onCreateChannel={handleSidebarAddChannel}
           onInviteToChannel={(channel) => {
             const fullChannel = channelsList.find(c => c.id === channel.id);
             if (fullChannel) {
@@ -3156,6 +3163,16 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
         availableMembers={agents.map(a => a.name)}
         workspaceId={effectiveActiveWorkspaceId ?? undefined}
       />
+
+      {/* Join Channels Modal */}
+      {effectiveActiveWorkspaceId && (
+        <ChannelBrowser
+          workspaceId={effectiveActiveWorkspaceId}
+          isOpen={isChannelBrowserOpen}
+          onClose={() => setIsChannelBrowserOpen(false)}
+          onChannelJoined={handleChannelJoined}
+        />
+      )}
 
       {/* Invite to Channel Modal */}
       <InviteToChannelModal
