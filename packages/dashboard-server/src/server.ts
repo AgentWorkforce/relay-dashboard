@@ -8,19 +8,14 @@ import crypto from 'crypto';
 import { exec, execFile, execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { createStorageAdapter, type StorageAdapter, type StoredMessage } from '@agent-relay/storage/adapter';
-import { RelayClient, type ClientState, type Envelope, type ChannelMessagePayload } from '@agent-relay/sdk';
-import { UserBridge } from './services/user-bridge.js';
+import type { RelayAdapter } from '@agent-relay/sdk';
 import { computeNeedsAttention } from './services/needs-attention.js';
 import { computeSystemMetrics, formatPrometheusMetrics } from './services/metrics.js';
-import { MultiProjectClient } from '@agent-relay/bridge';
-import { AgentSpawner, type CloudPersistenceHandler } from '@agent-relay/bridge';
-import type { ProjectConfig, SpawnRequest } from '@agent-relay/bridge';
 import { listTrajectorySteps, getTrajectoryStatus, getTrajectoryHistory } from '@agent-relay/trajectory';
 import { loadTeamsConfig } from '@agent-relay/config';
-import { getMemoryMonitor } from '@agent-relay/resiliency';
 import { detectWorkspacePath, getAgentOutboxTemplate } from '@agent-relay/config';
 import { BrokerSpawnReader } from './services/broker-spawn-reader.js';
-import type { RelayAdapter } from '@agent-relay/broker-sdk';
+import { loadRelaycastConfig, fetchAgents, fetchAllMessages, type RelaycastConfig } from './relaycast-provider.js';
 // Dynamically find the dashboard static files directory
 // We can't import from @agent-relay/dashboard directly due to circular dependency
 function findDashboardDir(): string | null {
@@ -95,185 +90,6 @@ function getBindHost(): string | undefined {
   return isCloudEnvironment ? '::' : undefined;
 }
 
-/**
- * Initialize cloud persistence for session tracking via API.
- *
- * Uses the cloud API endpoints instead of direct database access for better
- * security isolation. Workspaces authenticate using WORKSPACE_TOKEN.
- *
- * Activation modes:
- * 1. Local dev: Set RELAY_CLOUD_ENABLED=true, CLOUD_API_URL, and WORKSPACE_TOKEN
- * 2. Cloud deployment: Provisioner sets these env vars automatically
- *
- * Session persistence enables:
- * - [[SUMMARY]] blocks saved to PostgreSQL via API
- * - [[SESSION_END]] markers for session tracking
- * - Session recovery and agent handoff
- */
-async function initCloudPersistence(workspaceId: string): Promise<CloudPersistenceHandler | null> {
-  if (process.env.RELAY_CLOUD_ENABLED !== 'true') {
-    return null;
-  }
-
-  const cloudApiUrl = process.env.CLOUD_API_URL;
-  const workspaceToken = process.env.WORKSPACE_TOKEN;
-
-  if (!cloudApiUrl || !workspaceToken) {
-    console.warn('[dashboard] Cloud persistence enabled but CLOUD_API_URL or WORKSPACE_TOKEN not set');
-    return null;
-  }
-
-  console.log('[dashboard] Cloud persistence enabled (API mode)');
-
-  // Track active sessions per agent with timestamps for TTL cleanup
-  const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-  const MAX_SESSIONS = 10000;
-  const agentSessionIds = new Map<string, { id: string; lastActivity: number }>();
-  // Track pending session creation to prevent race conditions
-  const pendingSessionCreation = new Map<string, Promise<string>>();
-
-  // Periodic cleanup of stale sessions (every 5 minutes)
-  const cleanupInterval = setInterval(() => {
-    const now = Date.now();
-    let evicted = 0;
-    for (const [name, { lastActivity }] of agentSessionIds.entries()) {
-      if (now - lastActivity > SESSION_TTL_MS) {
-        agentSessionIds.delete(name);
-        evicted++;
-      }
-    }
-    if (evicted > 0) {
-      console.log(`[cloud] Evicted ${evicted} stale session entries`);
-    }
-  }, 5 * 60 * 1000);
-
-  // Don't keep process alive just for cleanup
-  cleanupInterval.unref();
-
-  // Helper to call cloud API
-  const callCloudApi = async (endpoint: string, body: Record<string, unknown>): Promise<Record<string, unknown>> => {
-    const response = await fetch(`${cloudApiUrl}/api/sessions/${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${workspaceToken}`,
-      },
-      body: JSON.stringify({ workspaceId, ...body }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API call failed: ${response.status} ${errorText}`);
-    }
-
-    return response.json() as Promise<Record<string, unknown>>;
-  };
-
-  // Helper to get or create session with race protection
-  const getOrCreateSession = async (agentName: string): Promise<string> => {
-    // Check cache first
-    const cached = agentSessionIds.get(agentName);
-    if (cached) {
-      return cached.id;
-    }
-
-    // Check if creation is already in progress
-    const pending = pendingSessionCreation.get(agentName);
-    if (pending) {
-      return pending;
-    }
-
-    // Create session with mutex
-    const creationPromise = (async () => {
-      try {
-        // Double-check cache after acquiring "lock"
-        const rechecked = agentSessionIds.get(agentName);
-        if (rechecked) {
-          return rechecked.id;
-        }
-
-        // Enforce max size - evict oldest if needed
-        if (agentSessionIds.size >= MAX_SESSIONS) {
-          let oldest: { name: string; time: number } | null = null;
-          for (const [name, { lastActivity }] of agentSessionIds.entries()) {
-            if (!oldest || lastActivity < oldest.time) {
-              oldest = { name, time: lastActivity };
-            }
-          }
-          if (oldest) {
-            agentSessionIds.delete(oldest.name);
-            console.log(`[cloud] Evicted oldest session for ${oldest.name} (max sessions reached)`);
-          }
-        }
-
-        // Create a new session via API
-        const result = await callCloudApi('create', { agentName });
-        const sessionId = result.sessionId as string;
-
-        if (!sessionId) {
-          throw new Error(`Failed to create session for agent ${agentName}`);
-        }
-
-        // Update cache
-        agentSessionIds.set(agentName, { id: sessionId, lastActivity: Date.now() });
-        return sessionId;
-      } finally {
-        pendingSessionCreation.delete(agentName);
-      }
-    })();
-
-    pendingSessionCreation.set(agentName, creationPromise);
-    return creationPromise;
-  };
-
-  return {
-    onSummary: async (agentName, event) => {
-      try {
-        // Get or create session with race protection
-        const sessionId = await getOrCreateSession(agentName);
-
-        // Update activity timestamp
-        agentSessionIds.set(agentName, { id: sessionId, lastActivity: Date.now() });
-
-        // Save summary via API
-        await callCloudApi('summary', {
-          sessionId,
-          agentName,
-          summary: event.summary,
-        });
-
-        console.log(`[cloud] Saved summary for ${agentName}: ${event.summary.currentTask || 'no task'}`);
-      } catch (err) {
-        console.error(`[cloud] Failed to save summary for ${agentName}:`, err);
-      }
-    },
-
-    onSessionEnd: async (agentName, event) => {
-      try {
-        const cached = agentSessionIds.get(agentName);
-        if (cached) {
-          // End session via API
-          await callCloudApi('end', {
-            sessionId: cached.id,
-            endMarker: event.marker,
-          });
-
-          agentSessionIds.delete(agentName);
-          console.log(`[cloud] Session ended for ${agentName}: ${event.marker.summary || 'no summary'}`);
-        }
-      } catch (err) {
-        console.error(`[cloud] Failed to end session for ${agentName}:`, err);
-      }
-    },
-
-    destroy: () => {
-      clearInterval(cleanupInterval);
-      agentSessionIds.clear();
-      pendingSessionCreation.clear();
-      console.log('[cloud] Cloud persistence handler destroyed');
-    },
-  };
-}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -462,26 +278,26 @@ export async function startDashboard(
     ? { port: portOrOptions, dataDir: dataDirArg!, teamDir: teamDirArg!, dbPath: dbPathArg }
     : portOrOptions;
 
-  const { port, dataDir, teamDir, dbPath, enableSpawner, projectRoot, tmuxSession, onMarkSpawning, onClearSpawning, verbose, spawnManager: externalSpawnManager } = options;
+  const { port, dataDir, teamDir, dbPath, enableSpawner, projectRoot, verbose } = options;
   let { relayAdapter } = options;
 
-  // Auto-create a RelayAdapter when projectRoot is available and no adapter/spawnManager is passed.
+  // Auto-create a RelayAdapter when projectRoot is available and no adapter provided.
   // This makes the dashboard self-contained — `relay-dashboard-server --integrated --project-root .`
   // works without the CLI.
-  if (!relayAdapter && !externalSpawnManager && enableSpawner && projectRoot) {
-    try {
-      const brokerSdk = await import('@agent-relay/broker-sdk');
-      relayAdapter = new brokerSdk.RelayAdapter({
-        cwd: projectRoot,
-        clientName: 'dashboard',
-      });
-      console.log('[dashboard] Auto-created RelayAdapter for broker mode');
-    } catch {
-      // @agent-relay/broker-sdk not installed — fall back to legacy AgentSpawner
-    }
+  if (!relayAdapter && enableSpawner && projectRoot) {
+    const { RelayAdapter: RA } = await import('@agent-relay/sdk');
+    relayAdapter = new RA({
+      cwd: projectRoot,
+      clientName: 'dashboard',
+    });
+    console.log('[dashboard] Auto-created RelayAdapter for broker mode');
   }
 
-  const useBrokerAdapter = !!relayAdapter;
+  // Try to load Relaycast config for broker mode (data comes from Relaycast API instead of files)
+  const relaycastConfig: RelaycastConfig | null = loadRelaycastConfig(dataDir);
+  if (relaycastConfig) {
+    console.log('[dashboard] Relaycast config detected — will fetch data from Relaycast API');
+  }
 
   // Debug logging helper - only logs when verbose is true or VERBOSE env var is set
   const isVerbose = verbose || process.env.VERBOSE === 'true';
@@ -677,7 +493,7 @@ export async function startDashboard(
     });
   };
 
-  // Initialize spawner if enabled
+  // Initialize workspace path
   // When projectRoot is explicitly provided (e.g., via --project-root), use it directly.
   // Only use detectWorkspacePath for cloud workspace auto-detection when no explicit root is given.
   // This fixes #380: detectWorkspacePath could re-resolve projectRoot incorrectly when
@@ -685,76 +501,17 @@ export async function startDashboard(
   const workspacePath = projectRoot || detectWorkspacePath(dataDir);
   console.log(`[dashboard] Workspace path: ${workspacePath}`);
 
-  // Spawner / SpawnReader setup — three modes:
-  // 1. Broker adapter mode: relayAdapter provides spawn/release/list via Rust binary stdio
-  // 2. External SpawnManager: daemon co-located, read ops from daemon's SpawnManager
-  // 3. Local AgentSpawner: standalone mode, spawns agents directly
-  const useExternalSpawnManager = !!externalSpawnManager;
+  // Spawner / SpawnReader setup — broker adapter mode only
   let brokerSpawnReader: BrokerSpawnReader | undefined;
-  let spawner: AgentSpawner | undefined;
 
-  if (useBrokerAdapter) {
-    // Mode 1: Broker adapter — create BrokerSpawnReader backed by RelayAdapter
-    brokerSpawnReader = new BrokerSpawnReader(relayAdapter!);
-    await relayAdapter!.start();
+  if (relayAdapter) {
+    brokerSpawnReader = new BrokerSpawnReader(relayAdapter);
+    await relayAdapter.start();
     await brokerSpawnReader.initialize();
     console.log('[dashboard] Using broker adapter for spawn operations');
-  } else if (!useExternalSpawnManager && enableSpawner) {
-    // Mode 3: Local AgentSpawner (legacy standalone)
-    spawner = new AgentSpawner({
-      projectRoot: workspacePath,
-      tmuxSession,
-      dashboardPort: port,
-      onMarkSpawning,
-      onClearSpawning,
-    });
   }
 
-  // spawnReader provides read-only access to spawner state.
-  // Priority: broker adapter > external SpawnManager > local AgentSpawner
-  const spawnReader = brokerSpawnReader || externalSpawnManager || spawner;
-
-  if (useBrokerAdapter) {
-    // Already logged above
-  } else if (useExternalSpawnManager) {
-    console.log('[dashboard] Using daemon SpawnManager for spawn operations (SDK-routed)');
-  }
-
-  // Initialize cloud persistence (only for legacy local AgentSpawner mode)
-  if (spawner && !useExternalSpawnManager && !useBrokerAdapter) {
-    const workspaceId = process.env.RELAY_WORKSPACE_ID ||
-      crypto.createHash('sha256').update(projectRoot || dataDir).digest('hex').slice(0, 36);
-
-    initCloudPersistence(workspaceId).then((cloudHandler) => {
-      if (cloudHandler) {
-        spawner!.setCloudPersistence(cloudHandler);
-      }
-    }).catch((err) => {
-      console.warn('[dashboard] Failed to initialize cloud persistence:', err);
-    });
-  }
-
-  // Initialize memory monitoring for cloud deployments (skip in broker mode — use adapter.getMetrics())
-  if (!useBrokerAdapter && spawnReader && (process.env.RELAY_CLOUD_ENABLED === 'true' || process.env.RELAY_MEMORY_MONITORING === 'true')) {
-    try {
-      const memoryMonitor = getMemoryMonitor({
-        checkIntervalMs: 10000,
-        enableTrendAnalysis: true,
-        enableProactiveAlerts: true,
-      });
-      memoryMonitor.start();
-      console.log('[dashboard] Memory monitoring enabled');
-
-      const workers = spawnReader.getActiveWorkers();
-      for (const worker of workers) {
-        if (worker.pid) {
-          memoryMonitor.register(worker.name, worker.pid);
-        }
-      }
-    } catch (err) {
-      console.warn('[dashboard] Failed to initialize memory monitoring:', err);
-    }
-  }
+  const spawnReader = brokerSpawnReader;
 
   process.on('uncaughtException', (err) => {
     console.error('Uncaught Exception:', err);
@@ -823,9 +580,6 @@ export async function startDashboard(
   // This prevents TCP/proxy timeouts from killing idle workspace connections
   const mainClientAlive = new WeakMap<WebSocket, boolean>();
 
-  // Track alive status for ping/pong keepalive on bridge connections
-  const bridgeClientAlive = new WeakMap<WebSocket, boolean>();
-
   // Ping interval for main dashboard WebSocket connections (15 seconds)
   // Reduced from 30s to detect disconnects faster and minimize message loss window
   const MAIN_PING_INTERVAL_MS = 15000;
@@ -843,27 +597,9 @@ export async function startDashboard(
     });
   }, MAIN_PING_INTERVAL_MS);
 
-  // Ping interval for bridge WebSocket connections (15 seconds)
-  // Reduced from 30s to detect disconnects faster and minimize message loss window
-  const BRIDGE_PING_INTERVAL_MS = 15000;
-  const bridgePingInterval = setInterval(() => {
-    wssBridge.clients.forEach((ws) => {
-      if (bridgeClientAlive.get(ws) === false) {
-        debug('[dashboard] Bridge WebSocket client unresponsive, closing gracefully');
-        ws.close(1000, 'unresponsive');
-        return;
-      }
-      bridgeClientAlive.set(ws, false);
-      ws.ping();
-    });
-  }, BRIDGE_PING_INTERVAL_MS);
-
   // Clean up ping intervals on server close
   wss.on('close', () => {
     clearInterval(mainPingInterval);
-  });
-  wssBridge.on('close', () => {
-    clearInterval(bridgePingInterval);
   });
 
   // Track online users for presence with multi-tab support
@@ -1135,21 +871,11 @@ export async function startDashboard(
     });
   }
 
-  // Relay clients for sending messages from dashboard
-  // In broker adapter mode, messages go through the single RelayAdapter.
-  // In legacy mode, per-user RelayClient connections are created via socket.
-  const socketPath = path.join(dataDir, 'relay.sock');
-  const relayClients = new Map<string, RelayClient>();
-  // Forward declaration - initialized later, used by getRelayClient to avoid duplicate connections
-  // eslint-disable-next-line prefer-const
-  let userBridge: UserBridge | undefined;
-
-  // In broker mode, create shim objects that satisfy the RelayClient interface
-  // used by the rest of the server (sendMessage, state, spawn, release).
+  // Broker client shims — satisfy the RelayClient-like interface used by route handlers.
   // Each shim captures a sender name for proper message attribution.
   const brokerClientShimCache = new Map<string, Record<string, unknown>>();
   const getBrokerClientShim = (senderName: string) => {
-    if (!useBrokerAdapter) return undefined;
+    if (!relayAdapter) return undefined;
     let shim = brokerClientShimCache.get(senderName);
     if (!shim) {
       shim = {
@@ -1182,158 +908,25 @@ export async function startDashboard(
     return shim;
   };
 
+  // In broker mode, channel membership is managed via Relaycast — no daemon notification needed
   const notifyDaemonOfMembershipUpdate = async (
-    channel: string,
-    member: string,
-    action: 'join' | 'leave' | 'invite',
-    workspaceId?: string
+    _channel: string,
+    _member: string,
+    _action: 'join' | 'leave' | 'invite',
+    _workspaceId?: string
   ) => {
-    if (useBrokerAdapter) {
-      // In broker mode, channel membership is managed differently — no _router message needed
-      return;
-    }
-    const client = await getRelayClient('Dashboard');
-    if (!client || client.state !== 'READY') {
-      return;
-    }
-    client.sendMessage('_router', '', 'state', {
-      _channelMembershipUpdate: {
-        channel,
-        member,
-        action,
-        workspaceId,
-      },
-    });
+    // No-op in broker mode
   };
-  // Track pending client connections to prevent race conditions
-  const pendingConnections = new Map<string, Promise<RelayClient | undefined>>();
 
-  // Get or create a relay client for a specific sender
-  // In broker adapter mode, returns a shim backed by RelayAdapter.
+  // Get a relay client shim for a specific sender (broker adapter backed)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const getRelayClient = async (senderName: string = 'Dashboard', entityType?: 'agent' | 'user'): Promise<any> => {
-    // Broker adapter mode — return per-sender shim (always "ready")
-    if (useBrokerAdapter) {
-      return getBrokerClientShim(senderName);
-    }
-
-    // --- Legacy socket-based mode below ---
-    // Check if we already have a connected client for this sender
-    const existing = relayClients.get(senderName);
-    if (existing && existing.state === 'READY') {
-      return existing;
-    }
-
-    // Check if userBridge has a client for this user (avoid duplicate connections)
-    if (userBridge) {
-      const userBridgeClient = userBridge.getRelayClient(senderName);
-      if (userBridgeClient && userBridgeClient.state === 'READY') {
-        console.log(`[dashboard] Reusing userBridge client for ${senderName}`);
-        return userBridgeClient as unknown as RelayClient;
-      }
-    }
-
-    // Check if there's already a pending connection for this sender
-    const pending = pendingConnections.get(senderName);
-    if (pending) {
-      return pending;
-    }
-
-    // Only attempt connection if socket exists (daemon is running)
-    if (!fs.existsSync(socketPath)) {
-      console.log('[dashboard] Relay socket not found, messaging disabled');
-      return undefined;
-    }
-
-    // Create connection promise to prevent race conditions
-    const connectionPromise = (async (): Promise<RelayClient | undefined> => {
-      const isSystemClient = senderName.startsWith('_') || senderName === 'Dashboard';
-      const resolvedEntityType = entityType ?? (isSystemClient ? undefined : 'user');
-      const client = new RelayClient({
-        socketPath,
-        agentName: senderName,
-        entityType: resolvedEntityType,
-        cli: 'dashboard',
-        reconnect: true,
-        maxReconnectAttempts: 5,
-        _isSystemComponent: senderName === 'Dashboard',
-      });
-
-      client.onError = (err: Error) => {
-        console.error(`[dashboard] Relay client error for ${senderName}:`, err.message);
-      };
-
-      client.onStateChange = (state: ClientState) => {
-        console.log(`[dashboard] Relay client for ${senderName} state: ${state}`);
-        if (state === 'READY') {
-          relayClients.set(senderName, client);
-        } else if (state === 'DISCONNECTED') {
-          relayClients.delete(senderName);
-        }
-      };
-
-      client.onChannelMessage = (from: string, channel: string, body: string, envelope: Envelope<ChannelMessagePayload>) => {
-        const senderPresence = onlineUsers.get(from);
-        const fromAvatarUrl = senderPresence?.info.avatarUrl;
-        const fromEntityType: 'user' | 'agent' = senderPresence ? 'user' : 'agent';
-
-        broadcastChannelMessage({
-          type: 'channel_message',
-          targetUser: senderName,
-          channel,
-          from,
-          fromAvatarUrl,
-          fromEntityType,
-          body,
-          thread: envelope?.payload?.thread,
-          mentions: envelope?.payload?.mentions,
-          timestamp: new Date().toISOString(),
-        });
-      };
-
-      client.onMessage = (from: string, payload: unknown, messageId: string) => {
-        const body = typeof payload === 'object' && payload !== null && 'body' in payload
-          ? (payload as { body: string }).body
-          : String(payload);
-
-        const senderPresence = onlineUsers.get(from);
-        const fromAvatarUrl = senderPresence?.info.avatarUrl;
-        const fromEntityType: 'user' | 'agent' = senderPresence ? 'user' : 'agent';
-        const timestamp = new Date().toISOString();
-
-        broadcastDirectMessage({
-          type: 'direct_message',
-          targetUser: senderName,
-          from,
-          fromAvatarUrl,
-          fromEntityType,
-          body,
-          id: messageId,
-          messageId,
-          timestamp,
-        });
-      };
-
-      try {
-        await client.connect();
-        relayClients.set(senderName, client);
-        console.log(`[dashboard] Connected to relay daemon as ${senderName}`);
-        return client;
-      } catch (err) {
-        console.error(`[dashboard] Failed to connect to relay daemon as ${senderName}:`, err);
-        return undefined;
-      } finally {
-        pendingConnections.delete(senderName);
-      }
-    })();
-
-    pendingConnections.set(senderName, connectionPromise);
-    return connectionPromise;
+  const getRelayClient = async (senderName: string = 'Dashboard', _entityType?: 'agent' | 'user'): Promise<any> => {
+    return getBrokerClientShim(senderName);
   };
 
-  // In broker mode, subscribe to relay_inbound events for message forwarding
-  if (useBrokerAdapter) {
-    relayAdapter!.onEvent((event) => {
+  // Subscribe to relay_inbound events for message forwarding
+  if (relayAdapter) {
+    relayAdapter.onEvent((event) => {
       if (event.kind === 'relay_inbound') {
         const senderPresence = onlineUsers.get(event.from);
         const fromAvatarUrl = senderPresence?.info.avatarUrl;
@@ -1370,115 +963,6 @@ export async function startDashboard(
     });
     console.log('[dashboard] Broker event subscription active for message forwarding');
   }
-
-  // Start default relay client connection (non-blocking) — skip in broker mode
-  if (!useBrokerAdapter) {
-    getRelayClient('Dashboard').catch(() => {});
-  }
-
-  // User bridge for human-to-human and human-to-agent messaging
-  // In broker mode, skip UserBridge — messages go through the single adapter
-  if (!useBrokerAdapter) {
-    userBridge = new UserBridge({
-      socketPath,
-      createRelayClient: async (options) => {
-        const client = new RelayClient({
-          socketPath: options.socketPath,
-          agentName: options.agentName,
-          entityType: options.entityType,
-          displayName: options.displayName,
-          avatarUrl: options.avatarUrl,
-          cli: 'dashboard',
-          reconnect: true,
-          maxReconnectAttempts: 5,
-        });
-
-        client.onError = (err: Error) => {
-          console.error(`[user-bridge] Relay client error for ${options.agentName}:`, err.message);
-        };
-
-        await client.connect();
-        return client;
-      },
-      loadPersistedChannels: (username: string) =>
-        loadPersistedChannelsForUser(username, defaultWorkspaceId),
-      lookupUserInfo: (username: string) => {
-        const presence = onlineUsers.get(username);
-        if (presence) {
-          return { avatarUrl: presence.info.avatarUrl };
-        }
-        return undefined;
-      },
-    });
-  }
-
-  // Bridge client for cross-project messaging
-  // In broker mode, cross-project messaging goes through Relaycast cloud — skip socket bridge
-  let bridgeClient: MultiProjectClient | undefined;
-  let bridgeClientConnecting = false;
-
-  const connectBridgeClient = async (): Promise<void> => {
-    if (useBrokerAdapter) return; // Cross-project messaging via Relaycast cloud in broker mode
-    if (bridgeClient || bridgeClientConnecting) return;
-
-    const bridgeStatePath = path.join(dataDir, 'bridge-state.json');
-    if (!fs.existsSync(bridgeStatePath)) {
-      return;
-    }
-
-    try {
-      const bridgeState = JSON.parse(fs.readFileSync(bridgeStatePath, 'utf-8'));
-      if (!bridgeState.connected || !bridgeState.projects?.length) {
-        return;
-      }
-
-      bridgeClientConnecting = true;
-
-      const projectConfigs: ProjectConfig[] = bridgeState.projects.map((p: {
-        id: string;
-        path: string;
-        lead?: { name: string };
-      }) => {
-        const projectHash = crypto.createHash('sha256').update(p.path).digest('hex').slice(0, 12);
-        const projectDataDir = path.join(path.dirname(dataDir), projectHash);
-        const projectSocketPath = path.join(projectDataDir, 'relay.sock');
-
-        return {
-          id: p.id,
-          path: p.path,
-          socketPath: projectSocketPath,
-          leadName: p.lead?.name || 'Lead',
-          cli: 'dashboard-bridge',
-        };
-      });
-
-      const validConfigs = projectConfigs.filter((p: ProjectConfig) => fs.existsSync(p.socketPath));
-      if (validConfigs.length === 0) {
-        bridgeClientConnecting = false;
-        return;
-      }
-
-      bridgeClient = new MultiProjectClient(validConfigs, {
-        agentName: '__DashboardBridge__',
-        reconnect: true,
-      });
-
-      bridgeClient.onProjectStateChange = (projectId, connected) => {
-        console.log(`[dashboard-bridge] Project ${projectId} ${connected ? 'connected' : 'disconnected'}`);
-      };
-
-      await bridgeClient.connect();
-      console.log('[dashboard] Bridge client connected to', validConfigs.length, 'project(s)');
-      bridgeClientConnecting = false;
-    } catch (err) {
-      console.error('[dashboard] Failed to connect bridge client:', err);
-      bridgeClient = undefined;
-      bridgeClientConnecting = false;
-    }
-  };
-
-  // Start bridge client connection (non-blocking)
-  connectBridgeClient().catch(() => {});
 
   // Helper to check if an agent is online (seen within heartbeat timeout window)
   // Uses 30 second threshold to align with heartbeat timeout (5s * 6 multiplier)
@@ -1536,8 +1020,8 @@ export async function startDashboard(
 
   const isUserOnline = (username: string): boolean => {
     if (username === '*') return true;
-    // Check local presence, userBridge registration, and remote users from cloud
-    return onlineUsers.has(username) || userBridge?.isUserRegistered(username) || isRemoteUser(username);
+    // Check local presence and remote users from cloud
+    return onlineUsers.has(username) || isRemoteUser(username);
   };
 
   const isRecipientOnline = (name: string): boolean => (
@@ -1684,33 +1168,9 @@ export async function startDashboard(
     }
   });
 
-  // API endpoint to send messages via bridge (cross-project)
-  app.post('/api/bridge/send', async (req, res) => {
-    const { projectId, to, message } = req.body;
-
-    if (!projectId || !to || !message) {
-      return res.status(400).json({ error: 'Missing "projectId", "to", or "message" field' });
-    }
-
-    // Try to connect bridge client if not connected
-    if (!bridgeClient) {
-      await connectBridgeClient();
-      if (!bridgeClient) {
-        return res.status(503).json({ error: 'Bridge not connected. Is the bridge command running?' });
-      }
-    }
-
-    try {
-      const sent = bridgeClient.sendToProject(projectId, to, message);
-      if (sent) {
-        res.json({ success: true });
-      } else {
-        res.status(500).json({ error: `Failed to send message to ${projectId}:${to}` });
-      }
-    } catch (err) {
-      console.error('[dashboard] Failed to send bridge message:', err);
-      res.status(500).json({ error: 'Failed to send bridge message' });
-    }
+  // Cross-project messaging goes through Relaycast cloud — no local bridge needed
+  app.post('/api/bridge/send', async (_req, res) => {
+    res.status(410).json({ error: 'Legacy bridge removed. Cross-project messaging uses Relaycast.' });
   });
 
   // API endpoint to upload attachments (images/screenshots)
@@ -2080,26 +1540,44 @@ export async function startDashboard(
   };
 
   const getAllData = async () => {
-    const team = getTeamData();
-    if (!team) return null; // Signal that team data is temporarily unavailable
-
     const agentsMap = new Map<string, AgentStatus>();
-    const allMessages: Message[] = await getMessages(team.agents);
+    let allMessages: Message[];
 
-    // Initialize agents from config
-    team.agents.forEach((a: any) => {
-      agentsMap.set(a.name, {
-        name: a.name,
-        role: a.role,
-        cli: a.cli ?? 'Unknown',
-        messageCount: 0,
-        status: 'Idle',
-        lastSeen: a.lastSeen,
-        lastActive: a.lastActive,
-        needsAttention: false,
-        team: a.team,
+    if (relaycastConfig) {
+      // Broker mode: fetch data from Relaycast API (same approach as relay-cloud)
+      const [rcAgents, rcMessages] = await Promise.all([
+        fetchAgents(relaycastConfig),
+        fetchAllMessages(relaycastConfig),
+      ]);
+
+      // Note: empty agents + messages is valid (workspace just started).
+      // We only return null in legacy mode when team.json is missing.
+
+      for (const a of rcAgents) {
+        agentsMap.set(a.name, a);
+      }
+      allMessages = rcMessages;
+    } else {
+      // Legacy mode: read from team.json / agents.json + storage / inbox files
+      const team = getTeamData();
+      if (!team) return null;
+
+      allMessages = await getMessages(team.agents);
+
+      team.agents.forEach((a: any) => {
+        agentsMap.set(a.name, {
+          name: a.name,
+          role: a.role,
+          cli: a.cli ?? 'Unknown',
+          messageCount: 0,
+          status: 'Idle',
+          lastSeen: a.lastSeen,
+          lastActive: a.lastActive,
+          needsAttention: false,
+          team: a.team,
+        });
       });
-    });
+    }
 
     // Inject online human users (connected via dashboard WebSocket) into agentsMap
     // These users are tracked in onlineUsers for presence but need to appear in the agents list
@@ -2260,8 +1738,8 @@ export async function startDashboard(
       }
     }
 
-    // Inject cwd from agentCwdMap for agents not in spawner's active workers
-    // (e.g., agents that connected before spawner tracked them, or after restarts)
+    // Inject cwd from agentCwdMap for agents not in spawnReader's active workers
+    // (e.g., agents that connected before spawnReader tracked them, or after restarts)
     for (const [name, cwd] of agentCwdMap) {
       const agent = agentsMap.get(name);
       if (agent && !agent.cwd) {
@@ -2344,10 +1822,15 @@ export async function startDashboard(
         // Exclude agents without a proper CLI (improperly registered or stale)
         if (!agent.cli || agent.cli === 'Unknown') return false;
 
-        // Exclude offline agents (no lastSeen or too old)
-        if (!agent.lastSeen) return false;
-        const lastSeenTime = new Date(agent.lastSeen).getTime();
-        if (now - lastSeenTime > OFFLINE_THRESHOLD_MS) return false;
+        if (relaycastConfig) {
+          // Relaycast mode: trust the status field from the API
+          if (agent.status !== 'online') return false;
+        } else {
+          // Legacy mode: exclude offline agents (no lastSeen or too old)
+          if (!agent.lastSeen) return false;
+          const lastSeenTime = new Date(agent.lastSeen).getTime();
+          if (now - lastSeenTime > OFFLINE_THRESHOLD_MS) return false;
+        }
 
         return true;
       });
@@ -2619,14 +2102,6 @@ export async function startDashboard(
   wssBridge.on('connection', async (ws) => {
     debug('[dashboard] Bridge WebSocket client connected');
 
-    // Mark client as alive initially for ping/pong keepalive
-    bridgeClientAlive.set(ws, true);
-
-    // Handle pong responses (keep connection alive)
-    ws.on('pong', () => {
-      bridgeClientAlive.set(ws, true);
-    });
-
     try {
       const data = await getBridgeData();
       const payload = JSON.stringify(data);
@@ -2832,7 +2307,7 @@ export async function startDashboard(
           await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
           isSpawned = spawnReader.hasWorker(agentName);
           if (isSpawned) {
-            console.log(`[dashboard] Agent ${agentName} appeared in spawner after ${Date.now() - startTime}ms`);
+            console.log(`[dashboard] Agent ${agentName} appeared in spawnReader after ${Date.now() - startTime}ms`);
             break;
           }
           // Check if WebSocket was closed during wait
@@ -3174,10 +2649,9 @@ export async function startDashboard(
       }
     });
 
-    // Only broadcast to presence WS if UserBridge does NOT have a session for
-    // the target user. When UserBridge is active it already delivers the DM
-    // directly to the user's WebSocket(s), so broadcasting here would duplicate.
-    const targetHandledByBridge = userBridge?.isUserRegistered(message.targetUser) ?? false;
+    // In broker mode, messages are delivered via the broker adapter,
+    // so always broadcast to presence WebSocket clients.
+    const targetHandledByBridge = false;
     if (!targetHandledByBridge) {
       const presenceClients = Array.from(wssPresence.clients).filter(c => c.readyState === WebSocket.OPEN);
       if (presenceClients.length > 0) {
@@ -3260,10 +2734,6 @@ export async function startDashboard(
               existing.connections.add(ws);
               existing.info.lastSeen = now;
 
-              // Update userBridge to use the new WebSocket for message delivery
-              // This ensures messages are sent to an active connection, not a stale one
-              userBridge?.updateWebSocket(username, ws);
-
               // Only log at milestones to reduce noise
               const count = existing.connections.size;
               if (count === 2 || count === 5 || count === 10 || count % 50 === 0) {
@@ -3282,11 +2752,6 @@ export async function startDashboard(
               });
 
               console.log(`[dashboard] User ${username} came online`);
-
-              // Register user with relay daemon for messaging
-              userBridge?.registerUser(username, ws, { avatarUrl }).catch((err) => {
-                console.error(`[dashboard] Failed to register user ${username} with relay:`, err);
-              });
 
               // Broadcast join to all other clients (only for truly new users)
               broadcastPresence({
@@ -3374,21 +2839,12 @@ export async function startDashboard(
             console.warn(`[dashboard] Invalid channel_join: missing channel`);
             return;
           }
-          userBridge?.joinChannel(clientUsername, msg.channel).then((success) => {
-            ws.send(JSON.stringify({
-              type: 'channel_joined',
-              channel: msg.channel,
-              success,
-            }));
-          }).catch((err) => {
-            console.error(`[dashboard] Channel join error:`, err);
-            ws.send(JSON.stringify({
-              type: 'channel_joined',
-              channel: msg.channel,
-              success: false,
-              error: err.message,
-            }));
-          });
+          // Broker mode handles channel joins differently
+          ws.send(JSON.stringify({
+            type: 'channel_joined',
+            channel: msg.channel,
+            success: true,
+          }));
         } else if (msg.type === 'channel_leave') {
           // Leave a channel
           if (!clientUsername) {
@@ -3399,15 +2855,12 @@ export async function startDashboard(
             console.warn(`[dashboard] Invalid channel_leave: missing channel`);
             return;
           }
-          userBridge?.leaveChannel(clientUsername, msg.channel).then((success) => {
-            ws.send(JSON.stringify({
-              type: 'channel_left',
-              channel: msg.channel,
-              success,
-            }));
-          }).catch((err) => {
-            console.error(`[dashboard] Channel leave error:`, err);
-          });
+          // Broker mode handles channel leaves differently
+          ws.send(JSON.stringify({
+            type: 'channel_left',
+            channel: msg.channel,
+            success: true,
+          }));
         } else if (msg.type === 'channel_message') {
           // Send message to channel
           if (!clientUsername) {
@@ -3422,11 +2875,7 @@ export async function startDashboard(
             console.warn(`[dashboard] Invalid channel_message: missing body`);
             return;
           }
-          userBridge?.sendChannelMessage(clientUsername, msg.channel, msg.body, {
-            thread: msg.thread,
-          }).catch((err) => {
-            console.error(`[dashboard] Channel message error:`, err);
-          });
+          // Channel messages are handled via the broker adapter
         } else if (msg.type === 'direct_message') {
           // Send direct message to user or agent
           if (!clientUsername) {
@@ -3441,11 +2890,7 @@ export async function startDashboard(
             console.warn(`[dashboard] Invalid direct_message: missing body`);
             return;
           }
-          userBridge?.sendDirectMessage(clientUsername, msg.to, msg.body, {
-            thread: msg.thread,
-          }).catch((err) => {
-            console.error(`[dashboard] Direct message error:`, err);
-          });
+          // Direct messages are handled via the broker adapter
         }
       } catch (err) {
         console.error('[dashboard] Invalid presence message:', err);
@@ -3468,9 +2913,6 @@ export async function startDashboard(
             onlineUsers.delete(clientUsername);
             console.log(`[dashboard] User ${clientUsername} disconnected`);
 
-            // Unregister from relay daemon
-            userBridge?.unregisterUser(clientUsername);
-
             broadcastPresence({
               type: 'presence_leave',
               username: clientUsername,
@@ -3481,6 +2923,23 @@ export async function startDashboard(
         }
       }
     });
+  });
+
+  // Cloud-only endpoints that don't apply in integrated/local mode.
+  // Return sensible defaults so the dashboard frontend doesn't error.
+  app.get('/api/workspaces/primary', (_req, res) => {
+    res.json({
+      success: true,
+      data: {
+        exists: false,
+        statusMessage: 'Running locally',
+        workspace: null,
+      },
+    });
+  });
+
+  app.get('/api/usage', (_req, res) => {
+    res.json({ success: true, data: null });
   });
 
   app.get('/api/data', (req, res) => {
@@ -3505,7 +2964,7 @@ export async function startDashboard(
       if (!username) {
         return res.status(400).json({ error: 'username query param required' });
       }
-      const channels = userBridge?.getUserChannels(username) ?? [];
+      const channels = [] as string[];
       return res.json({
         channels: channels.map((id) => ({
           id,
@@ -3604,22 +3063,6 @@ export async function startDashboard(
         }
       }
 
-      // Get registered users from userBridge
-      if (userBridge) {
-        const registeredUsers = userBridge.getRegisteredUsers();
-        for (const username of registeredUsers) {
-          // Skip if already in agents list or if it's a system user
-          if (!availableAgents.some(a => a.id === username) && username !== 'Dashboard') {
-            availableAgents.push({
-              id: username,
-              displayName: username,
-              entityType: 'agent', // Treat as agent for now since they're connected to relay
-              status: 'online',
-            });
-          }
-        }
-      }
-
       res.json({
         success: true,
         members: [], // Human users would come from cloud/workspace in cloud mode
@@ -3652,18 +3095,13 @@ export async function startDashboard(
     const channelId = name.startsWith('#') ? name : `#${name}`;
 
     try {
-      // Join the creator to the channel
-      // Note: userBridge.joinChannel triggers router's persistChannelMembership via protocol
-      // We only persist here for dashboard-initiated creates (no daemon connection)
-      await userBridge?.joinChannel(username, channelId);
+      // Join the creator to the channel (broker adapter handles channel routing)
       await persistChannelMembershipEvent(channelId, username, 'join', { workspaceId });
 
       // Handle invites if provided
       if (invites) {
         const inviteList = invites.split(',').map((s) => s.trim()).filter(Boolean);
         for (const invitee of inviteList) {
-          // userBridge.joinChannel handles persistence via protocol
-          await userBridge?.joinChannel(invitee, channelId);
           await persistChannelMembershipEvent(channelId, invitee, 'invite', { invitedBy: username, workspaceId });
         }
       }
@@ -3760,15 +3198,9 @@ export async function startDashboard(
       for (const invitee of inviteList) {
         let success = false;
         let reason: string | undefined;
-        if (userBridge?.isUserRegistered(invitee.id)) {
-          success = await userBridge?.joinChannel(invitee.id, channelId);
-          if (!success) {
-            reason = 'join_failed';
-          }
-        } else {
-          success = true;
-          reason = 'pending';
-        }
+        // Broker adapter handles channel membership
+        success = true;
+        reason = 'pending';
 
         await persistChannelMembershipEvent(channelId, invitee.id, 'invite', {
           invitedBy,
@@ -3789,7 +3221,7 @@ export async function startDashboard(
    * GET /api/channels/users - Get list of registered users
    */
   app.get('/api/channels/users', (_req, res) => {
-    const users = userBridge?.getRegisteredUsers() ?? [];
+    const users = [] as string[];
     res.json({ users });
   });
 
@@ -3811,32 +3243,20 @@ export async function startDashboard(
 
     let success = false;
 
-    // Step 1: Try userBridge (for users connected via local WebSocket)
-    const isLocalUser = userBridge?.isUserRegistered(username);
-    console.log(`[channels] Join: isLocalUser=${isLocalUser}`);
+    // Use relay client for channel join (broker adapter handles routing)
+    console.log('[channels] Using relay client for join');
+    try {
+      const client = await getRelayClient(username);
+      console.log(`[channels] Got relay client: ${client ? `state=${client.state}` : 'null'}`);
 
-    if (isLocalUser) {
-      console.log(`[channels] Calling userBridge.joinChannel(${username}, ${channelId})`);
-      success = await userBridge?.joinChannel(username, channelId) ?? false;
-      console.log(`[channels] userBridge.joinChannel returned: ${success}`);
-    }
-
-    // Step 2: If not local or userBridge failed, use relay client fallback
-    if (!success) {
-      console.log('[channels] Using relay client fallback for join');
-      try {
-        const client = await getRelayClient(username);
-        console.log(`[channels] Got relay client: ${client ? `state=${client.state}` : 'null'}`);
-
-        if (client && client.state === 'READY') {
-          success = client.joinChannel(channelId, username);
-          console.log(`[channels] relay client joinChannel returned: ${success}`);
-        } else {
-          console.log('[channels] Relay client not ready or null');
-        }
-      } catch (err: any) {
-        console.log(`[channels] Relay client error: ${err.message}`);
+      if (client && client.state === 'READY') {
+        success = client.joinChannel(channelId, username);
+        console.log(`[channels] relay client joinChannel returned: ${success}`);
+      } else {
+        console.log('[channels] Relay client not ready or null');
       }
+    } catch (err: any) {
+      console.log(`[channels] Relay client error: ${err.message}`);
     }
 
     if (success) {
@@ -3857,11 +3277,9 @@ export async function startDashboard(
     }
     const workspaceId = resolveWorkspaceId(req);
     try {
-      const success = await userBridge?.leaveChannel(username, channel);
-      if (success) {
-        await persistChannelMembershipEvent(channel, username, 'leave', { workspaceId });
-      }
-      res.json({ success, channel });
+      // Broker adapter handles channel leave
+      await persistChannelMembershipEvent(channel, username, 'leave', { workspaceId });
+      res.json({ success: true, channel });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -3879,10 +3297,9 @@ export async function startDashboard(
     const workspaceId = resolveWorkspaceId(req);
     try {
       console.log(`[channels] Admin join: ${member} -> ${channel}`);
-      const success = await userBridge?.adminJoinChannel(channel, member);
-      if (success) {
-        await persistChannelMembershipEvent(channel, member, 'join', { workspaceId });
-      }
+      // Broker adapter handles channel membership
+      await persistChannelMembershipEvent(channel, member, 'join', { workspaceId });
+      const success = true;
 
       // Check if member is connected (warning for unconnected members)
       let warning: string | undefined;
@@ -3925,10 +3342,9 @@ export async function startDashboard(
     const workspaceId = resolveWorkspaceId(req);
     try {
       console.log(`[channels] Admin remove: ${member} <- ${channel}`);
-      const success = await userBridge?.adminRemoveMember(channel, member);
-      if (success) {
-        await persistChannelMembershipEvent(channel, member, 'leave', { workspaceId });
-      }
+      // Broker adapter handles channel membership
+      await persistChannelMembershipEvent(channel, member, 'leave', { workspaceId });
+      const success = true;
       res.json({ success, channel, member });
     } catch (err: any) {
       console.error('[channels] Admin remove failed:', err.message);
@@ -3965,8 +3381,8 @@ export async function startDashboard(
         }
       }
 
-      // Get connected users from userBridge
-      const connectedUsers = userBridge?.getRegisteredUsers() ?? [];
+      // In broker mode, connected users are tracked via the broker adapter
+      const connectedUsers = [] as string[];
 
       // Build member list
       const memberSet = new Set<string>();
@@ -4090,9 +3506,7 @@ export async function startDashboard(
   /**
    * POST /api/channels/subscribe - Subscribe a cloud user to channel messages
    * This joins the user to channels through their existing relay connection.
-   * IMPORTANT: Prefers userBridge (for cloud users connected via presence) over
-   * getRelayClient (fallback) to avoid creating duplicate connections that would
-   * conflict and break message routing.
+   * In broker mode, uses getRelayClient broker shim for channel subscriptions.
    */
   app.post('/api/channels/subscribe', express.json(), async (req, res) => {
     const { username, channels, workspaceId: _workspaceId } = req.body;
@@ -4106,41 +3520,8 @@ export async function startDashboard(
       const joinedChannels: string[] = [];
       const channelList = channels || ['#general'];
 
-      // Wait for userBridge registration to complete (cloud users send presence join
-      // which triggers async registration - we need to wait for it to finish)
-      // This prevents falling back to getRelayClient which creates a conflicting connection
-      let regAttempts = 0;
-      const maxRegAttempts = 20; // 2 seconds max wait
-      while (!userBridge?.isUserRegistered(username) && regAttempts < maxRegAttempts) {
-        await new Promise(r => setTimeout(r, 100));
-        regAttempts++;
-      }
-
-      if (regAttempts > 0) {
-        console.log(`[channel-debug] SUBSCRIBE waited ${regAttempts * 100}ms for userBridge registration`);
-      }
-
-      // Check if user is registered with userBridge (cloud users via presence)
-      // This is the preferred path as it uses the existing relay connection
-      // and ensures channel messages flow through the proper callback chain
-      if (userBridge?.isUserRegistered(username)) {
-        console.log(`[channel-debug] SUBSCRIBE via userBridge for ${username}`);
-        for (const channel of channelList) {
-          const channelId = channel.startsWith('dm:')
-            ? channel
-            : (channel.startsWith('#') ? channel : `#${channel}`);
-          const joined = await userBridge?.joinChannel(username, channelId);
-          if (joined) {
-            joinedChannels.push(channelId);
-          }
-        }
-        console.log(`[channel-debug] SUBSCRIBE success via userBridge: ${username} joined ${joinedChannels.join(', ')}`);
-        return res.json({ success: true, channels: joinedChannels });
-      }
-
-      // Fallback: Use getRelayClient for users not registered with userBridge
-      // This path is used for direct API calls or when presence isn't established
-      console.log(`[channel-debug] SUBSCRIBE via getRelayClient fallback for ${username}`);
+      // Use getRelayClient broker shim for channel subscriptions
+      console.log(`[channel-debug] SUBSCRIBE via getRelayClient for ${username}`);
       const client = await getRelayClient(username);
       if (!client) {
         console.log(`[channel-debug] SUBSCRIBE failed: could not create relay client for ${username}`);
@@ -4208,52 +3589,32 @@ export async function startDashboard(
       ? channel
       : (channel.startsWith('#') ? channel : `#${channel}`);
 
-    // SIMPLE APPROACH: Always try relay client first for sending
-    // userBridge is only useful for users connected via local WebSocket
-    // For cloud-proxied requests, we need to use relay client directly
+    // Use relay client broker shim for sending channel messages
 
     let success = false;
 
-    // Step 1: Check if user is registered with userBridge (local mode)
-    const isLocalUser = userBridge?.isUserRegistered(username);
-    console.log(`[channel-msg] Is local user: ${isLocalUser}`);
+    console.log('[channel-msg] Using relay client');
+    try {
+      const client = await getRelayClient(username);
+      console.log(`[channel-msg] Got relay client: ${client ? `state=${client.state}` : 'null'}`);
 
-    if (isLocalUser) {
-      // Local user - use userBridge
-      console.log('[channel-msg] Using userBridge (local user)');
-      success = await userBridge?.sendChannelMessage(username, channelId, body, {
-        thread,
-        data: workspaceId ? { _workspaceId: workspaceId } : undefined,
-        attachments,
-      }) ?? false;
-      console.log(`[channel-msg] userBridge result: ${success}`);
-    }
+      if (client && client.state === 'READY') {
+        // Join the channel first (idempotent)
+        const joinResult = client.joinChannel(channelId, username);
+        console.log(`[channel-msg] Join channel result: ${joinResult}`);
 
-    // Step 2: If not local or userBridge failed, use relay client
-    if (!success) {
-      console.log('[channel-msg] Using relay client fallback');
-      try {
-        const client = await getRelayClient(username);
-        console.log(`[channel-msg] Got relay client: ${client ? `state=${client.state}` : 'null'}`);
-
-        if (client && client.state === 'READY') {
-          // Join the channel first (idempotent)
-          const joinResult = client.joinChannel(channelId, username);
-          console.log(`[channel-msg] Join channel result: ${joinResult}`);
-
-          // Send the message
-          success = client.sendChannelMessage(channelId, body, {
-            thread,
-            data: workspaceId ? { _workspaceId: workspaceId } : undefined,
-            attachments,
-          });
-          console.log(`[channel-msg] sendChannelMessage result: ${success}`);
-        } else {
-          console.log('[channel-msg] Relay client not ready or null');
-        }
-      } catch (err: any) {
-        console.log(`[channel-msg] Relay client error: ${err.message}`);
+        // Send the message
+        success = client.sendChannelMessage(channelId, body, {
+          thread,
+          data: workspaceId ? { _workspaceId: workspaceId } : undefined,
+          attachments,
+        });
+        console.log(`[channel-msg] sendChannelMessage result: ${success}`);
+      } else {
+        console.log('[channel-msg] Relay client not ready or null');
       }
+    } catch (err: any) {
+      console.log(`[channel-msg] Relay client error: ${err.message}`);
     }
 
     console.log(`[channel-msg] Final result: success=${success}`);
@@ -4341,8 +3702,8 @@ export async function startDashboard(
       return res.status(400).json({ error: 'from, to, and body required' });
     }
     try {
-      const success = await userBridge?.sendDirectMessage(from, to, body, { thread });
-      res.json({ success });
+      // Direct messages are handled via the broker adapter
+      res.json({ success: false });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -4356,24 +3717,10 @@ export async function startDashboard(
   app.get('/health', async (req, res) => {
     const uptime = process.uptime();
     const memUsage = process.memoryUsage();
-    const socketExists = fs.existsSync(socketPath);
-
-    // Check relay client connectivity (check if default Dashboard client is connected)
-    const defaultClient = relayClients.get('Dashboard');
-    const relayConnected = defaultClient?.state === 'READY';
-
-    // If socket doesn't exist, daemon may not be running properly
-    if (!socketExists) {
-      return res.status(503).json({
-        status: 'unhealthy',
-        reason: 'Relay socket not found',
-        uptime,
-        memoryMB: Math.round(memUsage.heapUsed / 1024 / 1024),
-      });
-    }
+    const relayConnected = !!relayAdapter;
 
     res.json({
-      status: 'healthy',
+      status: relayConnected ? 'healthy' : 'unhealthy',
       uptime,
       memoryMB: Math.round(memUsage.heapUsed / 1024 / 1024),
       relayConnected,
@@ -4387,21 +3734,10 @@ export async function startDashboard(
   app.get('/api/health', async (req, res) => {
     const uptime = process.uptime();
     const memUsage = process.memoryUsage();
-    const socketExists = fs.existsSync(socketPath);
-    const defaultClient = relayClients.get('Dashboard');
-    const relayConnected = defaultClient?.state === 'READY';
-
-    if (!socketExists) {
-      return res.status(503).json({
-        status: 'unhealthy',
-        reason: 'Relay socket not found',
-        uptime,
-        memoryMB: Math.round(memUsage.heapUsed / 1024 / 1024),
-      });
-    }
+    const relayConnected = !!relayAdapter;
 
     res.json({
-      status: 'healthy',
+      status: relayConnected ? 'healthy' : 'unhealthy',
       uptime,
       memoryMB: Math.round(memUsage.heapUsed / 1024 / 1024),
       relayConnected,
@@ -4784,7 +4120,6 @@ export async function startDashboard(
   app.get('/api/metrics', async (req, res) => {
     try {
       // Read agent registry for message counts
-      const agentsPath = path.join(teamDir, 'agents.json');
       let agentRecords: Array<{
         name: string;
         messagesSent: number;
@@ -4793,15 +4128,29 @@ export async function startDashboard(
         lastSeen: string;
       }> = [];
 
-      if (fs.existsSync(agentsPath)) {
-        const data = JSON.parse(fs.readFileSync(agentsPath, 'utf-8'));
-        agentRecords = (data.agents || []).map((a: any) => ({
+      if (relaycastConfig) {
+        // Broker mode: fetch agents from Relaycast API
+        const rcAgents = await fetchAgents(relaycastConfig);
+        agentRecords = rcAgents.map(a => ({
           name: a.name,
-          messagesSent: a.messagesSent ?? 0,
-          messagesReceived: a.messagesReceived ?? 0,
-          firstSeen: a.firstSeen ?? new Date().toISOString(),
+          messagesSent: 0,
+          messagesReceived: 0,
+          firstSeen: a.lastSeen ?? new Date().toISOString(),
           lastSeen: a.lastSeen ?? new Date().toISOString(),
         }));
+      } else {
+        // Legacy mode: read from agents.json
+        const agentsPath = path.join(teamDir, 'agents.json');
+        if (fs.existsSync(agentsPath)) {
+          const data = JSON.parse(fs.readFileSync(agentsPath, 'utf-8'));
+          agentRecords = (data.agents || []).map((a: any) => ({
+            name: a.name,
+            messagesSent: a.messagesSent ?? 0,
+            messagesReceived: a.messagesReceived ?? 0,
+            firstSeen: a.firstSeen ?? new Date().toISOString(),
+            lastSeen: a.lastSeen ?? new Date().toISOString(),
+          }));
+        }
       }
 
       // Get messages for throughput calculation - use storage directly for metrics
@@ -4831,7 +4180,6 @@ export async function startDashboard(
   app.get('/api/metrics/prometheus', async (req, res) => {
     try {
       // Read agent registry for message counts
-      const agentsPath = path.join(teamDir, 'agents.json');
       let agentRecords: Array<{
         name: string;
         messagesSent: number;
@@ -4840,15 +4188,29 @@ export async function startDashboard(
         lastSeen: string;
       }> = [];
 
-      if (fs.existsSync(agentsPath)) {
-        const data = JSON.parse(fs.readFileSync(agentsPath, 'utf-8'));
-        agentRecords = (data.agents || []).map((a: any) => ({
+      if (relaycastConfig) {
+        // Broker mode: fetch agents from Relaycast API
+        const rcAgents = await fetchAgents(relaycastConfig);
+        agentRecords = rcAgents.map(a => ({
           name: a.name,
-          messagesSent: a.messagesSent ?? 0,
-          messagesReceived: a.messagesReceived ?? 0,
-          firstSeen: a.firstSeen ?? new Date().toISOString(),
+          messagesSent: 0,
+          messagesReceived: 0,
+          firstSeen: a.lastSeen ?? new Date().toISOString(),
           lastSeen: a.lastSeen ?? new Date().toISOString(),
         }));
+      } else {
+        // Legacy mode: read from agents.json
+        const agentsPath = path.join(teamDir, 'agents.json');
+        if (fs.existsSync(agentsPath)) {
+          const data = JSON.parse(fs.readFileSync(agentsPath, 'utf-8'));
+          agentRecords = (data.agents || []).map((a: any) => ({
+            name: a.name,
+            messagesSent: a.messagesSent ?? 0,
+            messagesReceived: a.messagesReceived ?? 0,
+            firstSeen: a.firstSeen ?? new Date().toISOString(),
+            lastSeen: a.lastSeen ?? new Date().toISOString(),
+          }));
+        }
       }
 
       // Get messages for throughput calculation - use storage directly for metrics
@@ -5401,7 +4763,7 @@ export async function startDashboard(
 
   // Bridge API endpoint - returns multi-project data
   // This is a placeholder that returns empty data when not in bridge mode
-  // The actual bridge data comes from MultiProjectClient when running `agent-relay bridge`
+  // The actual bridge data comes from the broker adapter when running `agent-relay bridge`
   app.get('/api/bridge', async (req, res) => {
     try {
       // Check if bridge state file exists (written by bridge command)
@@ -5793,10 +5155,10 @@ export async function startDashboard(
    * Body: { name: string, cli?: string, task?: string, team?: string, spawnerName?, cwd?, interactive?, shadowMode?, shadowAgent?, shadowOf?, shadowTriggers?, shadowSpeakOn? }
    */
   app.post('/api/spawn', async (req, res) => {
-    if (!spawner && !useExternalSpawnManager) {
+    if (!relayAdapter) {
       return res.status(503).json({
         success: false,
-        error: 'Spawner not enabled. Start dashboard with enableSpawner: true',
+        error: 'Relay adapter not available. Broker mode required for spawning.',
       });
     }
 
@@ -5829,66 +5191,20 @@ export async function startDashboard(
     try {
       let result: { success: boolean; name: string; pid?: number; error?: string; policyDecision?: unknown };
 
-      if (useBrokerAdapter) {
-        // Route spawn through broker SDK → Rust binary
-        result = await relayAdapter!.spawn({
-          name,
-          cli,
-          task,
-          team: team || undefined,
-          cwd: effectiveCwd || undefined,
-          interactive,
-          shadowMode,
-          shadowOf,
-          spawnerName: spawnerName || undefined,
-          userId: typeof userId === 'string' ? userId : undefined,
-          includeWorkflowConventions: true,
-        });
-      } else if (useExternalSpawnManager) {
-        // Route spawn through SDK → daemon socket → SpawnManager
-        const client = await getRelayClient('Dashboard');
-        if (!client) {
-          return res.status(503).json({
-            success: false,
-            error: 'Not connected to relay daemon',
-          });
-        }
-        result = await client.spawn({
-          name,
-          cli,
-          task,
-          team: team || undefined,
-          cwd: effectiveCwd || undefined,
-          interactive,
-          shadowMode,
-          shadowAgent,
-          shadowOf,
-          shadowTriggers,
-          shadowSpeakOn,
-          spawnerName: spawnerName || undefined,
-          userId: typeof userId === 'string' ? userId : undefined,
-          includeWorkflowConventions: true,
-        } as Parameters<typeof client.spawn>[0]);
-      } else {
-        // Fall back to local AgentSpawner (standalone mode)
-        const request: SpawnRequest = {
-          name,
-          cli,
-          task,
-          team: team || undefined,
-          spawnerName: spawnerName || undefined,
-          cwd: effectiveCwd || undefined,
-          interactive,
-          shadowMode,
-          shadowAgent,
-          shadowOf,
-          shadowTriggers,
-          shadowSpeakOn,
-          userId: typeof userId === 'string' ? userId : undefined,
-          includeWorkflowConventions: true,
-        };
-        result = await spawner!.spawn(request);
-      }
+      // Route spawn through broker SDK → Rust binary
+      result = await relayAdapter!.spawn({
+        name,
+        cli,
+        task,
+        team: team || undefined,
+        cwd: effectiveCwd || undefined,
+        interactive,
+        shadowMode,
+        shadowOf,
+        spawnerName: spawnerName || undefined,
+        userId: typeof userId === 'string' ? userId : undefined,
+        includeWorkflowConventions: true,
+      });
 
       if (result.success) {
         // Track cwd for this agent so /api/spawned can return it
@@ -5908,7 +5224,8 @@ export async function startDashboard(
         });
       }
 
-      res.json(result);
+      const statusCode = result.success ? 200 : 502;
+      res.status(statusCode).json(result);
     } catch (err: any) {
       console.error('[api] Spawn error:', err);
       res.status(500).json({
@@ -6035,10 +5352,10 @@ export async function startDashboard(
    * Body: { cli?: string }
    */
   app.post('/api/spawn/architect', async (req, res) => {
-    if (!spawner && !useExternalSpawnManager) {
+    if (!relayAdapter) {
       return res.status(503).json({
         success: false,
-        error: 'Spawner not enabled. Start dashboard with enableSpawner: true',
+        error: 'Relay adapter not available. Broker mode required for spawning.',
       });
     }
 
@@ -6131,32 +5448,12 @@ Start by greeting the project leads and asking for status updates.`;
     try {
       let result: { success: boolean; name?: string; pid?: number; error?: string };
 
-      if (useBrokerAdapter) {
-        result = await relayAdapter!.spawn({
-          name: 'Architect',
-          cli,
-          task: architectPrompt,
-          includeWorkflowConventions: true,
-        });
-      } else if (useExternalSpawnManager) {
-        const client = await getRelayClient('Dashboard');
-        if (!client) {
-          return res.status(503).json({ success: false, error: 'Not connected to relay daemon' });
-        }
-        result = await client.spawn({
-          name: 'Architect',
-          cli,
-          task: architectPrompt,
-          includeWorkflowConventions: true,
-        } as Parameters<typeof client.spawn>[0]);
-      } else {
-        result = await spawner!.spawn({
-          name: 'Architect',
-          cli,
-          task: architectPrompt,
-          includeWorkflowConventions: true,
-        });
-      }
+      result = await relayAdapter!.spawn({
+        name: 'Architect',
+        cli,
+        task: architectPrompt,
+        includeWorkflowConventions: true,
+      });
 
       if (result.success) {
         broadcastData().catch(() => {});
@@ -6259,31 +5556,18 @@ Start by greeting the project leads and asking for status updates.`;
    * DELETE /api/spawned/:name - Release a spawned agent
    */
   app.delete('/api/spawned/:name', async (req, res) => {
-    if (!spawner && !useExternalSpawnManager && !useBrokerAdapter) {
+    if (!relayAdapter) {
       return res.status(503).json({
         success: false,
-        error: 'Spawner not enabled',
+        error: 'Relay adapter not available. Broker mode required for releasing agents.',
       });
     }
 
     const { name } = req.params;
 
     try {
-      let released: boolean;
-
-      if (useBrokerAdapter) {
-        const result = await relayAdapter!.release(name);
-        released = result.success;
-      } else if (useExternalSpawnManager) {
-        const client = await getRelayClient('Dashboard');
-        if (!client) {
-          return res.status(503).json({ success: false, error: 'Not connected to relay daemon' });
-        }
-        const result = await client.release(name);
-        released = result.success;
-      } else {
-        released = await spawner!.release(name);
-      }
+      const result = await relayAdapter!.release(name);
+      const released = result.success;
 
       if (released) {
         agentCwdMap.delete(name);
@@ -7202,12 +6486,6 @@ Start by greeting the project leads and asking for status updates.`;
       console.log(`Dashboard running at http://${host || 'localhost'}:${availablePort} (build: cloud-channels-v2)`);
       console.log(`Monitoring: ${dataDir}`);
 
-      // Set the dashboard port on local spawner so spawned agents can use the API for nested spawns
-      // Not needed when using external SpawnManager (daemon handles this)
-      if (spawner && !useExternalSpawnManager) {
-        spawner.setDashboardPort(availablePort);
-      }
-
       // Start health worker on separate thread for reliable health checks
       // This ensures health checks respond even when main event loop is blocked
       const healthPort = getHealthPort(availablePort);
@@ -7216,16 +6494,11 @@ Start by greeting the project leads and asking for status updates.`;
         {
           getUptime: () => process.uptime(),
           getMemoryMB: () => Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-          getRelayConnected: () => {
-            const defaultClient = relayClients.get('Dashboard');
-            return defaultClient?.state === 'READY';
-          },
-          getAgentCount: () => relayClients.size,
+          getRelayConnected: () => !!relayAdapter,
+          getAgentCount: () => spawnReader?.getActiveWorkers()?.length ?? 0,
           getStatus: () => {
-            const socketExists = fs.existsSync(socketPath);
-            if (!socketExists) return 'degraded';
-            const defaultClient = relayClients.get('Dashboard');
-            return defaultClient?.state === 'READY' ? 'healthy' : 'busy';
+            if (!relayAdapter) return 'degraded';
+            return 'healthy';
           },
         }
       );

@@ -222,13 +222,15 @@ export function Header({
           <MetricsIcon />
         </a>
 
-        <button
-          className="flex items-center justify-center p-1.5 sm:p-2 bg-bg-tertiary border border-border-subtle rounded-lg text-text-secondary cursor-pointer transition-all duration-150 hover:bg-bg-elevated hover:border-border-medium hover:text-accent-purple"
-          onClick={onSettingsClick}
-          title="Settings"
-        >
-          <SettingsIcon />
-        </button>
+        {onSettingsClick && (
+          <button
+            className="flex items-center justify-center p-1.5 sm:p-2 bg-bg-tertiary border border-border-subtle rounded-lg text-text-secondary cursor-pointer transition-all duration-150 hover:bg-bg-elevated hover:border-border-medium hover:text-accent-purple"
+            onClick={onSettingsClick}
+            title="Settings"
+          >
+            <SettingsIcon />
+          </button>
+        )}
       </div>
     </header>
   );

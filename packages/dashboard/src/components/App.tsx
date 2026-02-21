@@ -2809,7 +2809,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
                 setIsAddWorkspaceOpen(true);
               }
             }}
-            onWorkspaceSettings={handleWorkspaceSettingsClick}
+            onWorkspaceSettings={isCloudMode ? handleWorkspaceSettingsClick : undefined}
             isLoading={effectiveIsLoading}
           />
         </div>
@@ -2917,7 +2917,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
           selectedChannelName={selectedChannel?.name}
           onProjectChange={handleProjectSelect}
           onCommandPaletteOpen={handleCommandPaletteOpen}
-          onSettingsClick={handleSettingsClick}
+          onSettingsClick={isCloudMode ? handleSettingsClick : undefined}
           onHistoryClick={handleHistoryClick}
           onNewConversationClick={handleNewConversationClick}
           onFleetClick={() => setIsFleetViewActive(!isFleetViewActive)}
@@ -3432,6 +3432,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
           onUpdateSettings={updateSettings}
           activeWorkspaceId={effectiveActiveWorkspaceId}
           onReposChanged={refetchWorkspaceRepos}
+          isCloudMode={isCloudMode}
         />
       )}
 

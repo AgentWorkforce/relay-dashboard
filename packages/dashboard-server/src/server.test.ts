@@ -7,7 +7,7 @@
  * @agent-relay/* packages. Full integration testing requires:
  * - A running SQLite database
  * - The @agent-relay/storage adapter
- * - The @agent-relay/bridge for multi-project connections
+ * - The @agent-relay/sdk for broker adapter
  * - Various other @agent-relay services
  *
  * For development/testing without these dependencies, use the proxy-server
@@ -55,8 +55,7 @@ describe('server types', () => {
 /**
  * Note: Full integration tests for server.ts require:
  * - @agent-relay/storage (SqliteStorageAdapter)
- * - @agent-relay/sdk (RelayClient)
- * - @agent-relay/bridge (MultiProjectClient, AgentSpawner)
+ * - @agent-relay/sdk (RelayAdapter)
  * - Actual file system setup (data dir, team config)
  *
  * For API testing without these dependencies, use proxy-server in mock mode

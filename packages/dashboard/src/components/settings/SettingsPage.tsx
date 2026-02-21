@@ -33,6 +33,8 @@ export interface SettingsPageProps {
   activeWorkspaceId?: string | null;
   /** Callback when repos are added/removed in workspace settings */
   onReposChanged?: () => void;
+  /** Whether the dashboard is running in cloud mode (shows all tabs) */
+  isCloudMode?: boolean;
 }
 
 interface WorkspaceSummary {
@@ -49,6 +51,7 @@ export function SettingsPage({
   onUpdateSettings,
   activeWorkspaceId,
   onReposChanged,
+  isCloudMode = false,
 }: SettingsPageProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'workspace' | 'team' | 'billing'>(initialTab);
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
@@ -63,8 +66,12 @@ export function SettingsPage({
     }
   }, [activeWorkspaceId]);
 
-  // Load workspaces
+  // Load workspaces (only in cloud mode)
   useEffect(() => {
+    if (!isCloudMode) {
+      setIsLoadingWorkspaces(false);
+      return;
+    }
     async function loadWorkspaces() {
       setIsLoadingWorkspaces(true);
       const result = await cloudApi.getWorkspaceSummary();
@@ -79,7 +86,7 @@ export function SettingsPage({
       setIsLoadingWorkspaces(false);
     }
     loadWorkspaces();
-  }, [selectedWorkspaceId]);
+  }, [selectedWorkspaceId, isCloudMode]);
 
   const updateSettings = useCallback((updater: (prev: Settings) => Settings) => {
     onUpdateSettings(updater);
@@ -98,12 +105,14 @@ export function SettingsPage({
     });
   }, [updateSettings]);
 
-  const tabs = [
+  const allTabs = [
     { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
     { id: 'workspace', label: 'Workspace', icon: <WorkspaceIcon /> },
     { id: 'team', label: 'Team', icon: <TeamIcon /> },
     { id: 'billing', label: 'Billing', icon: <BillingIcon /> },
   ] as const;
+
+  const tabs = isCloudMode ? allTabs : allTabs.filter(t => t.id === 'dashboard');
 
   return (
     <div className="fixed inset-0 z-[1100] bg-bg-deep">

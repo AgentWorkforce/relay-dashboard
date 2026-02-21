@@ -176,6 +176,20 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       },
     };
 
+    // In proxy/local mode, workspace status endpoints are not available
+    // from the broker. Return a sensible default so the dashboard doesn't
+    // show errors or get stuck in a loading state.
+    app.get('/api/workspaces/primary', (_req: Request, res: Response) => {
+      res.json({
+        success: true,
+        data: {
+          exists: false,
+          statusMessage: 'Running locally',
+          workspace: null,
+        },
+      });
+    });
+
     app.use('/api', createProxyMiddleware(apiProxyOptions));
     app.use('/auth', createProxyMiddleware(apiProxyOptions));
     app.use('/metrics', createProxyMiddleware(apiProxyOptions));

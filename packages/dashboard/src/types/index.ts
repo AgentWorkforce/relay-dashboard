@@ -279,6 +279,8 @@ export interface SpawnAgentRequest {
   shadowTriggers?: SpeakOnTrigger[];
   /** When the shadow should speak */
   shadowSpeakOn?: SpeakOnTrigger[];
+  /** Agent name to continue session from (agent continuity) */
+  continueFrom?: string;
 }
 
 export interface SpawnAgentResponse {

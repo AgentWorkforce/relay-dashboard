@@ -4,7 +4,6 @@
  * Re-exports all service modules for the dashboard server.
  */
 
-export { UserBridge, type IRelayClient } from './user-bridge.js';
 export { computeNeedsAttention, type AttentionMessage } from './needs-attention.js';
 export {
   computeSystemMetrics,

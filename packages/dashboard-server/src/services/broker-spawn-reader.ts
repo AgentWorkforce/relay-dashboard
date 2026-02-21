@@ -6,7 +6,7 @@
  * worker output, updated via broker event subscription.
  */
 
-import type { RelayAdapter, RelayAgentInfo } from '@agent-relay/broker-sdk';
+import type { RelayAdapter, RelayAgentInfo } from '@agent-relay/sdk';
 import type { SpawnManagerLike } from '../types/index.js';
 
 /** Max lines of output to buffer per agent (matches xterm scrollback). */

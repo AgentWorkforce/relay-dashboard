@@ -7,12 +7,12 @@
 import type { Express } from 'express';
 import type { Server } from 'http';
 import type { WebSocketServer } from 'ws';
-import type { RelayAdapter } from '@agent-relay/broker-sdk';
+import type { RelayAdapter } from '@agent-relay/sdk';
 
 /**
  * Interface for spawn manager read operations.
  * When the daemon's SpawnManager is passed in, the dashboard uses it
- * for read operations (logs, worker listing) instead of creating its own AgentSpawner.
+ * for read operations (logs, worker listing).
  * Spawn/release go through the SDK client → daemon socket.
  */
 export interface SpawnManagerLike {
@@ -47,30 +47,11 @@ export interface DashboardOptions {
   enableSpawner?: boolean;
   /** Project root for spawner (defaults to dataDir) */
   projectRoot?: string;
-  /** Tmux session name for workers */
-  tmuxSession?: string;
   /** Enable verbose logging (WebSocket connections, broadcasts, etc.) */
   verbose?: boolean;
   /**
-   * Callback to mark an agent as spawning (before HELLO completes).
-   * Messages sent to this agent will be queued for delivery after registration.
-   */
-  onMarkSpawning?: (agentName: string) => void;
-  /**
-   * Callback to clear the spawning flag for an agent.
-   * Called when spawn fails or is cancelled.
-   */
-  onClearSpawning?: (agentName: string) => void;
-  /**
-   * Daemon's SpawnManager instance for read operations (logs, worker listing).
-   * When provided, spawn/release go through the SDK client instead of a local AgentSpawner.
-   * This solves relay-pty binary resolution issues in npx/global installs.
-   */
-  spawnManager?: SpawnManagerLike;
-  /**
-   * RelayAdapter instance for broker SDK mode.
-   * When provided, replaces socket-based RelayClient, AgentSpawner,
-   * and MultiProjectClient with the broker binary via stdio.
+   * RelayAdapter instance for broker mode.
+   * Provides spawn/release/list/messaging via the broker binary.
    */
   relayAdapter?: RelayAdapter;
 }
@@ -162,7 +143,4 @@ export interface ServerContext {
   defaultWorkspaceId?: string;
   /** Enable spawner */
   enableSpawner?: boolean;
-  /** Spawn callbacks */
-  onMarkSpawning?: (name: string) => void;
-  onClearSpawning?: (name: string) => void;
 }
