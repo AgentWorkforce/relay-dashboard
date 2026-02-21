@@ -8,6 +8,13 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { getAgentColor, getAgentInitials } from '../lib/colors';
 import { cloudApi } from '../lib/cloudApi';
+import {
+  CLAUDE_MODEL_OPTIONS,
+  CURSOR_MODEL_OPTIONS,
+  CODEX_MODEL_OPTIONS,
+  GEMINI_MODEL_OPTIONS,
+  DefaultModels,
+} from 'agent-relay/broker';
 
 export type SpeakOnTrigger = 'SESSION_END' | 'CODE_WRITTEN' | 'REVIEW_REQUEST' | 'EXPLICIT_ASK' | 'ALL_MESSAGES';
 
@@ -56,61 +63,13 @@ export interface SpawnModalProps {
   activeRepoId?: string;
 }
 
-/** Model options for Claude agents */
-export const CLAUDE_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'opus', label: 'Opus' },
-  { value: 'haiku', label: 'Haiku' },
-];
+// Model options imported from agent-relay/broker (source: cli-registry.yaml)
+// Re-export for backwards compatibility
+export { CLAUDE_MODEL_OPTIONS, CURSOR_MODEL_OPTIONS, CODEX_MODEL_OPTIONS, GEMINI_MODEL_OPTIONS };
 
 type ClaudeModel = string;
-
-/** Model options for Cursor agents */
-export const CURSOR_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'opus-4.5-thinking', label: 'Claude 4.5 Opus (Thinking)' },
-  { value: 'opus-4.5', label: 'Claude 4.5 Opus' },
-  { value: 'sonnet-4.5', label: 'Claude 4.5 Sonnet' },
-  { value: 'sonnet-4.5-thinking', label: 'Claude 4.5 Sonnet (Thinking)' },
-  { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
-  { value: 'gpt-5.2-codex-high', label: 'GPT-5.2 Codex High' },
-  { value: 'gpt-5.2-codex-low', label: 'GPT-5.2 Codex Low' },
-  { value: 'gpt-5.2-codex-xhigh', label: 'GPT-5.2 Codex Extra High' },
-  { value: 'gpt-5.2-codex-fast', label: 'GPT-5.2 Codex Fast' },
-  { value: 'gpt-5.2-codex-high-fast', label: 'GPT-5.2 Codex High Fast' },
-  { value: 'gpt-5.2-codex-low-fast', label: 'GPT-5.2 Codex Low Fast' },
-  { value: 'gpt-5.2-codex-xhigh-fast', label: 'GPT-5.2 Codex Extra High Fast' },
-  { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
-  { value: 'gpt-5.1-codex-max-high', label: 'GPT-5.1 Codex Max High' },
-  { value: 'gpt-5.2', label: 'GPT-5.2' },
-  { value: 'gpt-5.2-high', label: 'GPT-5.2 High' },
-  { value: 'gpt-5.1-high', label: 'GPT-5.1 High' },
-  { value: 'gemini-3-pro', label: 'Gemini 3 Pro' },
-  { value: 'gemini-3-flash', label: 'Gemini 3 Flash' },
-  { value: 'composer-1', label: 'Composer 1' },
-  { value: 'grok', label: 'Grok' },
-];
-
 type CursorModel = string;
-
-/** Model options for Codex agents */
-export const CODEX_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex — Frontier agentic coding model' },
-  { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex — Latest frontier agentic coding model' },
-  { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max — Deep and fast reasoning' },
-  { value: 'gpt-5.2', label: 'GPT-5.2 — Frontier model, knowledge & reasoning' },
-  { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini — Cheaper, faster' },
-];
-
 type CodexModel = string;
-
-/** Model options for Gemini agents */
-export const GEMINI_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-];
-
 type GeminiModel = string;
 
 const AGENT_TEMPLATES = [
@@ -194,10 +153,10 @@ export function SpawnModal({
   const [selectedTemplate, setSelectedTemplate] = useState(AGENT_TEMPLATES[0]);
   const [name, setName] = useState('');
   const [customCommand, setCustomCommand] = useState('');
-  const [selectedModel, setSelectedModel] = useState<ClaudeModel>('sonnet');
-  const [selectedCursorModel, setSelectedCursorModel] = useState<CursorModel>('opus-4.5-thinking');
-  const [selectedCodexModel, setSelectedCodexModel] = useState<CodexModel>('gpt-5.2-codex');
-  const [selectedGeminiModel, setSelectedGeminiModel] = useState<GeminiModel>('gemini-2.5-pro');
+  const [selectedModel, setSelectedModel] = useState<ClaudeModel>(DefaultModels.claude);
+  const [selectedCursorModel, setSelectedCursorModel] = useState<CursorModel>(DefaultModels.cursor);
+  const [selectedCodexModel, setSelectedCodexModel] = useState<CodexModel>(DefaultModels.codex);
+  const [selectedGeminiModel, setSelectedGeminiModel] = useState<GeminiModel>(DefaultModels.gemini);
   const [cwd, setCwd] = useState('');
   const [selectedRepoId, setSelectedRepoId] = useState<string | undefined>(activeRepoId);
   const [team, setTeam] = useState('');
@@ -325,11 +284,11 @@ export function SpawnModal({
       setSelectedTemplate(defaultTemplate);
       setName('');
       setCustomCommand('');
-      // Use settings-based model defaults with fallbacks
-      setSelectedModel(agentDefaults?.defaultModels?.claude ?? 'sonnet');
-      setSelectedCursorModel(agentDefaults?.defaultModels?.cursor ?? 'opus-4.5-thinking');
-      setSelectedCodexModel(agentDefaults?.defaultModels?.codex ?? 'gpt-5.2-codex');
-      setSelectedGeminiModel(agentDefaults?.defaultModels?.gemini ?? 'gemini-2.5-pro');
+      // Use settings-based model defaults with fallbacks from SDK
+      setSelectedModel(agentDefaults?.defaultModels?.claude ?? DefaultModels.claude);
+      setSelectedCursorModel(agentDefaults?.defaultModels?.cursor ?? DefaultModels.cursor);
+      setSelectedCodexModel(agentDefaults?.defaultModels?.codex ?? DefaultModels.codex);
+      setSelectedGeminiModel(agentDefaults?.defaultModels?.gemini ?? DefaultModels.gemini);
       setCwd('');
       setSelectedRepoId(activeRepoId);
       setTeam('');

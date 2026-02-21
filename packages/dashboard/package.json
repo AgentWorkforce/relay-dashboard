@@ -43,6 +43,7 @@
     "clean": "rm -rf out .next dist"
   },
   "dependencies": {
+    "agent-relay": "^2.3.14",
     "@nangohq/frontend": "^0.69.20",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
