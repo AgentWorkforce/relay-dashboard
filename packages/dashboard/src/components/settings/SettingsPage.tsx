@@ -53,7 +53,9 @@ export function SettingsPage({
   onReposChanged,
   isCloudMode = false,
 }: SettingsPageProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'workspace' | 'team' | 'billing'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'workspace' | 'team' | 'billing'>(
+    !isCloudMode && initialTab !== 'dashboard' ? 'dashboard' : initialTab
+  );
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   // Initialize with activeWorkspaceId from parent if provided
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(activeWorkspaceId ?? null);
