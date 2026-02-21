@@ -16,7 +16,12 @@ import { WorkspaceSettingsPanel } from './WorkspaceSettingsPanel';
 import { TeamSettingsPanel } from './TeamSettingsPanel';
 import { BillingSettingsPanel } from './BillingSettingsPanel';
 import type { Settings, CliType } from './types';
-import { CLAUDE_MODEL_OPTIONS, CURSOR_MODEL_OPTIONS, CODEX_MODEL_OPTIONS, GEMINI_MODEL_OPTIONS } from '../SpawnModal';
+import {
+  CLAUDE_MODEL_OPTIONS,
+  CURSOR_MODEL_OPTIONS,
+  CODEX_MODEL_OPTIONS,
+  GEMINI_MODEL_OPTIONS,
+} from 'agent-relay/broker';
 
 export interface SettingsPageProps {
   /** Current user ID for team membership checks */
