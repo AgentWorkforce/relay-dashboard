@@ -28,18 +28,10 @@ export { App, appStyles, type AppProps } from './App';
 export { MentionAutocomplete, useMentionAutocomplete, getMentionQuery, completeMentionInValue, type MentionAutocompleteProps } from './MentionAutocomplete';
 export { ProjectList, type ProjectListProps } from './ProjectList';
 export { WorkspaceSelector, type WorkspaceSelectorProps, type Workspace } from './WorkspaceSelector';
-export { WorkspaceSettingsPanel, type WorkspaceSettingsPanelProps } from './settings/WorkspaceSettingsPanel';
 export { AddWorkspaceModal, type AddWorkspaceModalProps } from './AddWorkspaceModal';
 export { PricingPlans, type PricingPlansProps, type Plan } from './PricingPlans';
 export { BillingPanel, type BillingPanelProps, type Subscription, type Invoice, type PaymentMethod } from './BillingPanel';
-export { SessionExpiredModal, type SessionExpiredModalProps } from './SessionExpiredModal';
 export { ProvisioningProgress, type ProvisioningProgressProps } from './ProvisioningProgress';
-export {
-  CloudSessionProvider,
-  useCloudSession,
-  useCloudSessionOptional,
-  type CloudSessionProviderProps,
-} from './CloudSessionProvider';
 export {
   WorkspaceProvider,
   useWorkspace,
@@ -61,7 +53,6 @@ export {
   useAgents,
   useMessages,
   useOrchestrator,
-  useSession,
   type UseWebSocketOptions,
   type UseWebSocketReturn,
   type UseAgentsOptions,
@@ -70,12 +61,8 @@ export {
   type UseMessagesReturn,
   type UseOrchestratorOptions,
   type UseOrchestratorResult,
-  type UseSessionOptions,
-  type UseSessionReturn,
   type DashboardData,
   type AgentWithColor,
   type OrchestratorAgent,
   type OrchestratorEvent,
-  type SessionError,
-  type CloudUser,
 } from './hooks';

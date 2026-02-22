@@ -3,16 +3,30 @@
  * Relay Dashboard Server Entry Point
  *
  * Start the dashboard server from the command line.
- * Supports three modes:
- * - Integrated mode: Full integration with @agent-relay packages (used by `agent-relay up --dashboard`)
- * - Proxy mode (default): Forwards requests to a relay daemon HTTP endpoint
- * - Mock mode: Returns fixture data for testing without dependencies
+ * Single entry point using proxy-server.ts:
+ * - Default mode: Relaycast data + broker proxy
+ * - Standalone mode: Relaycast data only (omit relay URL)
+ * - Mock mode: Fixture data, no dependencies
  */
 
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { startServer } from './proxy-server.js';
+
+interface CliOptions {
+  port?: number;
+  relayUrl?: string;
+  dataDir?: string;
+  staticDir?: string;
+  mock?: boolean;
+  verbose?: boolean;
+}
+
+const DEFAULT_PORT = 3888;
+const DEFAULT_RELAY_URL = 'http://localhost:3889';
+const DEFAULT_DATA_DIR = '.agent-relay';
+const DEFAULT_STATIC_DIR = './out';
 
 // Read version - prefer build-time define for compiled binaries, fall back to package.json
 function getVersion(): string {
@@ -49,97 +63,106 @@ function getVersion(): string {
   return 'unknown';
 }
 
-// Parse command line arguments
-const args = process.argv.slice(2);
-const options: Record<string, string | boolean> = {};
-
-for (let i = 0; i < args.length; i++) {
-  const arg = args[i];
-  if (arg === '--port' || arg === '-p') {
-    options.port = args[++i];
-  } else if (arg === '--relay-url' || arg === '-r') {
-    options.relayUrl = args[++i];
-  } else if (arg === '--static-dir' || arg === '-s') {
-    options.staticDir = args[++i];
-  } else if (arg === '--verbose' || arg === '-v') {
-    options.verbose = true;
-  } else if (arg === '--mock' || arg === '-m') {
-    options.mock = true;
-  } else if (arg === '--integrated') {
-    options.integrated = true;
-  } else if (arg === '--data-dir') {
-    options.dataDir = args[++i];
-  } else if (arg === '--team-dir') {
-    options.teamDir = args[++i];
-  } else if (arg === '--project-root') {
-    options.projectRoot = args[++i];
-  } else if (arg === '--version' || arg === '-V') {
-    console.log(getVersion());
-    process.exit(0);
-  } else if (arg === '--help' || arg === '-h') {
-    console.log(`
+function printHelp(): void {
+  console.log(`
 Relay Dashboard Server v${getVersion()}
-
-A standalone dashboard for Agent Relay that can run in three modes:
-- Integrated mode: Full @agent-relay integration (used by CLI)
-- Proxy mode (default): Forwards requests to a relay daemon HTTP endpoint
-- Mock mode: Returns fixture data for testing without dependencies
 
 Usage: relay-dashboard-server [options]
 
+Modes:
+  Default: Serves dashboard with Relaycast data + broker proxy
+  --mock:  Serves dashboard with fixture data (no dependencies)
+  No --relay-url: Standalone read-only mode (Relaycast data only)
+
 Options:
-  -p, --port <port>        Port to listen on (default: 3888, env: PORT)
-  -r, --relay-url <url>    Relay daemon URL for proxy mode (default: http://localhost:3889, env: RELAY_URL)
-  -s, --static-dir <path>  Static files directory (default: ./out, env: STATIC_DIR)
-  -m, --mock               Run in mock mode - no relay daemon required (env: MOCK=true)
+  -p, --port <port>        Port to listen on (default: ${DEFAULT_PORT}, env: PORT)
+  -r, --relay-url <url>    Relay daemon URL (default: ${DEFAULT_RELAY_URL}, env: RELAY_URL)
+  --data-dir <path>        Relaycast credentials directory (default: ${DEFAULT_DATA_DIR}, env: DATA_DIR)
+  -s, --static-dir <path>  Static files directory (default: ${DEFAULT_STATIC_DIR}, env: STATIC_DIR)
+  -m, --mock               Run in mock mode (env: MOCK=true)
   -v, --verbose            Enable verbose logging (env: VERBOSE=true)
-  --integrated             Run in integrated mode (requires --data-dir, --team-dir, --project-root)
-  --data-dir <path>        Data directory for integrated mode
-  --team-dir <path>        Team directory for integrated mode
   -V, --version            Output the version number
-  --project-root <path>    Project root for integrated mode
   -h, --help               Show this help message
 
 Examples:
-  relay-dashboard                      # Start in proxy mode (requires relay daemon HTTP)
-  relay-dashboard --mock               # Start in mock mode (standalone)
-  relay-dashboard -m -v                # Mock mode with verbose logging
-  relay-dashboard -p 4000 -m           # Mock mode on custom port
-  relay-dashboard --integrated --data-dir ... --team-dir ... --project-root ...
+  relay-dashboard-server
+  relay-dashboard-server --mock
+  relay-dashboard-server --port 4000 --relay-url http://localhost:3889
+  relay-dashboard-server --data-dir /path/to/.agent-relay --verbose
 `);
-    process.exit(0);
+}
+
+function readOptionValue(args: string[], index: number, flag: string): string {
+  const value = args[index + 1];
+  if (!value || value.startsWith('-')) {
+    throw new Error(`Missing value for ${flag}`);
   }
+  return value;
+}
+
+function parsePort(value: string): number {
+  const port = Number.parseInt(value, 10);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error(`Invalid port: ${value}`);
+  }
+  return port;
+}
+
+function parseArgs(args: string[]): CliOptions {
+  const options: CliOptions = {};
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === '--port' || arg === '-p') {
+      options.port = parsePort(readOptionValue(args, i, arg));
+      i += 1;
+    } else if (arg === '--relay-url' || arg === '-r') {
+      options.relayUrl = readOptionValue(args, i, arg);
+      i += 1;
+    } else if (arg === '--data-dir') {
+      options.dataDir = readOptionValue(args, i, arg);
+      i += 1;
+    } else if (arg === '--static-dir' || arg === '-s') {
+      options.staticDir = readOptionValue(args, i, arg);
+      i += 1;
+    } else if (arg === '--mock' || arg === '-m') {
+      options.mock = true;
+    } else if (arg === '--verbose' || arg === '-v') {
+      options.verbose = true;
+    } else if (arg === '--version' || arg === '-V') {
+      console.log(getVersion());
+      process.exit(0);
+    } else if (arg === '--help' || arg === '-h') {
+      printHelp();
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown option: ${arg}`);
+    }
+  }
+
+  return options;
+}
+
+let cliOptions: CliOptions;
+try {
+  cliOptions = parseArgs(process.argv.slice(2));
+} catch (error) {
+  console.error((error as Error).message);
+  console.error('Use --help to see available options.');
+  process.exit(1);
 }
 
 // Start the server
 async function main() {
-  if (options.integrated) {
-    // Integrated mode: use startDashboard which connects via SDK
-    const { startDashboard } = await import('./server.js');
-
-    if (!options.dataDir || !options.teamDir || !options.projectRoot) {
-      console.error('Integrated mode requires --data-dir, --team-dir, and --project-root');
-      process.exit(1);
-    }
-
-    await startDashboard({
-      port: options.port ? parseInt(options.port as string, 10) : 3888,
-      dataDir: options.dataDir as string,
-      teamDir: options.teamDir as string,
-      projectRoot: options.projectRoot as string,
-      enableSpawner: true,
-      verbose: options.verbose as boolean | undefined,
-    });
-  } else {
-    // Proxy or mock mode
-    await startServer({
-      port: options.port ? parseInt(options.port as string, 10) : undefined,
-      relayUrl: options.relayUrl as string | undefined,
-      staticDir: options.staticDir as string | undefined,
-      verbose: options.verbose as boolean | undefined,
-      mock: options.mock as boolean | undefined,
-    });
-  }
+  await startServer({
+    port: cliOptions.port ?? parsePort(process.env.PORT || `${DEFAULT_PORT}`),
+    relayUrl: cliOptions.relayUrl ?? process.env.RELAY_URL ?? DEFAULT_RELAY_URL,
+    dataDir: cliOptions.dataDir ?? process.env.DATA_DIR ?? DEFAULT_DATA_DIR,
+    staticDir: cliOptions.staticDir ?? process.env.STATIC_DIR ?? DEFAULT_STATIC_DIR,
+    verbose: cliOptions.verbose ?? process.env.VERBOSE === 'true',
+    mock: cliOptions.mock ?? process.env.MOCK === 'true',
+  });
 }
 
 main().catch((err) => {

@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useDashboardConfig } from '../adapters';
 import { getAgentColor, getAgentInitials } from '../lib/colors';
 
 export type SpeakOnTrigger = 'SESSION_END' | 'CODE_WRITTEN' | 'REVIEW_REQUEST' | 'EXPLICIT_ASK' | 'ALL_MESSAGES';
@@ -36,8 +37,6 @@ export interface SpawnModalProps {
   existingAgents: string[];
   isSpawning?: boolean;
   error?: string | null;
-  /** Whether running in cloud mode */
-  isCloudMode?: boolean;
   /** Active workspace ID for provider setup redirect */
   workspaceId?: string;
   /** Agent defaults from settings */
@@ -187,13 +186,15 @@ export function SpawnModal({
   existingAgents,
   isSpawning = false,
   error,
-  isCloudMode = false,
   workspaceId,
   agentDefaults,
   repos,
   activeRepoId,
   connectedProviders,
 }: SpawnModalProps) {
+  const { features } = useDashboardConfig();
+  const hasWorkspaceFeature = features.workspaces;
+  const canUseWorkspaceRepoSelection = hasWorkspaceFeature && !!repos?.length;
   const [selectedTemplate, setSelectedTemplate] = useState(AGENT_TEMPLATES[0]);
   const [name, setName] = useState('');
   const [customCommand, setCustomCommand] = useState('');
@@ -260,7 +261,7 @@ export function SpawnModal({
       // Determine default template based on settings
       // In cloud mode, also skip templates whose provider isn't connected
       const isTemplateAvailable = (t: typeof AGENT_TEMPLATES[number]) => {
-        if (t.comingSoon && isCloudMode) return false;
+        if (t.comingSoon && hasWorkspaceFeature) return false;
         if (connectedProviders && t.providerId && !connectedProviders.includes(t.providerId)) return false;
         return true;
       };
@@ -290,7 +291,7 @@ export function SpawnModal({
       setLocalError(null);
       setTimeout(() => nameInputRef.current?.focus(), 100);
     }
-  }, [isOpen, agentDefaults, activeRepoId, repos]);
+  }, [isOpen, agentDefaults, activeRepoId, repos, connectedProviders, hasWorkspaceFeature]);
 
   const validateName = useCallback(
     (value: string): string | null => {
@@ -333,7 +334,7 @@ export function SpawnModal({
 
     // Derive cwd: in cloud mode with repos, use selected repo name; otherwise use text input
     let effectiveCwd: string | undefined;
-    if (isCloudMode && repos && repos.length > 0 && selectedRepoId) {
+    if (canUseWorkspaceRepoSelection && selectedRepoId) {
       if (selectedRepoId === '__all__') {
         // Coordinator mode: no cwd, agent starts at workspace root with access to all repos
         effectiveCwd = undefined;
@@ -427,7 +428,7 @@ export function SpawnModal({
             <div className="grid grid-cols-3 gap-2">
               {AGENT_TEMPLATES.map((template) => {
                 // Only disable "coming soon" providers in cloud mode - locally they might be available
-                const isComingSoon = template.comingSoon && isCloudMode;
+                const isComingSoon = template.comingSoon && hasWorkspaceFeature;
                 // In cloud mode, disable providers that aren't connected (skip for custom/null providerId)
                 const isProviderMissing = connectedProviders && template.providerId
                   ? !connectedProviders.includes(template.providerId)
@@ -619,7 +620,7 @@ export function SpawnModal({
           )}
 
           {/* Repository (cloud) / Working Directory (local) */}
-          {isCloudMode && repos && repos.length > 0 ? (
+          {canUseWorkspaceRepoSelection ? (
             <div className="mb-5">
               <label className="block text-sm font-semibold text-text-primary mb-2" htmlFor="agent-repo">
                 Repository
@@ -946,4 +947,3 @@ function SpawningOverlay({ agentName, colors }: { agentName: string; colors: { p
     </div>
   );
 }
-

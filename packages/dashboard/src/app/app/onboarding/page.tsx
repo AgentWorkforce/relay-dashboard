@@ -13,7 +13,6 @@ import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } fr
 import { useSearchParams } from 'next/navigation';
 import { LogoIcon } from '../../../components/Logo';
 import { ProvisioningProgress } from '../../../components/ProvisioningProgress';
-import { getOnboardingNextStep } from '../../../lib/cloudApi';
 
 interface Repository {
   id: string;
@@ -32,6 +31,18 @@ interface NextStepResponse {
     fullName?: string;
   };
   connectedProviders?: string[];
+}
+
+async function getOnboardingNextStep(): Promise<NextStepResponse> {
+  const response = await fetch('/api/onboarding/next-step', {
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch onboarding next step');
+  }
+
+  return (await response.json()) as NextStepResponse;
 }
 
 type OnboardingReason = 'new' | 'deleted';

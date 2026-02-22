@@ -33,7 +33,6 @@ import { UserProfilePanel } from './UserProfilePanel';
 import { AgentProfilePanel } from './AgentProfilePanel';
 import { useDirectMessage } from './hooks/useDirectMessage';
 import { CoordinatorPanel } from './CoordinatorPanel';
-import { BillingResult } from './BillingResult';
 import { UsageBanner } from './UsageBanner';
 import { useWebSocket, type DashboardData } from './hooks/useWebSocket';
 import { useAgents } from './hooks/useAgents';
@@ -63,11 +62,9 @@ import {
   type UnreadState,
   type CreateChannelRequest,
 } from './channels';
-import { useWorkspaceMembers, filterOnlineUsersByWorkspace } from './hooks/useWorkspaceMembers';
-import { useCloudSessionOptional } from './CloudSessionProvider';
 import { WorkspaceProvider } from './WorkspaceContext';
+import { useDashboardConfig, type CloudUser } from '../adapters';
 import { api, convertApiDecision, setActiveWorkspaceId as setApiWorkspaceId, getActiveWorkspaceId, getCsrfToken } from '../lib/api';
-import { cloudApi } from '../lib/cloudApi';
 import { mergeAgentsForDashboard } from '../lib/agent-merge';
 import { useUrlRouting, parseRoute, type Route } from '../lib/useUrlRouting';
 import type { CurrentUser } from './MessageList';
@@ -294,16 +291,50 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     stopAgent: orchestratorStopAgent,
   } = useOrchestrator({ apiUrl: orchestratorUrl });
 
-  // Cloud session for user info (GitHub avatar/username)
-  const cloudSession = useCloudSessionOptional();
+  const config = useDashboardConfig();
+  const { features, api: apiAdapter, auth: authAdapter } = config;
 
-  // Derive current user from cloud session (falls back to undefined in non-cloud mode)
-  const currentUser: CurrentUser | undefined = cloudSession?.user
+  const [cloudUser, setCloudUser] = useState<CloudUser | null>(null);
+
+  useEffect(() => {
+    if (!features.auth || !authAdapter) {
+      setCloudUser(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchCurrentUser = async () => {
+      try {
+        const result = await authAdapter.getUser();
+        if (cancelled) return;
+        setCloudUser(result.success ? result.data : null);
+      } catch {
+        if (!cancelled) {
+          setCloudUser(null);
+        }
+      }
+    };
+
+    void fetchCurrentUser();
+    const interval = setInterval(() => {
+      void fetchCurrentUser();
+    }, 30000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [features.auth, authAdapter]);
+
+  // Derive current user from auth adapter (falls back to undefined in non-cloud mode)
+  const currentUser: CurrentUser | undefined = cloudUser
     ? {
-        displayName: cloudSession.user.githubUsername || cloudSession.user.displayName || '',
-        avatarUrl: cloudSession.user.avatarUrl,
+        displayName: cloudUser.githubUsername || cloudUser.displayName || '',
+        avatarUrl: cloudUser.avatarUrl,
       }
     : undefined;
+  const hasWorkspaceApi = features.workspaces && !!apiAdapter;
 
   // Cloud workspaces state (for cloud mode)
   // Includes owned, member, and contributor workspaces (via GitHub repo access)
@@ -325,7 +356,13 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   // Fetch cloud workspaces when in cloud mode
   // Uses getAccessibleWorkspaces to include contributor workspaces (via GitHub repos)
   useEffect(() => {
-    if (!cloudSession?.user) return;
+    if (!hasWorkspaceApi || !apiAdapter) {
+      setCloudWorkspaces([]);
+      setIsLoadingCloudWorkspaces(false);
+      return;
+    }
+
+    let cancelled = false;
 
     const fetchCloudWorkspaces = async (isInitialLoad: boolean) => {
       // Only show loading indicator on initial load, not on background refreshes
@@ -333,7 +370,8 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
         setIsLoadingCloudWorkspaces(true);
       }
       try {
-        const result = await cloudApi.getAccessibleWorkspaces();
+        const result = await apiAdapter.getAccessibleWorkspaces();
+        if (cancelled) return;
         if (result.success && result.data.workspaces) {
           setCloudWorkspaces(result.data.workspaces);
           const workspaceIds = new Set(result.data.workspaces.map(w => w.id));
@@ -357,20 +395,26 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
           }
         }
       } catch (err) {
+        if (cancelled) return;
         console.error('Failed to fetch cloud workspaces:', err);
       } finally {
-        if (isInitialLoad) {
+        if (isInitialLoad && !cancelled) {
           setIsLoadingCloudWorkspaces(false);
         }
       }
     };
 
     // Initial fetch with loading indicator
-    fetchCloudWorkspaces(true);
+    void fetchCloudWorkspaces(true);
     // Poll for updates every 30 seconds without loading indicator
-    const interval = setInterval(() => fetchCloudWorkspaces(false), 30000);
-    return () => clearInterval(interval);
-  }, [cloudSession?.user, activeCloudWorkspaceId]);
+    const interval = setInterval(() => {
+      void fetchCloudWorkspaces(false);
+    }, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [hasWorkspaceApi, apiAdapter, activeCloudWorkspaceId]);
 
   // Fetch agents for the active workspace.
   // Cloud users: poll GET /api/workspaces/:id/agents (backed by Relaycast WS on server)
@@ -381,17 +425,13 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
       return;
     }
 
-    // Determine cloud mode: use cloudSession if available, otherwise
-    // infer from wsUrl prop (cloud mode always provides a wsUrl)
-    // Use wsUrl prop as cloud mode signal — it's set immediately by DashboardPageClient
-    // while cloudSession?.user may not have loaded yet
-    const isCloud = !!cloudSession?.user || !!wsUrl;
+    const useCloudAgents = hasWorkspaceApi && !!apiAdapter;
 
     const fetchAgents = async () => {
       try {
-        if (isCloud) {
+        if (useCloudAgents && apiAdapter) {
           // Cloud mode: agents tracked via Relaycast on the server
-          const result = await cloudApi.getAgents(activeCloudWorkspaceId);
+          const result = await apiAdapter.getAgents(activeCloudWorkspaceId);
           if (result.success && result.data?.agents) {
             const agents: Agent[] = result.data.agents.map((a) => ({
               name: a.name,
@@ -438,17 +478,19 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
       }
     };
 
-    fetchAgents();
-    const interval = setInterval(fetchAgents, isCloud ? 5000 : 15000);
+    void fetchAgents();
+    const interval = setInterval(fetchAgents, useCloudAgents ? 5000 : 15000);
     return () => clearInterval(interval);
-  }, [cloudSession?.user, activeCloudWorkspaceId]);
+  }, [hasWorkspaceApi, apiAdapter, activeCloudWorkspaceId]);
 
   // Determine which workspaces to use (cloud mode or orchestrator)
-  // Use hostname-based detection from CloudSessionProvider (immediate) instead of user presence (async)
-  // This prevents fetching with 'default' workspaceId before session loads
-  const isCloudMode = cloudSession?.isCloudMode ?? false;
+  // Source mode from DashboardConfig so App.tsx does not depend on cloud session internals.
+  const isWorkspaceFeaturesEnabled = features.workspaces;
+  const canOpenWorkspaceSettings = features.workspaces;
+  const canOpenHeaderSettings =
+    features.auth || features.billing || features.teams || features.workspaces;
   const effectiveWorkspaces = useMemo(() => {
-    if (isCloudMode && cloudWorkspaces.length > 0) {
+    if (isWorkspaceFeaturesEnabled && cloudWorkspaces.length > 0) {
       // Convert cloud workspaces to the format expected by WorkspaceSelector
       // Includes owned, member, and contributor workspaces
       return cloudWorkspaces.map(ws => ({
@@ -461,34 +503,34 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
       }));
     }
     return workspaces;
-  }, [isCloudMode, cloudWorkspaces, workspaces]);
+  }, [isWorkspaceFeaturesEnabled, cloudWorkspaces, workspaces]);
 
   // In non-cloud mode, provide a fallback workspace ID for local/mock mode
   // This ensures channels API calls work even without an orchestrator workspace
   // In cloud mode, never use 'default' - it's not a valid UUID and will cause DB errors
-  const effectiveActiveWorkspaceId = isCloudMode
+  const effectiveActiveWorkspaceId = isWorkspaceFeaturesEnabled
     ? activeCloudWorkspaceId  // null if no workspace selected in cloud mode
     : (activeWorkspaceId ?? 'default');
-  const effectiveIsLoading = isCloudMode ? isLoadingCloudWorkspaces : isOrchestratorLoading;
+  const effectiveIsLoading = isWorkspaceFeaturesEnabled ? isLoadingCloudWorkspaces : isOrchestratorLoading;
 
   // Sync the active workspace ID with the api module for cloud mode proxying
   // This useEffect serves as a safeguard and handles initial load/edge cases
   // The immediate sync in handleEffectiveWorkspaceSelect handles user-initiated changes
   useEffect(() => {
-    if (isCloudMode && activeCloudWorkspaceId) {
+    if (isWorkspaceFeaturesEnabled && activeCloudWorkspaceId) {
       setApiWorkspaceId(activeCloudWorkspaceId);
-    } else if (isCloudMode && !activeCloudWorkspaceId) {
+    } else if (isWorkspaceFeaturesEnabled && !activeCloudWorkspaceId) {
       // In cloud mode but no workspace selected - clear the proxy
       setApiWorkspaceId(null);
-    } else if (!isCloudMode) {
+    } else if (!isWorkspaceFeaturesEnabled) {
       // Clear the workspace ID when not in cloud mode
       setApiWorkspaceId(null);
     }
-  }, [isCloudMode, activeCloudWorkspaceId]);
+  }, [isWorkspaceFeaturesEnabled, activeCloudWorkspaceId]);
 
   // Handle workspace selection (works for both cloud and orchestrator)
   const handleEffectiveWorkspaceSelect = useCallback(async (workspace: { id: string; name: string }) => {
-    if (isCloudMode) {
+    if (isWorkspaceFeaturesEnabled) {
       setActiveCloudWorkspaceId(workspace.id);
       // Sync immediately with api module to avoid race conditions
       // This ensures spawn/release calls use the correct workspace before the useEffect runs
@@ -496,7 +538,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     } else {
       await switchWorkspace(workspace.id);
     }
-  }, [isCloudMode, switchWorkspace]);
+  }, [isWorkspaceFeaturesEnabled, switchWorkspace]);
 
   // Presence tracking for online users and typing indicators
   // Memoize the user object to prevent reconnection on every render
@@ -510,7 +552,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   // Channel state: selectedChannelId must be declared before callbacks that use it
   // Local mode defaults to #general, cloud mode defaults to Activity feed
   const [selectedChannelId, setSelectedChannelId] = useState<string | undefined>(
-    isCloudMode ? ACTIVITY_FEED_ID : '#general'
+    isWorkspaceFeaturesEnabled ? ACTIVITY_FEED_ID : '#general'
   );
 
   // Activity feed state - unified timeline of workspace events
@@ -720,23 +762,13 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     if (typeof window !== 'undefined') {
       if (currentUser?.displayName) {
         localStorage.setItem('relay_username', currentUser.displayName);
-      } else if (!isCloudMode) {
+      } else if (!isWorkspaceFeaturesEnabled) {
         localStorage.removeItem('relay_username');
       }
     }
-  }, [currentUser?.displayName, isCloudMode]);
+  }, [currentUser?.displayName, isWorkspaceFeaturesEnabled]);
 
-  // Filter online users by workspace membership (cloud mode only)
-  const { memberUsernames } = useWorkspaceMembers({
-    workspaceId: effectiveActiveWorkspaceId ?? undefined,
-    enabled: isCloudMode && !!effectiveActiveWorkspaceId,
-  });
-
-  // Filter online users to only show those with access to current workspace
-  const onlineUsers = useMemo(
-    () => filterOnlineUsersByWorkspace(allOnlineUsers, memberUsernames),
-    [allOnlineUsers, memberUsernames]
-  );
+  const onlineUsers = allOnlineUsers;
 
   // User profile panel state
   const [selectedUserProfile, setSelectedUserProfile] = useState<UserPresence | null>(null);
@@ -757,7 +789,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   // View mode state: 'local' (agents), 'fleet' (multi-server), 'channels' (channel messaging)
   // Local mode defaults to channels view (showing #general), cloud mode defaults to local
   const [viewMode, setViewMode] = useState<'local' | 'fleet' | 'channels'>(
-    isCloudMode ? 'local' : 'channels'
+    isWorkspaceFeaturesEnabled ? 'local' : 'channels'
   );
 
   // Channel state for V1 channels UI
@@ -899,7 +931,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   const { repos: workspaceRepos, refetch: refetchWorkspaceRepos } = useWorkspaceRepos({
     workspaceId: effectiveActiveWorkspaceId ?? undefined,
     apiBaseUrl: '/api',
-    enabled: isCloudMode && !!effectiveActiveWorkspaceId,
+    enabled: isWorkspaceFeaturesEnabled && !!effectiveActiveWorkspaceId,
   });
 
   // Reset channel state when switching workspaces
@@ -1380,7 +1412,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
         }));
         setProjects(projectList);
         setCurrentProject(activeWorkspaceId);
-      } else if (isCloudMode && effectiveActiveWorkspaceId) {
+      } else if (isWorkspaceFeaturesEnabled && effectiveActiveWorkspaceId) {
         // Cloud mode with single repo or no repos yet - create a single project
         // from the active cloud workspace
         const activeWs = effectiveWorkspaces.find(w => w.id === effectiveActiveWorkspaceId);
@@ -1397,7 +1429,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
         }
       }
     }
-  }, [hasWorkspaces, workspaces, orchestratorAgents, activeWorkspaceId, workspaceRepos, effectiveActiveWorkspaceId, currentProject, isCloudMode, effectiveWorkspaces]);
+  }, [hasWorkspaces, workspaces, orchestratorAgents, activeWorkspaceId, workspaceRepos, effectiveActiveWorkspaceId, currentProject, isWorkspaceFeaturesEnabled, effectiveWorkspaces]);
 
   // Fetch bridge/project data for multi-project mode
   useEffect(() => {
@@ -1563,29 +1595,18 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   // Only show "Local" folder if we don't have bridge projects to merge them into
   // But always include human users so they appear in the sidebar for DM
   const localAgentsForSidebar = useMemo(() => {
-    // In cloud mode, filter human users to only show workspace members
-    // This prevents users from other workspaces appearing in Direct Messages
-    const filterHumansByWorkspace = (agents: Agent[]) => {
-      if (!isCloudMode || memberUsernames.size === 0) {
-        return agents;
-      }
-      return agents.filter(agent =>
-        !agent.isHuman || memberUsernames.has(agent.name.toLowerCase())
-      );
-    };
-
     // Human users should always be shown in sidebar for DM access
-    // Source from unfiltered `agents` since projectAgents filters out humans
-    const humanUsers = filterHumansByWorkspace(agents).filter(a => a.isHuman);
+    // Source from unfiltered `agents` so direct messages are always available.
+    const humanUsers = agents.filter(a => a.isHuman);
 
     if (mergedProjects.length > 0) {
       // Don't show AI agents separately - they're merged into projects
       // But keep human users visible for DM conversations
       return humanUsers;
     }
-    // Return all agents (AI + human), with human users filtered by workspace membership
-    return [...filterHumansByWorkspace(projectAgents), ...humanUsers];
-  }, [mergedProjects, projectAgents, agents, isCloudMode, memberUsernames]);
+    const aiAgents = projectAgents.filter(a => !a.isHuman);
+    return [...aiAgents, ...humanUsers];
+  }, [mergedProjects, projectAgents, agents]);
 
   // Handle workspace selection
   const handleWorkspaceSelect = useCallback(async (workspace: Workspace) => {
@@ -1757,7 +1778,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   // Load channels on mount (they're always visible in sidebar, collapsed by default)
   useEffect(() => {
     // Not in cloud mode or no workspace - show default channels only
-    if (!isCloudMode || !effectiveActiveWorkspaceId) {
+    if (!isWorkspaceFeaturesEnabled || !effectiveActiveWorkspaceId) {
       setChannelsList(defaultChannels);
       setArchivedChannelsList([]);
       return;
@@ -1780,7 +1801,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     };
 
     fetchChannels();
-  }, [effectiveActiveWorkspaceId, isCloudMode, defaultChannels, setChannelListsFromResponse]);
+  }, [effectiveActiveWorkspaceId, isWorkspaceFeaturesEnabled, defaultChannels, setChannelListsFromResponse]);
 
   // Load messages when a channel is selected (persisted + live)
   useEffect(() => {
@@ -1788,7 +1809,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     // Activity feed is a virtual channel - don't fetch from API
     if (selectedChannelId === ACTIVITY_FEED_ID) return;
     // Don't fetch in cloud mode until we have a workspace ID
-    if (isCloudMode && !effectiveActiveWorkspaceId) return;
+    if (isWorkspaceFeaturesEnabled && !effectiveActiveWorkspaceId) return;
 
     // Check if we already have messages cached
     const existing = channelMessageMap[selectedChannelId] ?? [];
@@ -2303,9 +2324,9 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
 
   // Handle server reconnect (restart workspace)
   const handleServerReconnect = useCallback(async (serverId: string) => {
-    if (isCloudMode) {
+    if (hasWorkspaceApi && apiAdapter) {
       try {
-        const result = await cloudApi.restartWorkspace(serverId);
+        const result = await apiAdapter.restartWorkspace(serverId);
         if (result.success) {
           // Update the fleet servers state to show the server is restarting
           setFleetServers(prev => prev.map(s =>
@@ -2314,7 +2335,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
           // Refresh cloud workspaces after a short delay to get updated status
           setTimeout(async () => {
             try {
-              const workspacesResult = await cloudApi.getWorkspaceSummary();
+              const workspacesResult = await apiAdapter.getWorkspaceSummary();
               if (workspacesResult.success && workspacesResult.data.workspaces) {
                 setCloudWorkspaces(workspacesResult.data.workspaces);
               }
@@ -2334,7 +2355,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
       // Refresh the workspace list as a fallback
       // The orchestrator's WebSocket will handle reconnection automatically
     }
-  }, [isCloudMode]);
+  }, [hasWorkspaceApi, apiAdapter]);
 
   // Handle spawn agent
   const handleSpawn = useCallback(async (config: SpawnConfig): Promise<boolean> => {
@@ -2348,9 +2369,9 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
       const modelIdx = commandParts.indexOf('--model');
       const model = modelIdx !== -1 && commandParts[modelIdx + 1] ? commandParts[modelIdx + 1] : undefined;
 
-      // Cloud mode: use cloudApi directly (adapter pattern)
-      if (isCloudMode && activeCloudWorkspaceId) {
-        const result = await cloudApi.spawnAgent(activeCloudWorkspaceId, {
+      // Cloud mode: use DashboardConfig API adapter.
+      if (hasWorkspaceApi && apiAdapter && activeCloudWorkspaceId) {
+        const result = await apiAdapter.spawnAgent(activeCloudWorkspaceId, {
           name: config.name,
           provider,
           model,
@@ -2393,7 +2414,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     } finally {
       setIsSpawning(false);
     }
-  }, [isCloudMode, activeCloudWorkspaceId, workspaces.length, activeWorkspaceId, orchestratorSpawnAgent]);
+  }, [hasWorkspaceApi, apiAdapter, activeCloudWorkspaceId, workspaces.length, activeWorkspaceId, orchestratorSpawnAgent]);
 
   // Handle release/kill agent
   const handleReleaseAgent = useCallback(async (agent: Agent) => {
@@ -2403,9 +2424,9 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     if (!confirmed) return;
 
     try {
-      // Cloud mode: use cloudApi directly (adapter pattern)
-      if (isCloudMode && activeCloudWorkspaceId) {
-        await cloudApi.stopAgent(activeCloudWorkspaceId, agent.name);
+      // Cloud mode: use DashboardConfig API adapter.
+      if (hasWorkspaceApi && apiAdapter && activeCloudWorkspaceId) {
+        await apiAdapter.stopAgent(activeCloudWorkspaceId, agent.name);
         return;
       }
 
@@ -2423,7 +2444,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     } catch (err) {
       console.error('Failed to release agent:', err);
     }
-  }, [isCloudMode, activeCloudWorkspaceId, workspaces.length, activeWorkspaceId, orchestratorStopAgent]);
+  }, [hasWorkspaceApi, apiAdapter, activeCloudWorkspaceId, workspaces.length, activeWorkspaceId, orchestratorStopAgent]);
 
   // Handle logs click - open log viewer panel
   const handleLogsClick = useCallback((agent: Agent) => {
@@ -2745,33 +2766,6 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleSpawnClick, handleNewConversationClick]);
 
-  // Handle billing result routes (success/cancel after Stripe checkout)
-  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
-  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
-
-  if (pathname === '/billing/success') {
-    return (
-      <BillingResult
-        type="success"
-        sessionId={searchParams.get('session_id') || undefined}
-        onClose={() => {
-          window.location.href = '/';
-        }}
-      />
-    );
-  }
-
-  if (pathname === '/billing/canceled') {
-    return (
-      <BillingResult
-        type="canceled"
-        onClose={() => {
-          window.location.href = '/';
-        }}
-      />
-    );
-  }
-
   return (
     <WorkspaceProvider wsUrl={wsUrl}>
     <div className="flex h-screen bg-bg-deep font-sans text-text-primary">
@@ -2799,7 +2793,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
             activeWorkspaceId={effectiveActiveWorkspaceId ?? undefined}
             onSelect={handleEffectiveWorkspaceSelect}
             onAddWorkspace={() => {
-              if (isCloudMode) {
+              if (features.workspaces) {
                 // In cloud mode, redirect to app homepage for workspace management
                 // Clear the saved workspace ID and add query param to force showing picker
                 localStorage.removeItem('agentrelay_workspace_id');
@@ -2809,7 +2803,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
                 setIsAddWorkspaceOpen(true);
               }
             }}
-            onWorkspaceSettings={isCloudMode ? handleWorkspaceSettingsClick : undefined}
+            onWorkspaceSettings={canOpenWorkspaceSettings ? handleWorkspaceSettingsClick : undefined}
             isLoading={effectiveIsLoading}
           />
         </div>
@@ -2917,7 +2911,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
           selectedChannelName={selectedChannel?.name}
           onProjectChange={handleProjectSelect}
           onCommandPaletteOpen={handleCommandPaletteOpen}
-          onSettingsClick={isCloudMode ? handleSettingsClick : undefined}
+          onSettingsClick={canOpenHeaderSettings ? handleSettingsClick : undefined}
           onHistoryClick={handleHistoryClick}
           onNewConversationClick={handleNewConversationClick}
           onFleetClick={() => setIsFleetViewActive(!isFleetViewActive)}
@@ -3190,12 +3184,11 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
         existingAgents={agents.map((a) => a.name)}
         isSpawning={isSpawning}
         error={spawnError}
-        isCloudMode={isCloudMode}
         workspaceId={effectiveActiveWorkspaceId ?? undefined}
         agentDefaults={settings.agentDefaults}
         repos={workspaceRepos}
         activeRepoId={workspaceRepos.find(r => r.id === currentProject)?.id ?? workspaceRepos[0]?.id}
-        connectedProviders={cloudSession?.user?.connectedProviders?.map(p => {
+        connectedProviders={cloudUser?.connectedProviders?.map(p => {
           const BACKEND_TO_FRONTEND_MAP: Record<string, string> = { openai: 'codex' };
           return BACKEND_TO_FRONTEND_MAP[p.provider] ?? p.provider;
         })}
@@ -3411,7 +3404,6 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
         isOpen={isCoordinatorOpen}
         onClose={() => setIsCoordinatorOpen(false)}
         projects={mergedProjects}
-        isCloudMode={!!currentUser}
         hasArchitect={bridgeAgents.some(a => a.name.toLowerCase() === 'architect')}
         onArchitectSpawned={() => {
           // Architect will appear via WebSocket update
@@ -3422,7 +3414,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
       {/* Full Settings Page */}
       {isFullSettingsOpen && (
         <SettingsPage
-          currentUserId={cloudSession?.user?.id}
+          currentUserId={cloudUser?.id}
           initialTab={settingsInitialTab}
           onClose={() => {
             setIsFullSettingsOpen(false);
@@ -3432,7 +3424,6 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
           onUpdateSettings={updateSettings}
           activeWorkspaceId={effectiveActiveWorkspaceId}
           onReposChanged={refetchWorkspaceRepos}
-          isCloudMode={isCloudMode}
         />
       )}
 
