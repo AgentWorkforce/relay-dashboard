@@ -11,18 +11,17 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { cloudApi, getCsrfToken } from '../../lib/cloudApi';
-import { WorkspaceSettingsPanel } from './WorkspaceSettingsPanel';
-import { TeamSettingsPanel } from './TeamSettingsPanel';
-import { BillingSettingsPanel } from './BillingSettingsPanel';
+import { useDashboardConfig, type DashboardFeatures } from '../../adapters';
 import type { Settings, CliType } from './types';
 import { CLAUDE_MODEL_OPTIONS, CURSOR_MODEL_OPTIONS, CODEX_MODEL_OPTIONS, GEMINI_MODEL_OPTIONS } from '../SpawnModal';
+
+type SettingsTab = 'dashboard' | 'workspace' | 'team' | 'billing';
 
 export interface SettingsPageProps {
   /** Current user ID for team membership checks */
   currentUserId?: string;
   /** Initial tab to show */
-  initialTab?: 'dashboard' | 'workspace' | 'team' | 'billing';
+  initialTab?: SettingsTab;
   /** Callback when settings page is closed */
   onClose?: () => void;
   /** Current dashboard settings */
@@ -33,8 +32,6 @@ export interface SettingsPageProps {
   activeWorkspaceId?: string | null;
   /** Callback when repos are added/removed in workspace settings */
   onReposChanged?: () => void;
-  /** Whether the dashboard is running in cloud mode (shows all tabs) */
-  isCloudMode?: boolean;
 }
 
 interface WorkspaceSummary {
@@ -43,23 +40,40 @@ interface WorkspaceSummary {
   status: string;
 }
 
+function isTabEnabled(tab: SettingsTab, features: DashboardFeatures): boolean {
+  if (tab === 'workspace') return features.workspaces;
+  if (tab === 'team') return features.teams;
+  if (tab === 'billing') return features.billing;
+  return true;
+}
+
+function resolveInitialTab(initialTab: SettingsTab, features: DashboardFeatures): SettingsTab {
+  return isTabEnabled(initialTab, features) ? initialTab : 'dashboard';
+}
+
 export function SettingsPage({
-  currentUserId,
   initialTab = 'dashboard',
   onClose,
   settings,
   onUpdateSettings,
   activeWorkspaceId,
-  onReposChanged,
-  isCloudMode = false,
 }: SettingsPageProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'workspace' | 'team' | 'billing'>(
-    !isCloudMode && initialTab !== 'dashboard' ? 'dashboard' : initialTab
+  const config = useDashboardConfig();
+  const { features, api, settingsSlots } = config;
+
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() =>
+    resolveInitialTab(initialTab, features)
   );
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   // Initialize with activeWorkspaceId from parent if provided
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(activeWorkspaceId ?? null);
   const [isLoadingWorkspaces, setIsLoadingWorkspaces] = useState(true);
+
+  useEffect(() => {
+    if (!isTabEnabled(activeTab, features)) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, features.billing, features.teams, features.workspaces]);
 
   // Sync selectedWorkspaceId when activeWorkspaceId prop changes
   useEffect(() => {
@@ -68,27 +82,49 @@ export function SettingsPage({
     }
   }, [activeWorkspaceId]);
 
-  // Load workspaces (only in cloud mode)
+  // Load workspaces only when workspace features and API adapter are available.
   useEffect(() => {
-    if (!isCloudMode) {
+    const apiAdapter = api;
+
+    if (!features.workspaces || !apiAdapter) {
       setIsLoadingWorkspaces(false);
+      setWorkspaces([]);
       return;
     }
+
+    const workspaceApi = apiAdapter;
+    let cancelled = false;
+
     async function loadWorkspaces() {
       setIsLoadingWorkspaces(true);
-      const result = await cloudApi.getWorkspaceSummary();
+      const result = await workspaceApi.getWorkspaceSummary();
+
+      if (cancelled) {
+        return;
+      }
+
       if (result.success && result.data.workspaces.length > 0) {
-        setWorkspaces(result.data.workspaces);
+        const summaries = result.data.workspaces.map((workspace) => ({
+          id: workspace.id,
+          name: workspace.name,
+          status: workspace.status,
+        }));
+        setWorkspaces(summaries);
         // Only auto-select first workspace if no workspace is selected
         // (either from prop or previous user selection)
-        if (!selectedWorkspaceId) {
-          setSelectedWorkspaceId(result.data.workspaces[0].id);
-        }
+        setSelectedWorkspaceId((prev) => prev ?? summaries[0].id);
+      } else {
+        setWorkspaces([]);
       }
       setIsLoadingWorkspaces(false);
     }
+
     loadWorkspaces();
-  }, [selectedWorkspaceId, isCloudMode]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, features.workspaces]);
 
   const updateSettings = useCallback((updater: (prev: Settings) => Settings) => {
     onUpdateSettings(updater);
@@ -114,7 +150,11 @@ export function SettingsPage({
     { id: 'billing', label: 'Billing', icon: <BillingIcon /> },
   ] as const;
 
-  const tabs = isCloudMode ? allTabs : allTabs.filter(t => t.id === 'dashboard');
+  const tabs = allTabs.filter((tab) => isTabEnabled(tab.id, features));
+
+  const BillingPanelSlot = settingsSlots?.BillingPanel;
+  const TeamPanelSlot = settingsSlots?.TeamPanel;
+  const WorkspacePanelSlot = settingsSlots?.WorkspacePanel;
 
   return (
     <div className="fixed inset-0 z-[1100] bg-bg-deep">
@@ -443,23 +483,13 @@ export function SettingsPage({
                       </div>
                       <span className="ml-4 text-text-muted">Loading workspaces...</span>
                     </div>
-                  ) : selectedWorkspaceId ? (
-                    <WorkspaceSettingsPanel
-                      workspaceId={selectedWorkspaceId}
-                      csrfToken={getCsrfToken() || undefined}
-                      onClose={onClose}
-                      onReposChanged={onReposChanged}
-                    />
+                  ) : WorkspacePanelSlot ? (
+                    <WorkspacePanelSlot />
                   ) : (
                     <EmptyState
                       icon={<WorkspaceIcon />}
-                      title="No Workspace"
-                      description="Create a workspace to get started with Agent Relay."
-                      action={
-                        <button className="px-6 py-3 bg-accent-cyan text-bg-deep font-semibold rounded-lg hover:bg-accent-cyan/90 transition-colors">
-                          Create Workspace
-                        </button>
-                      }
+                      title="Workspace Settings Unavailable"
+                      description="A workspace settings panel has not been provided for this mode."
                     />
                   )}
                 </>
@@ -468,22 +498,19 @@ export function SettingsPage({
               {/* Team Settings */}
               {activeTab === 'team' && (
                 <>
-                  {selectedWorkspaceId ? (
+                  {TeamPanelSlot ? (
                     <div className="space-y-8">
                       <PageHeader
                         title="Team Settings"
                         subtitle="Manage workspace members and permissions"
                       />
-                      <TeamSettingsPanel
-                        workspaceId={selectedWorkspaceId}
-                        currentUserId={currentUserId}
-                      />
+                      <TeamPanelSlot />
                     </div>
                   ) : (
                     <EmptyState
                       icon={<TeamIcon />}
-                      title="No Workspace Selected"
-                      description="Select a workspace to manage team members."
+                      title="Team Settings Unavailable"
+                      description="A team settings panel has not been provided for this mode."
                     />
                   )}
                 </>
@@ -496,7 +523,15 @@ export function SettingsPage({
                     title="Billing & Subscription"
                     subtitle="Manage your plan and payment methods"
                   />
-                  <BillingSettingsPanel />
+                  {BillingPanelSlot ? (
+                    <BillingPanelSlot />
+                  ) : (
+                    <EmptyState
+                      icon={<BillingIcon />}
+                      title="Billing Settings Unavailable"
+                      description="A billing settings panel has not been provided for this mode."
+                    />
+                  )}
                 </div>
               )}
             </div>

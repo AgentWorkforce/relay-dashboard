@@ -6,7 +6,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { getCsrfToken } from '../lib/cloudApi';
+import { useDashboardConfig } from '../adapters';
+import { getCsrfToken } from '../lib/api';
 import type { Project } from '../types';
 
 export interface RepositoryInfo {
@@ -40,7 +41,6 @@ export interface CoordinatorPanelProps {
   isOpen: boolean;
   onClose: () => void;
   projects: Project[];
-  isCloudMode?: boolean;
   /** Whether an Architect agent is already running */
   hasArchitect?: boolean;
   /** Callback when Architect is spawned */
@@ -51,10 +51,13 @@ export function CoordinatorPanel({
   isOpen,
   onClose,
   projects,
-  isCloudMode = false,
   hasArchitect = false,
   onArchitectSpawned,
 }: CoordinatorPanelProps) {
+  const { features } = useDashboardConfig();
+  const hasWorkspaceFeature = features.workspaces;
+  const shouldUseWorkspaceCoordinator = hasWorkspaceFeature;
+
   const [projectGroups, setProjectGroups] = useState<ProjectGroup[]>([]);
   const [ungroupedRepos, setUngroupedRepos] = useState<RepositoryInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -76,12 +79,16 @@ export function CoordinatorPanel({
 
   // Fetch project groups on open
   useEffect(() => {
-    if (isOpen && isCloudMode) {
+    if (isOpen && shouldUseWorkspaceCoordinator) {
       fetchProjectGroups();
     }
-  }, [isOpen, isCloudMode]);
+  }, [isOpen, shouldUseWorkspaceCoordinator]);
 
   const fetchProjectGroups = async () => {
+    if (!shouldUseWorkspaceCoordinator) {
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
@@ -341,7 +348,7 @@ export function CoordinatorPanel({
   };
 
   // Local mode: show spawn architect UI
-  if (!isCloudMode) {
+  if (!shouldUseWorkspaceCoordinator) {
     const isInBridgeMode = projects.length > 1;
 
     return (

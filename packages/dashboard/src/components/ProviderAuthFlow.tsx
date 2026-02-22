@@ -6,7 +6,6 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { getOnboardingNextStep } from '../lib/cloudApi';
 
 export interface ProviderInfo {
   id: string;
@@ -32,6 +31,18 @@ export interface ProviderAuthFlowProps {
 interface OnboardingNextStepResponse {
   nextStep?: string;
   connectedProviders?: string[];
+}
+
+async function getOnboardingNextStep(): Promise<OnboardingNextStepResponse> {
+  const response = await fetch('/api/onboarding/next-step', {
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch onboarding next step');
+  }
+
+  return (await response.json()) as OnboardingNextStepResponse;
 }
 
 type AuthStatus = 'idle' | 'starting' | 'waiting' | 'success' | 'error';

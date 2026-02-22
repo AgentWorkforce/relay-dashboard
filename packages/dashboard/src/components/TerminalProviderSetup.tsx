@@ -7,7 +7,7 @@
  *
  * Used in:
  * - /providers/setup/[provider] page (full-page setup)
- * - WorkspaceSettingsPanel (embedded setup)
+ * - Settings workspace slot implementations (embedded setup)
  */
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';

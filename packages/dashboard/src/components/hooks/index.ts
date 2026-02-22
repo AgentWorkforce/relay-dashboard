@@ -13,13 +13,6 @@ export {
   type OrchestratorEvent,
 } from './useOrchestrator';
 export { useAgentLogs, type UseAgentLogsOptions, type UseAgentLogsReturn, type LogLine, type LogConnectionState } from './useAgentLogs';
-export {
-  useSession,
-  type UseSessionOptions,
-  type UseSessionReturn,
-  type SessionError,
-  type CloudUser,
-} from './useSession';
 export { useTrajectory } from './useTrajectory';
 export {
   useRecentRepos,
@@ -27,12 +20,6 @@ export {
   type UseRecentReposReturn,
   type RecentRepo,
 } from './useRecentRepos';
-export {
-  useWorkspaceStatus,
-  type UseWorkspaceStatusOptions,
-  type UseWorkspaceStatusReturn,
-  type WorkspaceStatus,
-} from './useWorkspaceStatus';
 export {
   useWorkspaceRepos,
   type UseWorkspaceReposOptions,
@@ -46,12 +33,6 @@ export {
   type ChannelMessage,
   type ChannelConnectionState,
 } from './useChannels';
-export {
-  useWorkspaceMembers,
-  filterOnlineUsersByWorkspace,
-  type UseWorkspaceMembersOptions,
-  type UseWorkspaceMembersReturn,
-} from './useWorkspaceMembers';
 export {
   usePinnedAgents,
   type UsePinnedAgentsReturn,

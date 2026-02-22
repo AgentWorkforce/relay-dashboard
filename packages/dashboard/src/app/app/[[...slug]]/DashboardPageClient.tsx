@@ -9,7 +9,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { App } from '../../../components/App';
-import { CloudSessionProvider } from '../../../components/CloudSessionProvider';
 import { LogoIcon } from '../../../components/Logo';
 import { setActiveWorkspaceId } from '../../../lib/api';
 import { ProvisioningProgress } from '../../../components/ProvisioningProgress';
@@ -416,13 +415,8 @@ export default function DashboardPageClient() {
   }
 
   // Connected to workspace - render App with workspace's WebSocket
-  // Wrap in CloudSessionProvider so App has access to cloud session context
   if (state === 'connected' && wsUrl) {
-    return (
-      <CloudSessionProvider cloudMode={true}>
-        <App wsUrl={wsUrl} />
-      </CloudSessionProvider>
-    );
+    return <App wsUrl={wsUrl} />;
   }
 
   // Connecting state
