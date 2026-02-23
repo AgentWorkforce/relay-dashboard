@@ -33,6 +33,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@agent-relay/contracts": "file:../../../relay/packages/contracts",
     "@agent-relay/config": "2.2.0",
     "@agent-relay/protocol": "2.2.0",
     "@agent-relay/sdk": "file:../../../relay/packages/sdk",
