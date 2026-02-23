@@ -1,301 +1,65 @@
 /**
  * Relaycast data provider for dashboard-server.
  *
- * This module centralizes all Relaycast API interactions so proxy-server.ts
- * can stay focused on HTTP/WS routing and response shaping.
+ * This module is orchestration glue only: SDK reads/writes + dashboard adapters.
  */
 
 import fs from 'fs';
 import path from 'path';
+import type {
+  AgentStatus,
+  CreateChannelInput,
+  DashboardSnapshot,
+  FetchChannelMessagesOptions,
+  InviteToChannelInput,
+  InviteToChannelResult,
+  JoinChannelInput,
+  LeaveChannelInput,
+  Message,
+  RelaycastChannel,
+  RelaycastConfig,
+  RelaycastDmConversation,
+  RelaycastMessage,
+  SendMessageInput,
+  SendMessageResult,
+  SetChannelArchivedInput,
+} from './relaycast-provider-types.js';
 import {
-  createRelaycastClient,
-  type AgentClient,
-} from '@agent-relay/sdk';
+  DASHBOARD_DISPLAY_NAME,
+  DASHBOARD_READER_NAME,
+  DEFAULT_MESSAGE_LIMIT,
+  DEFAULT_RELAYCAST_BASE_URL,
+} from './relaycast-provider-types.js';
+import {
+  dedupeMessages,
+  getMessageLimit,
+  getReaderClient,
+  getWriterClient,
+  mapAgentStatus,
+  mapChannelMessage,
+  mapDmMessage,
+  normalizeChannelName,
+  normalizeIdentity,
+  normalizeTarget,
+  parseTimestamp,
+} from './relaycast-provider-helpers.js';
 
-const DEFAULT_RELAYCAST_BASE_URL = 'https://api.relaycast.dev';
-const DEFAULT_MESSAGE_LIMIT = 100;
-const MAX_MESSAGE_LIMIT = 500;
-const DASHBOARD_READER_NAME = 'dashboard-reader';
-
-interface RelaycastAgentRecord {
-  name: string;
-  type?: string;
-  status?: string;
-  last_seen?: string | null;
-  metadata?: Record<string, unknown> | null;
-}
-
-interface RelaycastChannel {
-  id: string;
-  name: string;
-  topic: string | null;
-  member_count: number;
-  created_at: string;
-  is_archived: boolean;
-}
-
-interface RelaycastMessage {
-  id: string;
-  agent_name: string;
-  text: string;
-  created_at: string;
-  thread_id?: string | null;
-  reply_count?: number;
-}
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export interface RelaycastConfig {
-  apiKey: string;
-  baseUrl: string;
-}
-
-/** Dashboard AgentStatus (matches legacy server.ts shape) */
-export interface AgentStatus {
-  name: string;
-  role: string;
-  cli: string;
-  messageCount: number;
-  status?: string;
-  lastActive?: string;
-  lastSeen?: string;
-  needsAttention?: boolean;
-  isProcessing?: boolean;
-  processingStartedAt?: number;
-  isSpawned?: boolean;
-  team?: string;
-  avatarUrl?: string;
-  model?: string;
-  cwd?: string;
-}
-
-/** Dashboard Message (matches legacy server.ts shape) */
-export interface Message {
-  from: string;
-  to: string;
-  content: string;
-  timestamp: string;
-  id: string;
-  thread?: string;
-  isBroadcast?: boolean;
-  status?: string;
-}
-
-export interface FetchChannelMessagesOptions {
-  limit?: number;
-  before?: number;
-}
-
-export interface SendMessageInput {
-  to: string;
-  message: string;
-  from?: string;
-  dataDir?: string;
-}
-
-export interface SendMessageResult {
-  messageId: string;
-}
-
-export interface CreateChannelInput {
-  name: string;
-  description?: string;
-  visibility?: 'public' | 'private';
-  creator?: string;
-  dataDir?: string;
-}
-
-export interface ChannelMemberInput {
-  id: string;
-  type?: 'user' | 'agent';
-}
-
-export interface InviteToChannelInput {
-  channel: string;
-  members: ChannelMemberInput[];
-  invitedBy?: string;
-  dataDir?: string;
-}
-
-export interface InviteToChannelResult {
-  invited: Array<{ id: string; type: 'user' | 'agent'; success: boolean; reason?: string }>;
-}
-
-export interface JoinChannelInput {
-  channel: string;
-  username: string;
-  dataDir?: string;
-}
-
-export interface LeaveChannelInput {
-  channel: string;
-  username: string;
-}
-
-export interface SetChannelArchivedInput {
-  channel: string;
-  archived: boolean;
-  updatedBy?: string;
-}
-
-export interface DashboardSnapshot {
-  agents: AgentStatus[];
-  messages: Message[];
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function parseTimestamp(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const timestamp = new Date(value).getTime();
-  return Number.isNaN(timestamp) ? null : timestamp;
-}
-
-function normalizeChannelName(channel: string): string {
-  const trimmed = channel.trim();
-  if (!trimmed) return '';
-  return trimmed.startsWith('#') ? trimmed.slice(1) : trimmed;
-}
-
-function normalizeTarget(to: string): string {
-  const trimmed = to.trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('#') || trimmed.startsWith('dm:')) return trimmed;
-  return trimmed;
-}
-
-function getMessageLimit(limit: number | undefined): number {
-  if (!Number.isFinite(limit) || !limit || limit <= 0) {
-    return DEFAULT_MESSAGE_LIMIT;
-  }
-  return Math.min(Math.floor(limit), MAX_MESSAGE_LIMIT);
-}
-
-const readerClientCache = new Map<string, Promise<AgentClient>>();
-const writerClientCache = new Map<string, Promise<AgentClient>>();
-
-function getCachePath(dataDir?: string): string | undefined {
-  if (!dataDir) return undefined;
-  return path.join(dataDir, 'relaycast.json');
-}
-
-function getClientCacheKey(config: RelaycastConfig, agentName: string, dataDir?: string): string {
-  const cachePath = getCachePath(dataDir) ?? '';
-  return `${config.baseUrl}|${config.apiKey}|${agentName}|${cachePath}`;
-}
-
-async function getCachedClient(
-  cache: Map<string, Promise<AgentClient>>,
-  config: RelaycastConfig,
-  agentName: string,
-  dataDir?: string,
-): Promise<AgentClient> {
-  const key = getClientCacheKey(config, agentName, dataDir);
-  const existing = cache.get(key);
-  if (existing) {
-    return existing;
-  }
-
-  const clientPromise = createRelaycastClient({
-    apiKey: config.apiKey,
-    baseUrl: config.baseUrl,
-    cachePath: getCachePath(dataDir),
-    agentName,
-  }).catch((err) => {
-    cache.delete(key);
-    throw err;
-  });
-
-  cache.set(key, clientPromise);
-  return clientPromise;
-}
-
-function getReaderClient(config: RelaycastConfig, dataDir?: string): Promise<AgentClient> {
-  return getCachedClient(readerClientCache, config, DASHBOARD_READER_NAME, dataDir);
-}
-
-function getWriterClient(config: RelaycastConfig, senderName: string, dataDir?: string): Promise<AgentClient> {
-  return getCachedClient(writerClientCache, config, senderName, dataDir);
-}
-
-function parseCliAndModel(
-  cliValue: unknown,
-  modelValue: unknown,
-): { cli: string; model?: string } {
-  const explicitModel =
-    typeof modelValue === 'string' && modelValue.trim().length > 0
-      ? modelValue.trim()
-      : undefined;
-  const cliSource = typeof cliValue === 'string' ? cliValue.trim() : '';
-
-  if (!cliSource) {
-    return {
-      cli: 'unknown',
-      model: explicitModel,
-    };
-  }
-
-  const parts = cliSource.split(/\s+/);
-  const cli = parts[0] ?? 'unknown';
-  const args = parts.slice(1);
-  let model = explicitModel;
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === '--model') {
-      const next = args[index + 1];
-      if (!model && typeof next === 'string' && next.trim()) {
-        model = next.trim();
-      }
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith('--model=')) {
-      if (!model) {
-        const value = arg.slice('--model='.length).trim();
-        if (value) model = value;
-      }
-    }
-  }
-
-  return { cli, model };
-}
-
-function mapAgentStatus(agent: RelaycastAgentRecord): AgentStatus {
-  const meta = agent.metadata || {};
-  const runtime = parseCliAndModel(meta.cli, meta.model);
-  return {
-    name: agent.name,
-    role: (meta.role as string) || 'Agent',
-    cli: runtime.cli,
-    model: runtime.model,
-    messageCount: 0,
-    status: agent.status === 'online' ? 'online' : 'offline',
-    lastSeen: agent.last_seen ?? undefined,
-    lastActive: agent.last_seen ?? undefined,
-    team: (meta.team as string) || undefined,
-    needsAttention: false,
-  };
-}
-
-function mapDashboardMessage(channelName: string, msg: RelaycastMessage): Message {
-  return {
-    from: msg.agent_name,
-    to: `#${channelName}`,
-    content: msg.text,
-    timestamp: msg.created_at,
-    id: msg.id,
-    thread: msg.thread_id ?? undefined,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Config loader
-// ---------------------------------------------------------------------------
+export type {
+  AgentStatus,
+  ChannelMemberInput,
+  CreateChannelInput,
+  DashboardSnapshot,
+  FetchChannelMessagesOptions,
+  InviteToChannelInput,
+  InviteToChannelResult,
+  JoinChannelInput,
+  LeaveChannelInput,
+  Message,
+  RelaycastConfig,
+  SendMessageInput,
+  SendMessageResult,
+  SetChannelArchivedInput,
+} from './relaycast-provider-types.js';
 
 /**
  * Try to load Relaycast credentials from `<dataDir>/relaycast.json`.
@@ -316,24 +80,23 @@ export function loadRelaycastConfig(dataDir: string): RelaycastConfig | null {
   }
 }
 
-async function createReader(config: RelaycastConfig): Promise<AgentClient> {
-  return getReaderClient(config);
-}
-
-// ---------------------------------------------------------------------------
-// Read API
-// ---------------------------------------------------------------------------
-
 /**
  * Fetch all agents from the Relaycast workspace and map to dashboard AgentStatus[].
  */
 export async function fetchAgents(config: RelaycastConfig): Promise<AgentStatus[]> {
   try {
-    const reader = await createReader(config);
-    const agents = await reader.client.get<RelaycastAgentRecord[]>('/v1/agents');
+    const reader = await getReaderClient(config);
+    const agents = await reader.client.get<Array<{
+      name: string;
+      type?: string;
+      status?: string;
+      last_seen?: string | null;
+      metadata?: Record<string, unknown> | null;
+    }>>('/v1/agents');
+
     return agents
       .filter((agent) => agent.type !== 'human')
-      .filter((agent) => agent.name.toLowerCase() !== DASHBOARD_READER_NAME.toLowerCase())
+      .filter((agent) => agent.name.toLowerCase() !== DASHBOARD_READER_NAME)
       .map(mapAgentStatus);
   } catch (err) {
     console.warn('[relaycast-provider] Failed to fetch agents:', (err as Error).message);
@@ -346,14 +109,16 @@ export async function fetchAgents(config: RelaycastConfig): Promise<AgentStatus[
  */
 export async function fetchChannels(config: RelaycastConfig): Promise<RelaycastChannel[]> {
   try {
-    const reader = await createReader(config);
+    const reader = await getReaderClient(config);
     const channelsRaw = await reader.channels.list({ include_archived: true }) as Array<Omit<RelaycastChannel, 'member_count'> & {
       member_count?: number;
     }>;
+
     const channels: RelaycastChannel[] = channelsRaw.map((channel) => ({
       ...channel,
       member_count: typeof channel.member_count === 'number' ? channel.member_count : 0,
     }));
+
     return channels.sort((a, b) => a.name.localeCompare(b.name));
   } catch (err) {
     console.warn('[relaycast-provider] Failed to fetch channels:', (err as Error).message);
@@ -373,24 +138,22 @@ export async function fetchChannelMessages(
   if (!channelName) return [];
 
   try {
-    const reader = await createReader(config);
+    const reader = await getReaderClient(config);
     const limit = getMessageLimit(options.limit);
-    let messages = await reader.messages(channelName, { limit }) as RelaycastMessage[];
+    let messages = await reader.client.get<RelaycastMessage[]>(
+      `/v1/channels/${encodeURIComponent(channelName)}/messages`,
+      { limit: String(limit) },
+    );
 
     if (typeof options.before === 'number' && Number.isFinite(options.before)) {
       const beforeTs = options.before;
-      messages = messages.filter((msg: RelaycastMessage) => {
+      messages = messages.filter((msg) => {
         const ts = parseTimestamp(msg.created_at);
         return ts !== null && ts < beforeTs;
       });
     }
 
-    messages.sort((a: RelaycastMessage, b: RelaycastMessage) => {
-      const aTs = parseTimestamp(a.created_at) ?? 0;
-      const bTs = parseTimestamp(b.created_at) ?? 0;
-      return aTs - bTs;
-    });
-
+    messages.sort((a, b) => (parseTimestamp(a.created_at) ?? 0) - (parseTimestamp(b.created_at) ?? 0));
     return messages;
   } catch (err) {
     console.warn(`[relaycast-provider] Failed to fetch channel messages for #${channelName}:`, (err as Error).message);
@@ -407,23 +170,89 @@ export async function fetchChannelMembers(config: RelaycastConfig, _channel: str
   return fetchAgents(config);
 }
 
+async function fetchDmConversations(config: RelaycastConfig): Promise<RelaycastDmConversation[]> {
+  try {
+    const reader = await getReaderClient(config);
+    const conversations = await reader.dms.conversations() as RelaycastDmConversation[];
+    return Array.isArray(conversations) ? conversations : [];
+  } catch (err) {
+    console.warn('[relaycast-provider] Failed to fetch DM conversations:', (err as Error).message);
+    return [];
+  }
+}
+
+async function fetchDmConversationMessages(
+  config: RelaycastConfig,
+  conversationId: string,
+  limit = DEFAULT_MESSAGE_LIMIT,
+): Promise<RelaycastMessage[]> {
+  const trimmedId = conversationId.trim();
+  if (!trimmedId) return [];
+
+  try {
+    const reader = await getReaderClient(config);
+    const messages = await reader.client.get<RelaycastMessage[]>(
+      `/v1/dm/conversations/${encodeURIComponent(trimmedId)}/messages`,
+      { limit: String(getMessageLimit(limit)) },
+    );
+
+    if (!Array.isArray(messages)) return [];
+    messages.sort((a, b) => (parseTimestamp(a.created_at) ?? 0) - (parseTimestamp(b.created_at) ?? 0));
+    return messages;
+  } catch (err) {
+    console.warn(
+      `[relaycast-provider] Failed to fetch DM messages for conversation ${trimmedId}:`,
+      (err as Error).message,
+    );
+    return [];
+  }
+}
+
+async function fetchAllDirectMessages(config: RelaycastConfig): Promise<Message[]> {
+  const conversations = await fetchDmConversations(config);
+  if (conversations.length === 0) return [];
+
+  const grouped = await Promise.all(
+    conversations.map(async (conversation) => {
+      const conversationId = typeof conversation.id === 'string' ? conversation.id.trim() : '';
+      if (!conversationId) return [] as Message[];
+
+      const participants = Array.isArray(conversation.participants)
+        ? conversation.participants
+          .map((participant) => normalizeIdentity(participant))
+          .filter((participant): participant is string => Boolean(participant))
+        : [];
+
+      const messages = await fetchDmConversationMessages(config, conversationId);
+      return messages.map((message) => mapDmMessage(conversationId, participants, message));
+    }),
+  );
+
+  return grouped.flat();
+}
+
 /**
- * Fetch messages from all channels, merged and sorted oldest-first.
+ * Fetch messages from all channels + DM conversations, merged and sorted oldest-first.
  */
 export async function fetchAllMessages(config: RelaycastConfig): Promise<Message[]> {
   try {
-    const channels = await fetchChannels(config);
-    if (channels.length === 0) return [];
+    const [channels, directMessages] = await Promise.all([
+      fetchChannels(config),
+      fetchAllDirectMessages(config),
+    ]);
 
-    const results = await Promise.all(
-      channels.map((channel) => fetchChannelMessages(config, channel.name, { limit: DEFAULT_MESSAGE_LIMIT })),
-    );
+    const channelResults = channels.length > 0
+      ? await Promise.all(
+        channels.map((channel) => fetchChannelMessages(config, channel.name, { limit: DEFAULT_MESSAGE_LIMIT })),
+      )
+      : [];
 
-    const mapped = results.flatMap((messages, index) => {
+    const channelMessages = channelResults.flatMap((messages, index) => {
       const channelName = channels[index]?.name ?? 'general';
-      return messages.map((msg) => mapDashboardMessage(channelName, msg));
+      return messages.map((msg) => mapChannelMessage(channelName, msg));
     });
 
+    const mapped = dedupeMessages([...channelMessages, ...directMessages]);
     mapped.sort((a, b) => (parseTimestamp(a.timestamp) ?? 0) - (parseTimestamp(b.timestamp) ?? 0));
     return mapped;
   } catch (err) {
@@ -437,12 +266,9 @@ export async function fetchDashboardSnapshot(config: RelaycastConfig): Promise<D
     fetchAgents(config),
     fetchAllMessages(config),
   ]);
+
   return { agents, messages };
 }
-
-// ---------------------------------------------------------------------------
-// Write API
-// ---------------------------------------------------------------------------
 
 export async function sendMessage(config: RelaycastConfig, input: SendMessageInput): Promise<SendMessageResult> {
   const target = normalizeTarget(input.to);
@@ -451,13 +277,15 @@ export async function sendMessage(config: RelaycastConfig, input: SendMessageInp
     throw new Error('Missing required fields: to, message');
   }
 
-  const senderName = input.from?.trim() ? input.from.trim() : 'Dashboard';
+  const senderName = input.from?.trim() ? input.from.trim() : DASHBOARD_DISPLAY_NAME;
   const relaycast = await getWriterClient(config, senderName, input.dataDir);
+
   if (target.startsWith('#')) {
     await relaycast.send(target.slice(1), message);
   } else {
     await relaycast.dm(target, message);
   }
+
   return { messageId: `relaycast-${Date.now()}` };
 }
 
@@ -469,7 +297,8 @@ export async function createChannel(config: RelaycastConfig, input: CreateChanne
 
   // Relaycast channel creation currently ignores visibility.
   void input.visibility;
-  const relaycast = await getWriterClient(config, input.creator?.trim() || 'Dashboard', input.dataDir);
+
+  const relaycast = await getWriterClient(config, input.creator?.trim() || DASHBOARD_DISPLAY_NAME, input.dataDir);
   await relaycast.channels.create({
     name: channelName,
     ...(input.description?.trim() ? { topic: input.description.trim() } : {}),
@@ -485,7 +314,7 @@ export async function inviteToChannel(
     throw new Error('channel is required');
   }
 
-  const relaycast = await getWriterClient(config, input.invitedBy?.trim() || 'Dashboard', input.dataDir);
+  const relaycast = await getWriterClient(config, input.invitedBy?.trim() || DASHBOARD_DISPLAY_NAME, input.dataDir);
   const invited: Array<{ id: string; type: 'user' | 'agent'; success: boolean; reason?: string }> = [];
 
   for (const member of input.members) {
@@ -512,7 +341,7 @@ export async function joinChannel(config: RelaycastConfig, input: JoinChannelInp
   const channelName = normalizeChannelName(input.channel);
   if (!channelName || channelName.startsWith('dm:')) return;
 
-  const relaycast = await getWriterClient(config, input.username.trim() || 'Dashboard', input.dataDir);
+  const relaycast = await getWriterClient(config, input.username.trim() || DASHBOARD_DISPLAY_NAME, input.dataDir);
   await relaycast.channels.join(channelName);
 }
 
@@ -520,7 +349,7 @@ export async function leaveChannel(config: RelaycastConfig, input: LeaveChannelI
   const channelName = normalizeChannelName(input.channel);
   if (!channelName || channelName.startsWith('dm:')) return;
 
-  const relaycast = await getWriterClient(config, input.username.trim() || 'Dashboard');
+  const relaycast = await getWriterClient(config, input.username.trim() || DASHBOARD_DISPLAY_NAME);
   await relaycast.channels.leave(channelName);
 }
 
