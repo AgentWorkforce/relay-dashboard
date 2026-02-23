@@ -2,7 +2,7 @@
  * Dashboard V2 - Main App Page (Client Component)
  *
  * In cloud mode: Shows workspace selection and connects to selected workspace's dashboard.
- * In local mode: Connects to local daemon WebSocket.
+ * In local mode: Connects to local broker WebSocket.
  */
 
 'use client';

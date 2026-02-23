@@ -213,7 +213,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const wsEventHandlerRef = useRef<((event: any) => void) | undefined>(undefined);
 
-  // WebSocket connection for real-time data (per-project daemon)
+  // WebSocket connection for real-time data (per-project broker)
   // Pass event handler for direct_message/channel_message events in local mode
   const { data: wsData, isConnected, error: wsError } = useWebSocket({
     url: wsUrl,
@@ -350,7 +350,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   const [activeCloudWorkspaceId, setActiveCloudWorkspaceId] = useState<string | null>(() => getActiveWorkspaceId());
   const [isLoadingCloudWorkspaces, setIsLoadingCloudWorkspaces] = useState(false);
 
-  // Local agents from linked daemons
+  // Local agents from linked brokers
   const [localAgents, setLocalAgents] = useState<Agent[]>([]);
 
   // Fetch cloud workspaces when in cloud mode
@@ -418,7 +418,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
 
   // Fetch agents for the active workspace.
   // Cloud users: poll GET /api/workspaces/:id/agents (backed by Relaycast WS on server)
-  // Non-cloud users: poll GET /api/daemons/workspace/:id/agents (linked daemon mode)
+  // Non-cloud users: poll GET /api/brokers/workspace/:id/agents (linked broker mode)
   useEffect(() => {
     if (!activeCloudWorkspaceId) {
       setLocalAgents([]);
@@ -442,7 +442,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
             setLocalAgents(agents);
           }
         } else {
-          // Non-cloud: linked daemon mode
+          // Non-cloud: linked broker mode
           const result = await api.get<{
             agents: Array<{
               name: string;
@@ -450,30 +450,43 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
               isLocal: boolean;
               isHuman?: boolean;
               avatarUrl?: string;
-              daemonId: string;
-              daemonName: string;
-              daemonStatus: string;
+              brokerId?: string;
+              brokerName?: string;
+              brokerStatus?: string;
               machineId: string;
               lastSeenAt: string | null;
             }>;
-          }>(`/api/daemons/workspace/${activeCloudWorkspaceId}/agents`);
+          }>(`/api/brokers/workspace/${activeCloudWorkspaceId}/agents`);
 
           if (result.agents) {
-            const agents: Agent[] = result.agents.map((a) => ({
-              name: a.name,
-              status: a.daemonStatus === 'online' ? 'online' : 'offline',
-              isLocal: !a.isHuman,
-              isHuman: a.isHuman,
-              avatarUrl: a.avatarUrl,
-              daemonName: a.isHuman ? undefined : a.daemonName,
-              machineId: a.isHuman ? undefined : a.machineId,
-              lastSeen: a.lastSeenAt || undefined,
-            }));
+            const agents: Agent[] = result.agents.map((a) => {
+              const brokerStatus = (a as { brokerStatus?: string }).brokerStatus;
+              const resolvedStatus = brokerStatus ?? a.status;
+              const brokerName = (a as { brokerName?: string }).brokerName;
+              return {
+                name: a.name,
+                status: resolvedStatus === 'online' ? 'online' : 'offline',
+                isLocal: !a.isHuman,
+                isHuman: a.isHuman,
+                avatarUrl: a.avatarUrl,
+                brokerName: a.isHuman ? undefined : brokerName,
+                machineId: a.isHuman ? undefined : a.machineId,
+                lastSeen: a.lastSeenAt || undefined,
+              };
+            });
             setLocalAgents(agents);
           }
         }
       } catch (err) {
-        console.error('Failed to fetch agents:', err);
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes('HTTP 404')) {
+          console.error(
+            'BREAKING CHANGE: daemon agent endpoints were removed. Dashboard now requires /api/brokers/workspace/:id/agents.',
+            err,
+          );
+        } else {
+          console.error('Failed to fetch agents:', err);
+        }
         setLocalAgents([]);
       }
     };
@@ -979,7 +992,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     }
   }, []);
 
-  // Merge AI agents, human users, and local agents from linked daemons
+  // Merge AI agents, human users, and local agents from linked brokers
   const combinedAgents = useMemo(() => {
     return mergeAgentsForDashboard({
       agents: data?.agents,
@@ -1373,7 +1386,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
       // If we have repos for the active workspace, show each repo as a project folder
       if (workspaceRepos.length > 1 && effectiveActiveWorkspaceId) {
         // Create empty project shells from workspace repos.
-        // Agent placement is handled entirely by mergedProjects using daemon WebSocket data
+        // Agent placement is handled entirely by mergedProjects using broker WebSocket data
         // (which has accurate real-time cwd from agentCwdMap). This avoids duplication
         // between orchestratorAgents and projectAgents having stale/conflicting cwd values.
         const repoProjects: Project[] = workspaceRepos.map((repo) => {
@@ -1509,7 +1522,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     return { bridgeAgents: bridge, projectAgents: project };
   }, [agents]);
 
-  // Merge local daemon agents into their project when we have bridge projects
+  // Merge local broker agents into their project when we have bridge projects
   // This prevents agents from appearing under "Local" instead of their project folder
   const mergedProjects = useMemo(() => {
     if (projects.length === 0) {
@@ -1575,9 +1588,9 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
 
     // Single-repo / bridge mode: merge into current/first project
     return projects.map((project, index) => {
-      const isCurrentDaemonProject = index === 0 || project.id === currentProject;
+      const isCurrentBrokerProject = index === 0 || project.id === currentProject;
 
-      if (isCurrentDaemonProject) {
+      if (isCurrentBrokerProject) {
         const existingNames = new Set(project.agents.map((a) => a.name.toLowerCase()));
         const newAgents = projectAgents.filter((a) => !existingNames.has(a.name.toLowerCase()));
 
@@ -1854,7 +1867,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     navigateToChannel(channel.id);
     closeSidebarOnMobile();
 
-    // Join the channel via the daemon (needed for local mode)
+    // Join the channel via the broker (needed for local mode)
     // This ensures the user is a member before sending messages
     try {
       const { joinChannel: joinChannelApi } = await import('./channels');
@@ -2072,7 +2085,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
       isRead: true,
     };
 
-    // Optimistic append; daemon will echo back via WS
+    // Optimistic append; broker will echo back via WS
     appendChannelMessage(selectedChannelId, optimisticMessage, { incrementUnread: false });
 
     try {
@@ -2132,7 +2145,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
 
   // Load more messages (pagination) handler
   const handleLoadMoreMessages = useCallback(async () => {
-    // Pagination not yet supported for daemon channels
+    // Pagination not yet supported for broker channels
     return;
   }, []);
 

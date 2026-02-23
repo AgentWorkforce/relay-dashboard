@@ -4,6 +4,9 @@
  * Tests for the proxy/mock server in both proxy and mock modes.
  */
 
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer, type DashboardServer } from './proxy-server.js';
 
@@ -241,6 +244,170 @@ describe('Dashboard Server', () => {
 
       expect(response.ok).toBe(true);
       expect(data.ok).toBe(true);
+    });
+
+    it('should proxy /api/brokers/* routes in proxy mode', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      // No broker server is running in this test, so proxy should fail with 502 (not 404).
+      const response = await fetch(`http://localhost:${port}/api/brokers/workspace/ws-123/agents`);
+      expect(response.status).toBe(502);
+    });
+  });
+
+  describe('Standalone Mode (Local Logs)', () => {
+    let server: DashboardServer;
+    let dataDir: string;
+
+    beforeAll(async () => {
+      dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dashboard-standalone-logs-'));
+      const logsDir = path.join(dataDir, 'team', 'worker-logs');
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.writeFileSync(path.join(logsDir, 'WorkerA.log'), 'line-one\nline-two\n', 'utf-8');
+      fs.writeFileSync(
+        path.join(dataDir, 'state.json'),
+        JSON.stringify(
+          {
+            agents: {
+              WorkerA: {
+                pid: 999999,
+                started_at: 1700000000,
+                spec: {
+                  cli: 'codex',
+                  cwd: '/tmp/workspace',
+                },
+              },
+            },
+          },
+          null,
+          2,
+        ),
+        'utf-8',
+      );
+
+      server = createServer({
+        port: 0,
+        mock: false,
+        verbose: false,
+        dataDir,
+      });
+      await new Promise<void>((resolve) => {
+        server.server.listen(0, () => resolve());
+      });
+    });
+
+    afterAll(async () => {
+      await server.close();
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    });
+
+    it('should start in standalone mode when relay URL is not provided', () => {
+      expect(server.mode).toBe('standalone');
+    });
+
+    it('should list local worker logs in standalone mode', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/logs`);
+      const data = await response.json();
+
+      expect(response.ok).toBe(true);
+      expect(data.success).toBe(true);
+      expect(data.agents).toContain('WorkerA');
+    });
+
+    it('should return local worker log content in standalone mode', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/logs/WorkerA`);
+      const data = await response.json();
+
+      expect(response.ok).toBe(true);
+      expect(data.found).toBe(true);
+      expect(data.content).toContain('line-one');
+      expect(data.content).toContain('line-two');
+    });
+
+    it('should return standalone spawned agents from local state', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/spawned`);
+      const data = await response.json();
+
+      expect(response.ok).toBe(true);
+      expect(data.success).toBe(true);
+      expect(Array.isArray(data.agents)).toBe(true);
+      expect(data.agents.some((agent: { name: string }) => agent.name === 'WorkerA')).toBe(true);
+    });
+
+    it('should provide actionable error for spawn in standalone mode', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/spawn`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'TestSpawn', cli: 'codex' }),
+      });
+      const data = await response.json();
+
+      expect(response.status).toBe(501);
+      expect(data.success).toBe(false);
+      expect(data.code).toBe('unsupported_operation');
+      expect(typeof data.error).toBe('string');
+    });
+
+    it('should return actionable error for broker API routes in standalone mode', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/brokers/workspace/ws-123/agents`);
+      const data = await response.json();
+
+      expect(response.status).toBe(501);
+      expect(data.success).toBe(false);
+      expect(data.code).toBe('unsupported_operation');
+      expect(data.error).toContain('standalone mode');
+    });
+
+    it('should return breaking-change guidance for daemon API routes', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/daemons/workspace/ws-123/agents`);
+      const data = await response.json();
+
+      expect(response.status).toBe(410);
+      expect(data.success).toBe(false);
+      expect(data.code).toBe('daemon_removed');
+      expect(data.error).toContain('BREAKING CHANGE');
+      expect(Array.isArray(data.requiredEndpoints)).toBe(true);
+      expect(data.requiredEndpoints).toContain('/api/brokers/*');
     });
   });
 });

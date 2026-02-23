@@ -1,7 +1,7 @@
 {
   "name": "@agent-relay/dashboard-server",
   "version": "2.0.82",
-  "description": "Express server for Agent Relay dashboard - serves UI and proxies to relay daemon",
+  "description": "Express server for Agent Relay dashboard - serves UI and proxies to relay broker",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -34,7 +34,6 @@
   },
   "dependencies": {
     "@agent-relay/config": "2.2.0",
-    "@agent-relay/daemon": "2.2.0",
     "@agent-relay/protocol": "2.2.0",
     "@agent-relay/sdk": "2.2.0",
     "@agent-relay/storage": "2.2.0",

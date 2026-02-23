@@ -76,7 +76,7 @@ Modes:
 
 Options:
   -p, --port <port>        Port to listen on (default: ${DEFAULT_PORT}, env: PORT)
-  -r, --relay-url <url>    Relay daemon URL (default: ${DEFAULT_RELAY_URL}, env: RELAY_URL)
+  -r, --relay-url <url>    Relay broker URL (default: ${DEFAULT_RELAY_URL}, env: RELAY_URL)
   --data-dir <path>        Relaycast credentials directory (default: ${DEFAULT_DATA_DIR}, env: DATA_DIR)
   -s, --static-dir <path>  Static files directory (default: ${DEFAULT_STATIC_DIR}, env: STATIC_DIR)
   -m, --mock               Run in mock mode (env: MOCK=true)

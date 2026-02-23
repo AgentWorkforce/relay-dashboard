@@ -32,10 +32,10 @@ export interface Agent {
   avatarUrl?: string; // Avatar URL for human users
   authRevoked?: boolean; // True if agent's authentication has been revoked (needs re-login)
   cwd?: string; // Working directory (repo name) the agent was spawned in
-  // Local daemon agent fields
-  isLocal?: boolean; // True if agent is from a linked local daemon
-  daemonName?: string; // Name of the linked daemon
-  machineId?: string; // Machine ID of the linked daemon
+  // Local broker agent fields
+  isLocal?: boolean; // True if agent is from a linked local broker
+  brokerName?: string; // Name of the linked broker
+  machineId?: string; // Machine ID of the linked broker
   // Profile fields for understanding agent behavior
   profile?: AgentProfile;
 }

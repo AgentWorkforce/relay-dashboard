@@ -14,6 +14,11 @@ import { createProxyMiddleware, type Options as ProxyOptions } from 'http-proxy-
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  getTrajectoryHistory,
+  getTrajectoryStatus,
+  listTrajectorySteps,
+} from '@agent-relay/trajectory';
 import { registerMockRoutes } from './mocks/routes.js';
 import {
   mockAgents,
@@ -43,6 +48,8 @@ const __dirname = path.dirname(__filename);
 
 const PHANTOM_OFFLINE_MAX_AGE_MS = 5 * 60 * 1000;
 const STANDALONE_WS_POLL_MS = 3000;
+const STANDALONE_LOG_POLL_MS = 1000;
+const STANDALONE_LOG_HISTORY_LINES = 200;
 const SPAWNED_CACHE_TTL_MS = 3000;
 const WORKFLOW_BOOTSTRAP_TASK =
   'You are connected to Agent Relay. Wait for relay messages and respond using Relaycast MCP tools.';
@@ -307,6 +314,147 @@ function parseInviteMembers(invites: unknown): Array<{ id: string; type: 'user' 
   return [];
 }
 
+function getWorkerLogsDir(dataDir: string): string {
+  return path.join(dataDir, 'team', 'worker-logs');
+}
+
+function sanitizeLogAgentName(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('\0')) {
+    return null;
+  }
+  return trimmed;
+}
+
+function listStandaloneLogAgents(dataDir: string): string[] {
+  const logsDir = getWorkerLogsDir(dataDir);
+  if (!fs.existsSync(logsDir)) {
+    return [];
+  }
+
+  try {
+    return fs
+      .readdirSync(logsDir)
+      .filter((name) => name.endsWith('.log'))
+      .map((name) => name.slice(0, -4))
+      .sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+}
+
+function readRecentLogLines(filePath: string, lineLimit = STANDALONE_LOG_HISTORY_LINES): string[] {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const lines = content.split(/\r?\n/);
+    if (lines.length > 0 && lines[lines.length - 1] === '') {
+      lines.pop();
+    }
+    return lines.slice(-lineLimit);
+  } catch {
+    return [];
+  }
+}
+
+function readLogDelta(
+  filePath: string,
+  offset: number,
+): { nextOffset: number; content: string } {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const stats = fs.fstatSync(fd);
+    const start = stats.size < offset ? 0 : offset;
+    if (stats.size <= start) {
+      return { nextOffset: start, content: '' };
+    }
+
+    const length = stats.size - start;
+    const buffer = Buffer.alloc(length);
+    fs.readSync(fd, buffer, 0, length, start);
+    return {
+      nextOffset: stats.size,
+      content: buffer.toString('utf-8'),
+    };
+  } catch {
+    return { nextOffset: offset, content: '' };
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // Ignore close failures.
+      }
+    }
+  }
+}
+
+interface LocalStateAgentSummary {
+  name: string;
+  cli: string;
+  startedAt: string;
+  online: boolean;
+  pid?: number;
+  cwd?: string;
+}
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function toIsoTimestamp(epochSeconds: unknown): string {
+  if (typeof epochSeconds !== 'number' || !Number.isFinite(epochSeconds) || epochSeconds <= 0) {
+    return new Date(0).toISOString();
+  }
+  return new Date(epochSeconds * 1000).toISOString();
+}
+
+function readStandaloneStateAgents(dataDir: string): LocalStateAgentSummary[] {
+  const statePath = path.join(dataDir, 'state.json');
+  if (!fs.existsSync(statePath)) {
+    return [];
+  }
+
+  try {
+    const raw = JSON.parse(fs.readFileSync(statePath, 'utf-8')) as Record<string, unknown>;
+    if (!isRecord(raw.agents)) {
+      return [];
+    }
+
+    const agents: LocalStateAgentSummary[] = [];
+    for (const [name, value] of Object.entries(raw.agents)) {
+      if (!isRecord(value)) {
+        continue;
+      }
+
+      const pid = typeof value.pid === 'number' ? value.pid : undefined;
+      const spec = isRecord(value.spec) ? value.spec : undefined;
+      const cli = typeof spec?.cli === 'string' && spec.cli.trim() ? spec.cli : 'unknown';
+      const cwd = typeof spec?.cwd === 'string' && spec.cwd.trim() ? spec.cwd : undefined;
+
+      agents.push({
+        name,
+        cli,
+        cwd,
+        pid,
+        online: pid !== undefined ? isPidAlive(pid) : false,
+        startedAt: toIsoTimestamp(value.started_at),
+      });
+    }
+
+    agents.sort((a, b) => a.name.localeCompare(b.name));
+    return agents;
+  } catch {
+    return [];
+  }
+}
+
 async function searchFiles(rootDir: string, query: string, limit: number): Promise<FileSearchResult[]> {
   const results: FileSearchResult[] = [];
   const normalizedQuery = query.trim().toLowerCase();
@@ -418,7 +566,7 @@ function sendHtmlFileOrFallback(
 export interface DashboardServerOptions {
   /** Port to listen on (default: 3888) */
   port?: number;
-  /** Relay daemon URL for broker proxy mode */
+  /** Relay broker URL for proxy mode */
   relayUrl?: string;
   /** Path to static files directory (default: ../out) */
   staticDir?: string;
@@ -426,7 +574,7 @@ export interface DashboardServerOptions {
   dataDir?: string;
   /** Enable verbose logging */
   verbose?: boolean;
-  /** Run in mock mode (no relay daemon required) */
+  /** Run in mock mode (no relay broker required) */
   mock?: boolean;
   /** CORS allowed origins (comma-separated, or '*' for all) */
   corsOrigins?: string;
@@ -563,6 +711,10 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     expiresAt: 0,
     names: null,
   };
+  let localAgentNamesCache: { expiresAt: number; names: Set<string> | null } = {
+    expiresAt: 0,
+    names: null,
+  };
 
   const resolveRelaycastConfig = (): RelaycastConfig | null => loadRelaycastConfig(dataDir);
 
@@ -618,7 +770,53 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     }
   };
 
-  const filterPhantomAgents = (agents: AgentStatus[], spawnedAgentNames: Set<string> | null): AgentStatus[] => {
+  const getLocalAgentNames = (): Set<string> | null => {
+    if (brokerProxyEnabled) {
+      return null;
+    }
+
+    const now = Date.now();
+    if (localAgentNamesCache.expiresAt > now) {
+      return localAgentNamesCache.names;
+    }
+
+    const names = new Set<string>();
+    const addName = (value: unknown): void => {
+      if (typeof value !== 'string') return;
+      const normalized = normalizeAgentName(value);
+      if (normalized) {
+        names.add(normalized);
+      }
+    };
+
+    try {
+      const statePath = path.join(dataDir, 'state.json');
+      if (fs.existsSync(statePath)) {
+        const stateRaw = JSON.parse(fs.readFileSync(statePath, 'utf-8')) as Record<string, unknown>;
+        if (isRecord(stateRaw.agents)) {
+          for (const agentName of Object.keys(stateRaw.agents)) {
+            addName(agentName);
+          }
+        }
+      }
+    } catch {
+      // Ignore local state parsing failures.
+    }
+
+    const resolvedNames = names;
+    localAgentNamesCache = {
+      expiresAt: now + (resolvedNames.size > 0 ? SPAWNED_CACHE_TTL_MS : 500),
+      names: resolvedNames,
+    };
+
+    return resolvedNames;
+  };
+
+  const filterPhantomAgents = (
+    agents: AgentStatus[],
+    spawnedAgentNames: Set<string> | null,
+    localAgentNames: Set<string> | null
+  ): AgentStatus[] => {
     const now = Date.now();
 
     return agents.filter((agent) => {
@@ -627,6 +825,11 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
 
       if (status === 'offline' && lastSeenTs !== null && (now - lastSeenTs) > PHANTOM_OFFLINE_MAX_AGE_MS) {
         return false;
+      }
+
+      if (localAgentNames !== null) {
+        const normalizedAgentName = normalizeAgentName(agent.name);
+        return normalizedAgentName ? localAgentNames.has(normalizedAgentName) : false;
       }
 
       if (spawnedAgentNames !== null) {
@@ -644,13 +847,14 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       return { ...EMPTY_DASHBOARD_SNAPSHOT };
     }
 
-    const [agents, messages, spawnedAgentNames] = await Promise.all([
+    const [agents, messages, spawnedAgentNames, localAgentNames] = await Promise.all([
       fetchAgents(config),
       fetchAllMessages(config),
       brokerProxyEnabled ? getSpawnedAgentNames() : Promise.resolve(null),
+      brokerProxyEnabled ? Promise.resolve(null) : Promise.resolve(getLocalAgentNames()),
     ]);
 
-    const filteredAgents = filterPhantomAgents(agents, spawnedAgentNames);
+    const filteredAgents = filterPhantomAgents(agents, spawnedAgentNames, localAgentNames);
     return {
       agents: filteredAgents,
       users: [],
@@ -723,7 +927,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
   };
 
   if (mock) {
-    console.log('[dashboard] Running in MOCK mode - no relay daemon required');
+    console.log('[dashboard] Running in MOCK mode - no relay broker required');
     registerMockRoutes(app, verbose);
   } else {
     if (mode === 'proxy' && relayUrl) {
@@ -758,6 +962,223 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       } catch (err) {
         console.error('[dashboard] Failed to fetch Relaycast dashboard data:', err);
         res.status(500).json({ error: 'Failed to load Relaycast data' });
+      }
+    });
+
+    const daemonEndpointRemoved = (req: Request, res: Response): void => {
+      res.status(410).json({
+        success: false,
+        code: 'daemon_removed',
+        error: 'BREAKING CHANGE: daemon API endpoints were removed.',
+        details: `Update dashboard/broker integrations to broker endpoints. Requested: ${req.path}`,
+        requiredEndpoints: [
+          '/api/brokers/*',
+          '/api/brokers/workspace/:workspaceId/agents',
+          '/api/brokers/link',
+        ],
+      });
+    };
+
+    app.all('/api/daemons', daemonEndpointRemoved);
+    app.all('/api/daemons/{*path}', daemonEndpointRemoved);
+
+    if (!brokerProxyEnabled) {
+      const unsupportedBrokerOperation = (
+        res: Response,
+        operation: string,
+        extra: Record<string, unknown> = {},
+      ): void => {
+        res.status(501).json({
+          success: false,
+          code: 'unsupported_operation',
+          mode: 'standalone',
+          error: `${operation} is unavailable in standalone mode.`,
+          suggestion: 'Start dashboard in proxy mode with a broker API relay URL to enable broker-managed operations.',
+          ...extra,
+        });
+      };
+
+      app.all('/api/brokers', (_req: Request, res: Response) => {
+        unsupportedBrokerOperation(res, 'Broker API');
+      });
+
+      app.all('/api/brokers/{*path}', (req: Request, res: Response) => {
+        unsupportedBrokerOperation(res, 'Broker API', { path: req.path });
+      });
+
+      app.get('/api/spawned', (_req: Request, res: Response) => {
+        const agents = readStandaloneStateAgents(dataDir);
+        res.json({
+          success: true,
+          agents: agents.map((agent) => ({
+            name: agent.name,
+            cli: agent.cli,
+            startedAt: agent.startedAt,
+            online: agent.online,
+            pid: agent.pid,
+            cwd: agent.cwd,
+          })),
+        });
+      });
+
+      app.post('/api/spawn', (req: Request, res: Response) => {
+        const requestedName =
+          typeof req.body?.name === 'string' && req.body.name.trim()
+            ? req.body.name.trim()
+            : 'unknown';
+        unsupportedBrokerOperation(res, 'Agent spawn', { name: requestedName });
+      });
+
+      app.post('/api/spawn/architect', (_req: Request, res: Response) => {
+        unsupportedBrokerOperation(res, 'Architect spawn');
+      });
+
+      app.post('/api/release', (_req: Request, res: Response) => {
+        unsupportedBrokerOperation(res, 'Agent release');
+      });
+
+      app.delete('/api/spawned/:name', (req: Request, res: Response) => {
+        const name = typeof req.params.name === 'string' ? decodeURIComponent(req.params.name) : '';
+        unsupportedBrokerOperation(res, 'Agent release', { name });
+      });
+
+      app.post('/api/agents/by-name/:name/interrupt', (req: Request, res: Response) => {
+        const name = typeof req.params.name === 'string' ? decodeURIComponent(req.params.name) : '';
+        unsupportedBrokerOperation(res, 'Agent interrupt', { name });
+      });
+
+      app.put('/api/agents/:name/cwd', (req: Request, res: Response) => {
+        const name = typeof req.params.name === 'string' ? decodeURIComponent(req.params.name) : '';
+        unsupportedBrokerOperation(res, 'Agent cwd update', { name });
+      });
+
+      app.get('/api/agents/:name/online', (req: Request, res: Response) => {
+        const name = typeof req.params.name === 'string' ? decodeURIComponent(req.params.name) : '';
+        const normalizedName = normalizeAgentName(name);
+        const agent = readStandaloneStateAgents(dataDir).find((item) => normalizeAgentName(item.name) === normalizedName);
+        res.json({
+          success: true,
+          name,
+          online: agent?.online ?? false,
+          pid: agent?.pid ?? null,
+        });
+      });
+    }
+
+    if (!brokerProxyEnabled) {
+      app.get('/api/logs', (_req: Request, res: Response) => {
+        const agents = listStandaloneLogAgents(dataDir);
+        res.json({ success: true, agents });
+      });
+
+      app.get('/api/logs/:name', (req: Request, res: Response) => {
+        const raw = Array.isArray(req.params.name) ? req.params.name[0] : req.params.name;
+        const decoded = decodeURIComponent(raw ?? '');
+        const agentName = sanitizeLogAgentName(decoded);
+
+        if (!agentName) {
+          res.status(400).json({ error: 'Agent name is required' });
+          return;
+        }
+
+        const logsDir = getWorkerLogsDir(dataDir);
+        const logFile = path.join(logsDir, `${agentName}.log`);
+        const availableAgents = listStandaloneLogAgents(dataDir);
+
+        if (!fs.existsSync(logFile)) {
+          res.status(404).json({
+            agent: agentName,
+            found: false,
+            lineCount: 0,
+            content: '',
+            availableAgents,
+            error: `No local logs for '${agentName}'.`,
+          });
+          return;
+        }
+
+        const lines = readRecentLogLines(logFile);
+        res.json({
+          agent: agentName,
+          found: true,
+          lineCount: lines.length,
+          content: lines.join('\n'),
+          availableAgents,
+        });
+      });
+    }
+
+    if (!brokerProxyEnabled) {
+      app.get('/api/bridge', async (_req: Request, res: Response) => {
+        try {
+          const snapshot = await getRelaycastSnapshot();
+          const projectPath = path.dirname(dataDir);
+          const projectName = path.basename(projectPath) || projectPath;
+
+          res.json({
+            projects: [
+              {
+                id: 'local',
+                name: projectName,
+                path: projectPath,
+                connected: true,
+                agents: snapshot.agents.map((agent) => ({
+                  name: agent.name,
+                  status: (agent.status ?? 'offline').toLowerCase(),
+                  cli: agent.cli,
+                })),
+              },
+            ],
+            bridgeAgents: snapshot.agents,
+            messages: snapshot.messages,
+            connected: false,
+            currentProjectPath: projectPath,
+          });
+        } catch (err) {
+          console.error('[dashboard] Failed to build local bridge view:', err);
+          res.status(500).json({
+            projects: [],
+            bridgeAgents: [],
+            messages: [],
+            connected: false,
+            error: 'Failed to build local bridge view',
+          });
+        }
+      });
+    }
+
+    app.get('/api/trajectory', async (_req: Request, res: Response) => {
+      try {
+        const status = await getTrajectoryStatus();
+        res.json(status);
+      } catch (err) {
+        console.error('[dashboard] Failed to fetch trajectory status:', err);
+        res.status(500).json({ success: false, active: false, error: 'Failed to fetch trajectory status' });
+      }
+    });
+
+    app.get('/api/trajectory/history', async (_req: Request, res: Response) => {
+      try {
+        const history = await getTrajectoryHistory();
+        res.json(history);
+      } catch (err) {
+        console.error('[dashboard] Failed to fetch trajectory history:', err);
+        res.status(500).json({ success: false, trajectories: [], error: 'Failed to fetch trajectory history' });
+      }
+    });
+
+    app.get('/api/trajectory/steps', async (req: Request, res: Response) => {
+      const trajectoryId =
+        typeof req.query.trajectoryId === 'string' && req.query.trajectoryId.trim()
+          ? req.query.trajectoryId.trim()
+          : undefined;
+
+      try {
+        const steps = await listTrajectorySteps(trajectoryId);
+        res.json(steps);
+      } catch (err) {
+        console.error('[dashboard] Failed to fetch trajectory steps:', err);
+        res.status(500).json({ success: false, steps: [], error: 'Failed to fetch trajectory steps' });
       }
     });
 
@@ -812,12 +1233,13 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       }
 
       try {
-        const [members, spawnedAgentNames] = await Promise.all([
+        const [members, spawnedAgentNames, localAgentNames] = await Promise.all([
           fetchChannelMembers(config, channelName),
           brokerProxyEnabled ? getSpawnedAgentNames() : Promise.resolve(null),
+          brokerProxyEnabled ? Promise.resolve(null) : Promise.resolve(getLocalAgentNames()),
         ]);
 
-        const filteredMembers = filterPhantomAgents(members, spawnedAgentNames);
+        const filteredMembers = filterPhantomAgents(members, spawnedAgentNames, localAgentNames);
         res.json({
           members: filteredMembers.map((agent) => ({
             id: agent.name,
@@ -1349,6 +1771,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
           };
         });
       });
+      app.use('/api/brokers', createProxyMiddleware(brokerProxyOptions));
       app.get('/api/bridge', createProxyMiddleware(brokerProxyOptions));
 
       // Keep legacy release path for older dashboard clients while broker migration completes.
@@ -1423,6 +1846,13 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
         } else {
           handleStandaloneWebSocket(ws, getRelaycastSnapshot, verbose);
         }
+      });
+      return;
+    }
+
+    if (mode !== 'proxy' && (pathname === '/ws/logs' || pathname.startsWith('/ws/logs/'))) {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        handleStandaloneLogWebSocket(ws, pathname, dataDir, getLocalAgentNames, verbose);
       });
       return;
     }
@@ -1560,6 +1990,121 @@ function handleStandaloneWebSocket(
   ws.on('error', (err) => {
     if (verbose) {
       console.warn('[dashboard] Standalone WebSocket error:', err.message);
+    }
+    clearInterval(interval);
+  });
+}
+
+/**
+ * Handle standalone log WebSocket connections by tailing local worker log files.
+ */
+function handleStandaloneLogWebSocket(
+  ws: WebSocket,
+  pathname: string,
+  dataDir: string,
+  getLocalAgentNames: () => Set<string> | null,
+  verbose: boolean,
+): void {
+  const segments = pathname.split('/').filter(Boolean);
+  const encodedAgentName = segments.length >= 3 ? segments[segments.length - 1] : '';
+  const agentName = sanitizeLogAgentName(decodeURIComponent(encodedAgentName));
+
+  if (!agentName) {
+    ws.send(JSON.stringify({ type: 'error', error: 'Agent name is required' }));
+    ws.close(4404, 'Agent name is required');
+    return;
+  }
+
+  if (verbose) {
+    console.log(`[dashboard] Standalone log WebSocket connected for ${agentName}`);
+  }
+
+  const logFile = path.join(getWorkerLogsDir(dataDir), `${agentName}.log`);
+  const availableAgents = (): string[] => listStandaloneLogAgents(dataDir);
+  const normalizedName = normalizeAgentName(agentName);
+
+  let offset = 0;
+  const syncOffsetToEnd = (): void => {
+    try {
+      const stats = fs.statSync(logFile);
+      offset = stats.size;
+    } catch {
+      offset = 0;
+    }
+  };
+
+  const sendHistory = (): void => {
+    const lines = readRecentLogLines(logFile);
+    ws.send(JSON.stringify({ type: 'subscribed', agent: agentName }));
+    ws.send(JSON.stringify({ type: 'history', agent: agentName, lines }));
+    syncOffsetToEnd();
+  };
+
+  const knownLocalAgents = getLocalAgentNames();
+  const isKnownLocalAgent =
+    knownLocalAgents !== null && knownLocalAgents.has(normalizedName);
+
+  if (!fs.existsSync(logFile) && !isKnownLocalAgent) {
+    ws.send(JSON.stringify({
+      type: 'error',
+      agent: agentName,
+      error: `No local logs for '${agentName}'.`,
+      availableAgents: availableAgents(),
+    }));
+    ws.close(4404, 'Agent logs not found');
+    return;
+  }
+
+  if (fs.existsSync(logFile)) {
+    sendHistory();
+  } else {
+    ws.send(JSON.stringify({ type: 'subscribed', agent: agentName }));
+    ws.send(JSON.stringify({ type: 'history', agent: agentName, lines: [] }));
+  }
+
+  const interval = setInterval(() => {
+    if (ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    if (!fs.existsSync(logFile)) {
+      return;
+    }
+
+    const delta = readLogDelta(logFile, offset);
+    offset = delta.nextOffset;
+    if (delta.content) {
+      ws.send(JSON.stringify({
+        type: 'log',
+        agent: agentName,
+        content: delta.content,
+      }));
+    }
+  }, STANDALONE_LOG_POLL_MS);
+
+  ws.on('message', (data) => {
+    try {
+      const message = JSON.parse(data.toString()) as { type?: string };
+      if (message.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }));
+      } else if (message.type === 'subscribe' || message.type === 'replay' || message.type === 'refresh') {
+        sendHistory();
+      }
+    } catch {
+      // Ignore parse errors.
+    }
+  });
+
+  ws.on('close', () => {
+    if (verbose) {
+      console.log(`[dashboard] Standalone log WebSocket disconnected for ${agentName}`);
+    }
+    clearInterval(interval);
+  });
+
+  ws.on('error', (err) => {
+    if (verbose) {
+      console.warn(`[dashboard] Standalone log WebSocket error for ${agentName}:`, err.message);
     }
     clearInterval(interval);
   });

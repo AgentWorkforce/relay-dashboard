@@ -2,7 +2,7 @@
  * Mock Data Fixtures
  *
  * Provides realistic mock data for standalone dashboard testing.
- * Enables the dashboard to run without a relay daemon connection.
+ * Enables the dashboard to run without a relay broker connection.
  */
 
 import type { Agent, Message, Session } from './types.js';

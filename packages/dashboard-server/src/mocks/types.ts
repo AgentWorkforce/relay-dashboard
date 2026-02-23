@@ -2,7 +2,7 @@
  * Server Types
  *
  * Shared types for the dashboard server, matching the protocol types
- * used by the relay daemon.
+ * used by the relay broker.
  */
 
 export interface Agent {

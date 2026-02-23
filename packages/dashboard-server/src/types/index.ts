@@ -11,9 +11,9 @@ import type { RelayAdapter } from '@agent-relay/sdk';
 
 /**
  * Interface for spawn manager read operations.
- * When the daemon's SpawnManager is passed in, the dashboard uses it
+ * When the broker SpawnManager is passed in, the dashboard uses it
  * for read operations (logs, worker listing).
- * Spawn/release go through the SDK client → daemon socket.
+ * Spawn/release go through the SDK client → broker socket.
  */
 export interface SpawnManagerLike {
   hasWorker(name: string): boolean;
@@ -41,7 +41,7 @@ export interface DashboardOptions {
   dataDir: string;
   /** Team directory for configuration */
   teamDir: string;
-  /** Path to SQLite database (defaults to dataDir/messages.sqlite - same as daemon) */
+  /** Path to SQLite database (defaults to dataDir/messages.sqlite - same as broker runtime) */
   dbPath?: string;
   /** Enable agent spawning API */
   enableSpawner?: boolean;
@@ -62,13 +62,13 @@ export interface DashboardOptions {
 export interface ProxyServerOptions {
   /** Port to listen on (default: 3888) */
   port?: number;
-  /** Relay daemon URL to proxy to (default: http://localhost:3889) */
+  /** Relay broker URL to proxy to (default: http://localhost:3889) */
   relayUrl?: string;
   /** Path to static files directory (default: ../out) */
   staticDir?: string;
   /** Enable verbose logging */
   verbose?: boolean;
-  /** Run in mock mode (no relay daemon required) */
+  /** Run in mock mode (no relay broker required) */
   mock?: boolean;
   /** CORS allowed origins (comma-separated, or '*' for all) */
   corsOrigins?: string;
@@ -84,7 +84,7 @@ export interface DashboardServer {
   server: Server;
   wss: WebSocketServer;
   close: () => Promise<void>;
-  mode: 'proxy' | 'mock';
+  mode: 'proxy' | 'standalone' | 'mock';
 }
 
 /**
