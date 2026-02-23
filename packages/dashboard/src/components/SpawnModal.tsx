@@ -55,64 +55,21 @@ export interface SpawnModalProps {
   activeRepoId?: string;
   /** Connected provider IDs (cloud mode) - used to disable unconnected providers */
   connectedProviders?: string[];
+  /** Model options per agent type — provided by the host app */
+  modelOptions?: {
+    claude?: ModelOption[];
+    cursor?: ModelOption[];
+    codex?: ModelOption[];
+    gemini?: ModelOption[];
+  };
 }
 
-/** Model options for Claude agents */
-export const CLAUDE_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'opus', label: 'Opus' },
-  { value: 'haiku', label: 'Haiku' },
-];
+export interface ModelOption {
+  value: string;
+  label: string;
+}
 
-type ClaudeModel = string;
-
-/** Model options for Cursor agents */
-export const CURSOR_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'opus-4.5-thinking', label: 'Claude 4.5 Opus (Thinking)' },
-  { value: 'opus-4.5', label: 'Claude 4.5 Opus' },
-  { value: 'sonnet-4.5', label: 'Claude 4.5 Sonnet' },
-  { value: 'sonnet-4.5-thinking', label: 'Claude 4.5 Sonnet (Thinking)' },
-  { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
-  { value: 'gpt-5.2-codex-high', label: 'GPT-5.2 Codex High' },
-  { value: 'gpt-5.2-codex-low', label: 'GPT-5.2 Codex Low' },
-  { value: 'gpt-5.2-codex-xhigh', label: 'GPT-5.2 Codex Extra High' },
-  { value: 'gpt-5.2-codex-fast', label: 'GPT-5.2 Codex Fast' },
-  { value: 'gpt-5.2-codex-high-fast', label: 'GPT-5.2 Codex High Fast' },
-  { value: 'gpt-5.2-codex-low-fast', label: 'GPT-5.2 Codex Low Fast' },
-  { value: 'gpt-5.2-codex-xhigh-fast', label: 'GPT-5.2 Codex Extra High Fast' },
-  { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
-  { value: 'gpt-5.1-codex-max-high', label: 'GPT-5.1 Codex Max High' },
-  { value: 'gpt-5.2', label: 'GPT-5.2' },
-  { value: 'gpt-5.2-high', label: 'GPT-5.2 High' },
-  { value: 'gpt-5.1-high', label: 'GPT-5.1 High' },
-  { value: 'gemini-3-pro', label: 'Gemini 3 Pro' },
-  { value: 'gemini-3-flash', label: 'Gemini 3 Flash' },
-  { value: 'composer-1', label: 'Composer 1' },
-  { value: 'grok', label: 'Grok' },
-];
-
-type CursorModel = string;
-
-/** Model options for Codex agents */
-export const CODEX_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex — Frontier agentic coding model' },
-  { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex — Latest frontier agentic coding model' },
-  { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max — Deep and fast reasoning' },
-  { value: 'gpt-5.2', label: 'GPT-5.2 — Frontier model, knowledge & reasoning' },
-  { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini — Cheaper, faster' },
-];
-
-type CodexModel = string;
-
-/** Model options for Gemini agents */
-export const GEMINI_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-];
-
-type GeminiModel = string;
+const EMPTY_MODEL_OPTIONS: ModelOption[] = [];
 
 const AGENT_TEMPLATES = [
   {
@@ -191,17 +148,24 @@ export function SpawnModal({
   repos,
   activeRepoId,
   connectedProviders,
+  modelOptions,
 }: SpawnModalProps) {
   const { features } = useDashboardConfig();
   const hasWorkspaceFeature = features.workspaces;
   const canUseWorkspaceRepoSelection = hasWorkspaceFeature && !!repos?.length;
+
+  const claudeModels = modelOptions?.claude ?? EMPTY_MODEL_OPTIONS;
+  const cursorModels = modelOptions?.cursor ?? EMPTY_MODEL_OPTIONS;
+  const codexModels = modelOptions?.codex ?? EMPTY_MODEL_OPTIONS;
+  const geminiModels = modelOptions?.gemini ?? EMPTY_MODEL_OPTIONS;
+
   const [selectedTemplate, setSelectedTemplate] = useState(AGENT_TEMPLATES[0]);
   const [name, setName] = useState('');
   const [customCommand, setCustomCommand] = useState('');
-  const [selectedModel, setSelectedModel] = useState<ClaudeModel>('sonnet');
-  const [selectedCursorModel, setSelectedCursorModel] = useState<CursorModel>('opus-4.5-thinking');
-  const [selectedCodexModel, setSelectedCodexModel] = useState<CodexModel>('gpt-5.2-codex');
-  const [selectedGeminiModel, setSelectedGeminiModel] = useState<GeminiModel>('gemini-2.5-pro');
+  const [selectedModel, setSelectedModel] = useState(agentDefaults?.defaultModels?.claude ?? claudeModels[0]?.value ?? '');
+  const [selectedCursorModel, setSelectedCursorModel] = useState(agentDefaults?.defaultModels?.cursor ?? cursorModels[0]?.value ?? '');
+  const [selectedCodexModel, setSelectedCodexModel] = useState(agentDefaults?.defaultModels?.codex ?? codexModels[0]?.value ?? '');
+  const [selectedGeminiModel, setSelectedGeminiModel] = useState(agentDefaults?.defaultModels?.gemini ?? geminiModels[0]?.value ?? '');
   const [cwd, setCwd] = useState('');
   const [selectedRepoId, setSelectedRepoId] = useState<string | undefined>(activeRepoId);
   const [team, setTeam] = useState('');
@@ -275,11 +239,10 @@ export function SpawnModal({
       setSelectedTemplate(defaultTemplate);
       setName('');
       setCustomCommand('');
-      // Use settings-based model defaults with fallbacks
-      setSelectedModel(agentDefaults?.defaultModels?.claude ?? 'sonnet');
-      setSelectedCursorModel(agentDefaults?.defaultModels?.cursor ?? 'opus-4.5-thinking');
-      setSelectedCodexModel(agentDefaults?.defaultModels?.codex ?? 'gpt-5.2-codex');
-      setSelectedGeminiModel(agentDefaults?.defaultModels?.gemini ?? 'gemini-2.5-pro');
+      setSelectedModel(agentDefaults?.defaultModels?.claude ?? claudeModels[0]?.value ?? '');
+      setSelectedCursorModel(agentDefaults?.defaultModels?.cursor ?? cursorModels[0]?.value ?? '');
+      setSelectedCodexModel(agentDefaults?.defaultModels?.codex ?? codexModels[0]?.value ?? '');
+      setSelectedGeminiModel(agentDefaults?.defaultModels?.gemini ?? geminiModels[0]?.value ?? '');
       setCwd('');
       setSelectedRepoId(activeRepoId);
       setTeam('');
@@ -291,7 +254,7 @@ export function SpawnModal({
       setLocalError(null);
       setTimeout(() => nameInputRef.current?.focus(), 100);
     }
-  }, [isOpen, agentDefaults, activeRepoId, repos, connectedProviders, hasWorkspaceFeature]);
+  }, [isOpen, agentDefaults, activeRepoId, repos, connectedProviders, hasWorkspaceFeature, claudeModels, cursorModels, codexModels, geminiModels]);
 
   const validateName = useCallback(
     (value: string): string | null => {
@@ -482,7 +445,7 @@ export function SpawnModal({
                 onChange={(e) => setSelectedModel(e.target.value as ClaudeModel)}
                 disabled={isSpawning}
               >
-                {CLAUDE_MODEL_OPTIONS.map((model) => (
+                {claudeModels.map((model) => (
                   <option key={model.value} value={model.value}>
                     {model.label}
                   </option>
@@ -504,7 +467,7 @@ export function SpawnModal({
                 onChange={(e) => setSelectedCursorModel(e.target.value as CursorModel)}
                 disabled={isSpawning}
               >
-                {CURSOR_MODEL_OPTIONS.map((model) => (
+                {cursorModels.map((model) => (
                   <option key={model.value} value={model.value}>
                     {model.label}
                   </option>
@@ -526,7 +489,7 @@ export function SpawnModal({
                 onChange={(e) => setSelectedCodexModel(e.target.value as CodexModel)}
                 disabled={isSpawning}
               >
-                {CODEX_MODEL_OPTIONS.map((model) => (
+                {codexModels.map((model) => (
                   <option key={model.value} value={model.value}>
                     {model.label}
                   </option>
@@ -548,7 +511,7 @@ export function SpawnModal({
                 onChange={(e) => setSelectedGeminiModel(e.target.value as GeminiModel)}
                 disabled={isSpawning}
               >
-                {GEMINI_MODEL_OPTIONS.map((model) => (
+                {geminiModels.map((model) => (
                   <option key={model.value} value={model.value}>
                     {model.label}
                   </option>
