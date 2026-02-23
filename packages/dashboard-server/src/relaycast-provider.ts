@@ -16,6 +16,7 @@ import type {
   JoinChannelInput,
   LeaveChannelInput,
   Message,
+  RelaycastAgentRecord,
   RelaycastChannel,
   RelaycastConfig,
   RelaycastDmConversation,
@@ -86,13 +87,7 @@ export function loadRelaycastConfig(dataDir: string): RelaycastConfig | null {
 export async function fetchAgents(config: RelaycastConfig): Promise<AgentStatus[]> {
   try {
     const reader = await getReaderClient(config);
-    const agents = await reader.client.get<Array<{
-      name: string;
-      type?: string;
-      status?: string;
-      last_seen?: string | null;
-      metadata?: Record<string, unknown> | null;
-    }>>('/v1/agents');
+    const agents = await reader.client.get<RelaycastAgentRecord[]>('/v1/agents');
 
     return agents
       .filter((agent) => agent.type !== 'human')
@@ -110,14 +105,7 @@ export async function fetchAgents(config: RelaycastConfig): Promise<AgentStatus[
 export async function fetchChannels(config: RelaycastConfig): Promise<RelaycastChannel[]> {
   try {
     const reader = await getReaderClient(config);
-    const channelsRaw = await reader.channels.list({ include_archived: true }) as Array<Omit<RelaycastChannel, 'member_count'> & {
-      member_count?: number;
-    }>;
-
-    const channels: RelaycastChannel[] = channelsRaw.map((channel) => ({
-      ...channel,
-      member_count: typeof channel.member_count === 'number' ? channel.member_count : 0,
-    }));
+    const channels = await reader.channels.list({ include_archived: true }) as RelaycastChannel[];
 
     return channels.sort((a, b) => a.name.localeCompare(b.name));
   } catch (err) {

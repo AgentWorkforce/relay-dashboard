@@ -71,6 +71,29 @@ export interface ModelOption {
 
 const EMPTY_MODEL_OPTIONS: ModelOption[] = [];
 
+/** Built-in model options used when the host app doesn't supply its own */
+export const DEFAULT_MODEL_OPTIONS: Record<string, ModelOption[]> = {
+  claude: [
+    { value: 'sonnet', label: 'Claude Sonnet' },
+    { value: 'opus', label: 'Claude Opus' },
+    { value: 'haiku', label: 'Claude Haiku' },
+  ],
+  cursor: [
+    { value: 'claude-sonnet', label: 'Claude Sonnet' },
+    { value: 'claude-opus', label: 'Claude Opus' },
+    { value: 'gpt-4o', label: 'GPT-4o' },
+  ],
+  codex: [
+    { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
+    { value: 'o3', label: 'o3' },
+    { value: 'o4-mini', label: 'o4-mini' },
+  ],
+  gemini: [
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  ],
+};
+
 const AGENT_TEMPLATES = [
   {
     id: 'claude',
@@ -154,10 +177,10 @@ export function SpawnModal({
   const hasWorkspaceFeature = features.workspaces;
   const canUseWorkspaceRepoSelection = hasWorkspaceFeature && !!repos?.length;
 
-  const claudeModels = modelOptions?.claude ?? EMPTY_MODEL_OPTIONS;
-  const cursorModels = modelOptions?.cursor ?? EMPTY_MODEL_OPTIONS;
-  const codexModels = modelOptions?.codex ?? EMPTY_MODEL_OPTIONS;
-  const geminiModels = modelOptions?.gemini ?? EMPTY_MODEL_OPTIONS;
+  const claudeModels = modelOptions?.claude ?? DEFAULT_MODEL_OPTIONS.claude ?? EMPTY_MODEL_OPTIONS;
+  const cursorModels = modelOptions?.cursor ?? DEFAULT_MODEL_OPTIONS.cursor ?? EMPTY_MODEL_OPTIONS;
+  const codexModels = modelOptions?.codex ?? DEFAULT_MODEL_OPTIONS.codex ?? EMPTY_MODEL_OPTIONS;
+  const geminiModels = modelOptions?.gemini ?? DEFAULT_MODEL_OPTIONS.gemini ?? EMPTY_MODEL_OPTIONS;
 
   const [selectedTemplate, setSelectedTemplate] = useState(AGENT_TEMPLATES[0]);
   const [name, setName] = useState('');

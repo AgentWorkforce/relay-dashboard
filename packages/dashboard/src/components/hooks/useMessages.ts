@@ -272,8 +272,14 @@ export function useMessages({
         const result = await api.sendMessage(request);
 
         if (result.success) {
-          // Success! The optimistic message will be cleaned up when
-          // the real message arrives via WebSocket
+          // If the server returned a canonical message ID, update the optimistic
+          // message so dedup logic can match it when the real event arrives.
+          const canonicalId = result.data?.messageId;
+          if (canonicalId) {
+            setOptimisticMessages((prev) =>
+              prev.map((m) => (m.id === optimisticId ? { ...m, id: canonicalId } : m)),
+            );
+          }
           return true;
         }
 

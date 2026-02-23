@@ -33,13 +33,14 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@agent-relay/contracts": "file:../../../relay/packages/contracts",
     "@agent-relay/config": "2.2.0",
+    "@agent-relay/contracts": "file:../../../relay/packages/contracts",
     "@agent-relay/protocol": "2.2.0",
     "@agent-relay/sdk": "file:../../../relay/packages/sdk",
     "@agent-relay/storage": "2.2.0",
     "@agent-relay/trajectory": "2.2.0",
     "@agent-relay/utils": "2.2.0",
+    "@relaycast/types": "^0.3.2",
     "express": "^5.2.1",
     "http-proxy-middleware": "^3.0.0",
     "ws": "^8.18.3"

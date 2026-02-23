@@ -13,6 +13,7 @@ import {
   setChannelArchived,
   createChannel,
 } from '../relaycast-provider.js';
+import { reactionGroupsToRecord } from '../relaycast-provider-helpers.js';
 import type { RouteContext } from '../lib/types.js';
 import {
   normalizeChannelTarget,
@@ -139,6 +140,9 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
             replyCount: message.reply_count,
             lastReplyAt: message.created_at,
           } : undefined,
+          reactions: message.reactions
+            ? reactionGroupsToRecord(message.reactions)
+            : undefined,
           isRead: true,
         })),
         hasMore,

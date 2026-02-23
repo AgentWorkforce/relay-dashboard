@@ -93,7 +93,7 @@ function getDefaultUrl(): string {
  * Returns a new state object with the event applied, or the previous state
  * if the event is not relevant for the UI.
  */
-function applyBrokerEvent(prev: DashboardData | null, event: BrokerEvent): DashboardData | null {
+export function applyBrokerEvent(prev: DashboardData | null, event: BrokerEvent): DashboardData | null {
   if (!prev) {
     // Bootstrap empty state so events arriving before the snapshot aren't lost
     prev = { agents: [], messages: [] };
@@ -102,15 +102,21 @@ function applyBrokerEvent(prev: DashboardData | null, event: BrokerEvent): Dashb
   switch (event.kind) {
     case 'relay_inbound': {
       if (!event.from || !event.target || !event.body) return prev;
+      // Channel messages are handled by useChannels — skip here to avoid duplication
+      if (event.target.startsWith('#')) return prev;
+      const msgId = event.event_id || `broker_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      // Deduplicate by event_id — the same event can arrive via multiple paths
+      if (event.event_id && prev.messages.some((m) => m.id === event.event_id)) {
+        return prev;
+      }
       const newMessage: Message = {
-        id: event.event_id || `broker_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        id: msgId,
         from: event.from,
         to: event.target,
         content: event.body,
         timestamp: new Date().toISOString(),
         thread: event.thread_id ?? undefined,
-        isBroadcast: event.target === '*' || event.target.startsWith('#'),
-        channel: event.target.startsWith('#') ? event.target.slice(1) : undefined,
+        isBroadcast: event.target === '*',
       };
       return {
         ...prev,

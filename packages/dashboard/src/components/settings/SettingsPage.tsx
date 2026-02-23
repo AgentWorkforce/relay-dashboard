@@ -13,7 +13,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDashboardConfig, type DashboardFeatures } from '../../adapters';
 import type { Settings, CliType } from './types';
-import type { ModelOption } from '../SpawnModal';
+import { type ModelOption, DEFAULT_MODEL_OPTIONS } from '../SpawnModal';
 
 type SettingsTab = 'dashboard' | 'workspace' | 'team' | 'billing';
 
@@ -71,10 +71,10 @@ export function SettingsPage({
   const config = useDashboardConfig();
   const { features, api, settingsSlots } = config;
 
-  const claudeModels = modelOptions?.claude ?? EMPTY_MODEL_OPTIONS;
-  const cursorModels = modelOptions?.cursor ?? EMPTY_MODEL_OPTIONS;
-  const codexModels = modelOptions?.codex ?? EMPTY_MODEL_OPTIONS;
-  const geminiModels = modelOptions?.gemini ?? EMPTY_MODEL_OPTIONS;
+  const claudeModels = modelOptions?.claude ?? DEFAULT_MODEL_OPTIONS.claude ?? EMPTY_MODEL_OPTIONS;
+  const cursorModels = modelOptions?.cursor ?? DEFAULT_MODEL_OPTIONS.cursor ?? EMPTY_MODEL_OPTIONS;
+  const codexModels = modelOptions?.codex ?? DEFAULT_MODEL_OPTIONS.codex ?? EMPTY_MODEL_OPTIONS;
+  const geminiModels = modelOptions?.gemini ?? DEFAULT_MODEL_OPTIONS.gemini ?? EMPTY_MODEL_OPTIONS;
 
   const [activeTab, setActiveTab] = useState<SettingsTab>(() =>
     resolveInitialTab(initialTab, features)

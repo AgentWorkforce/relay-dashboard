@@ -10,7 +10,19 @@
 
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import type { ChannelMessage, ChannelMessageListProps, UnreadState } from './types';
+import type { Reaction } from '../../types';
+import { ReactionChips } from '../ReactionChips';
 import { formatMessageBody } from '../utils/messageFormatting';
+
+/** Convert channel `Record<string, string[]>` reactions to `Reaction[]` */
+function channelReactionsToArray(reactions?: Record<string, string[]>): Reaction[] {
+  if (!reactions) return [];
+  return Object.entries(reactions).map(([emoji, agents]) => ({
+    emoji,
+    count: agents.length,
+    agents,
+  }));
+}
 
 export function ChannelMessageList({
   messages,
@@ -21,6 +33,7 @@ export function ChannelMessageList({
   onLoadMore,
   onThreadClick,
   onMemberClick,
+  onReaction,
 }: ChannelMessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -146,6 +159,8 @@ export function ChannelMessageList({
                     isOwn={message.from === currentUser}
                     onThreadClick={onThreadClick}
                     onMemberClick={onMemberClick}
+                    onReaction={onReaction}
+                    currentUser={currentUser}
                     showAvatar={shouldShowAvatar(dateMessages, index)}
                   />
                 </React.Fragment>
@@ -181,6 +196,8 @@ interface MessageItemProps {
   isOwn: boolean;
   onThreadClick?: (messageId: string) => void;
   onMemberClick?: (memberId: string, entityType: 'user' | 'agent') => void;
+  onReaction?: (messageId: string, emoji: string, hasReacted: boolean) => void;
+  currentUser?: string;
   showAvatar: boolean;
 }
 
@@ -189,6 +206,8 @@ function MessageItem({
   isOwn,
   onThreadClick,
   onMemberClick,
+  onReaction,
+  currentUser,
   showAvatar,
 }: MessageItemProps) {
   const hasThread = message.threadSummary && message.threadSummary.replyCount > 0;
@@ -264,6 +283,16 @@ function MessageItem({
                 <AttachmentPreview key={attachment.id} attachment={attachment} />
               ))}
             </div>
+          )}
+
+          {/* Reactions */}
+          {onReaction && (
+            <ReactionChips
+              reactions={channelReactionsToArray(message.reactions)}
+              messageId={message.id}
+              currentUser={currentUser}
+              onToggleReaction={onReaction}
+            />
           )}
         </div>
       </div>

@@ -57,6 +57,8 @@ export function normalizeIdentity(name: string): string {
     lowered === DASHBOARD_DISPLAY_NAME.toLowerCase()
     || lowered === DASHBOARD_READER_NAME
     || isBrokerIdentity(trimmed)
+    // Match Dashboard-<hex> names (Relaycast conflict suffix)
+    || /^dashboard-[0-9a-f]{6,}$/i.test(trimmed)
   ) {
     return DASHBOARD_DISPLAY_NAME;
   }
@@ -187,6 +189,8 @@ export function mapChannelMessage(channelName: string, msg: RelaycastMessage): M
     timestamp: msg.created_at,
     id: msg.id,
     thread: msg.thread_id ?? undefined,
+    reactions: msg.reactions ?? [],
+    replyCount: msg.reply_count ?? 0,
   };
 }
 
@@ -206,7 +210,15 @@ export function mapDmMessage(
     timestamp: msg.created_at,
     id,
     thread: msg.thread_id ?? undefined,
+    reactions: msg.reactions ?? [],
+    replyCount: msg.reply_count ?? 0,
   };
+}
+
+export function reactionGroupsToRecord(
+  reactions: Array<{ emoji: string; agents: string[] }>,
+): Record<string, string[]> {
+  return Object.fromEntries(reactions.map((r) => [r.emoji, r.agents]));
 }
 
 export function dedupeMessages(messages: Message[]): Message[] {

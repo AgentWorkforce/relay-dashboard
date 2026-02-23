@@ -47,8 +47,25 @@ export interface DashboardOptions {
   enableSpawner?: boolean;
   /** Project root for spawner (defaults to dataDir) */
   projectRoot?: string;
+  /** Tmux session name for workers */
+  tmuxSession?: string;
   /** Enable verbose logging (WebSocket connections, broadcasts, etc.) */
   verbose?: boolean;
+  /**
+   * Callback to mark an agent as spawning (before HELLO completes).
+   * Messages sent to this agent can be queued for delivery after registration.
+   */
+  onMarkSpawning?: (agentName: string) => void;
+  /**
+   * Callback to clear the spawning flag for an agent.
+   * Called when spawn fails or is cancelled.
+   */
+  onClearSpawning?: (agentName: string) => void;
+  /**
+   * External SpawnManager for read operations (logs, worker listing).
+   * Spawn/release continue to route through relay client APIs.
+   */
+  spawnManager?: SpawnManagerLike;
   /**
    * RelayAdapter instance for broker mode.
    * Provides spawn/release/list/messaging via the broker binary.

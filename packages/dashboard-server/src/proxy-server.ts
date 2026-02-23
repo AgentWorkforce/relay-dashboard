@@ -50,6 +50,7 @@ import { registerDataRoutes } from './routes/data.js';
 import { registerAgentRoutes } from './routes/agents.js';
 import { registerChannelRoutes } from './routes/channels.js';
 import { registerBrokerProxyRoutes } from './routes/broker-proxy.js';
+import { registerReactionRoutes } from './routes/reactions.js';
 
 export type { DashboardServerOptions, DashboardServer } from './lib/types.js';
 
@@ -192,30 +193,13 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       let resolvedTarget = rawTarget;
 
       if (isDirectRecipient(rawTarget)) {
-        // Resolve the relay-side agent name for Relaycast delivery.
-        const relayAgents = await fetchAgents(config);
-        const relayMatch = relayAgents.find((agent) => normalizeAgentName(agent.name) === normalizeAgentName(rawTarget));
-        if (relayMatch) {
-          resolvedTarget = relayMatch.name;
-        }
-
-        // Dual-send for spawned agents: send via Relaycast (for observer
-        // visibility) AND via broker /api/send (for reliable PTY injection).
+        // For spawned agents in proxy mode, send via broker /api/send.
+        // The broker is the only entity that can deliver to local PTY workers —
+        // Relaycast DMs between Dashboard and an agent are invisible to the broker
+        // because it isn't a participant in that conversation.
         if (brokerProxyEnabled && relayUrl) {
           const spawned = await getSpawnedAgents();
           if (spawned.names?.has(normalizeAgentName(rawTarget))) {
-            // Fire-and-forget Relaycast send for observer visibility.
-            // Errors here are non-fatal — the broker send is the authoritative path.
-            sendMessage(config, {
-              to: resolvedTarget,
-              message: params.message.trim(),
-              from: params.from?.trim() ? params.from.trim() : 'Dashboard',
-              dataDir,
-            }).catch(() => {
-              // Silently ignore — broker /api/send is the primary delivery path.
-            });
-
-            // Broker send for reliable agent delivery
             try {
               const brokerResponse = await fetch(`${relayUrl}/api/send`, {
                 method: 'POST',
@@ -257,6 +241,13 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
               };
             }
           }
+        }
+
+        // Non-spawned agents: resolve via Relaycast and send through Relaycast
+        const relayAgents = await fetchAgents(config);
+        const relayMatch = relayAgents.find((agent) => normalizeAgentName(agent.name) === normalizeAgentName(rawTarget));
+        if (relayMatch) {
+          resolvedTarget = relayMatch.name;
         }
       }
 
@@ -325,6 +316,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     registerAgentRoutes(app, ctx);
     registerDataRoutes(app, ctx);
     registerChannelRoutes(app, ctx);
+    registerReactionRoutes(app, ctx);
     registerBrokerProxyRoutes(app, ctx);
   }
 

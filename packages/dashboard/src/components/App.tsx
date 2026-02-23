@@ -837,6 +837,7 @@ function AppShell({
                 onThreadClick={(messageId) => setCurrentThread(messageId)}
                 onShowMembers={handleShowMembers}
                 onMemberClick={handleChannelMemberClick}
+                onReaction={enableReactions ? handleReaction : undefined}
               />
             ) : viewMode === 'channels' ? (
               <div className="flex flex-col items-center justify-center h-full text-text-muted text-center px-4">

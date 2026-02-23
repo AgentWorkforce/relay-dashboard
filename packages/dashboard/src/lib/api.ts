@@ -378,17 +378,17 @@ export const api = {
   /**
    * Send a message via the relay
    */
-  async sendMessage(request: SendMessageRequest): Promise<ApiResponse<void>> {
+  async sendMessage(request: SendMessageRequest): Promise<ApiResponse<{ messageId?: string }>> {
     try {
       const response = await apiFetch(getApiUrl('/api/send'), {
         method: 'POST',
         body: JSON.stringify(request),
       });
 
-      const result = await response.json() as { success?: boolean; error?: string };
+      const result = await response.json() as { success?: boolean; error?: string; messageId?: string };
 
       if (response.ok && result.success) {
-        return { success: true };
+        return { success: true, data: { messageId: result.messageId } };
       }
 
       return { success: false, error: result.error || 'Failed to send message' };

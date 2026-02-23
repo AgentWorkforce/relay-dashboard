@@ -59,6 +59,8 @@ export interface ChannelViewV1Props {
   onMarkRead?: (upToTimestamp: string) => void;
   /** Callback when clicking on a member name (for DM navigation) */
   onMemberClick?: (memberId: string, entityType: 'user' | 'agent') => void;
+  /** Callback when toggling a reaction on a message */
+  onReaction?: (messageId: string, emoji: string, hasReacted: boolean) => void;
 }
 
 export function ChannelViewV1({
@@ -81,6 +83,7 @@ export function ChannelViewV1({
   onTyping,
   onMarkRead,
   onMemberClick,
+  onReaction,
 }: ChannelViewV1Props) {
   // Handle send
   const handleSend = useCallback((content: string) => {
@@ -121,6 +124,7 @@ export function ChannelViewV1({
         onLoadMore={onLoadMore}
         onThreadClick={onThreadClick}
         onMemberClick={onMemberClick}
+        onReaction={onReaction}
       />
 
       {/* Message Input */}

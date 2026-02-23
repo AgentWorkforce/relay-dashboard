@@ -10,7 +10,7 @@ function emptyState(): DashboardData {
 }
 
 describe('applyBrokerEvent', () => {
-  it('adds outbound relay_inbound messages as sending', () => {
+  it('adds relay_inbound DM to messages', () => {
     const next = applyBrokerEvent(emptyState(), {
       kind: 'relay_inbound',
       event_id: 'evt_1',
@@ -24,63 +24,44 @@ describe('applyBrokerEvent', () => {
       id: 'evt_1',
       from: 'Dashboard',
       to: 'Lead',
-      status: 'sending',
+      content: 'hello',
     });
   });
 
-  it('marks matching message as acked on delivery_verified', () => {
-    const state = applyBrokerEvent(emptyState(), {
+  it('skips relay_inbound channel messages (handled by useChannels)', () => {
+    const next = applyBrokerEvent(emptyState(), {
       kind: 'relay_inbound',
-      event_id: 'evt_2',
+      event_id: 'evt_ch',
+      from: 'Hero',
+      target: '#general',
+      body: 'hello channel',
+    });
+
+    expect(next?.messages).toHaveLength(0);
+  });
+
+  it('bootstraps empty state when prev is null', () => {
+    const next = applyBrokerEvent(null, {
+      kind: 'relay_inbound',
+      event_id: 'evt_null',
       from: 'Dashboard',
       target: 'Lead',
       body: 'hello',
     });
-    const next = applyBrokerEvent(state, {
-      kind: 'delivery_verified',
-      event_id: 'evt_2',
-      delivery_id: 'del_2',
-    });
 
-    expect(next?.messages[0]?.status).toBe('acked');
+    expect(next).not.toBeNull();
+    expect(next?.messages).toHaveLength(1);
   });
 
-  it('marks matching message as failed on delivery_failed', () => {
-    const state = applyBrokerEvent(emptyState(), {
+  it('skips relay_inbound with missing fields', () => {
+    const next = applyBrokerEvent(emptyState(), {
       kind: 'relay_inbound',
-      event_id: 'evt_3',
-      from: 'Dashboard',
+      event_id: 'evt_bad',
+      from: '',
       target: 'Lead',
       body: 'hello',
     });
-    const next = applyBrokerEvent(state, {
-      kind: 'delivery_failed',
-      event_id: 'evt_3',
-      delivery_id: 'del_3',
-      reason: 'agent_exit',
-    });
 
-    expect(next?.messages[0]?.status).toBe('failed');
-  });
-
-  it('does not duplicate relay_inbound events with same event_id', () => {
-    const first = applyBrokerEvent(emptyState(), {
-      kind: 'relay_inbound',
-      event_id: 'evt_4',
-      from: 'Dashboard',
-      target: 'Lead',
-      body: 'first',
-    });
-    const second = applyBrokerEvent(first, {
-      kind: 'relay_inbound',
-      event_id: 'evt_4',
-      from: 'Dashboard',
-      target: 'Lead',
-      body: 'second',
-    });
-
-    expect(second?.messages).toHaveLength(1);
-    expect(second?.messages[0]?.content).toBe('first');
+    expect(next?.messages).toHaveLength(0);
   });
 });
-

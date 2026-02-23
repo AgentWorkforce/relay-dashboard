@@ -306,6 +306,8 @@ export interface ChannelMessageListProps {
   onThreadClick?: (messageId: string) => void;
   /** Callback when clicking on a member name (for DM navigation) */
   onMemberClick?: (memberId: string, entityType: 'user' | 'agent') => void;
+  /** Callback when toggling a reaction on a message */
+  onReaction?: (messageId: string, emoji: string, hasReacted: boolean) => void;
 }
 
 /**

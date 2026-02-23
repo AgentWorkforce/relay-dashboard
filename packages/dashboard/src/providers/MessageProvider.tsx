@@ -481,10 +481,20 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
     senderName: currentUser?.displayName,
   });
 
+  // Merge optimistic reaction overrides into messages for local/DM view
+  const mergedMessages = useMemo(() => {
+    if (reactionOverrides.size === 0) return messages;
+    return messages.map(m => {
+      const override = reactionOverrides.get(m.id);
+      if (!override) return m;
+      return { ...m, reactions: override.reactions };
+    });
+  }, [messages, reactionOverrides]);
+
   // Thread data
   const thread = useThread({
     threadId: viewMode === 'channels' ? null : currentThread,
-    fallbackMessages: messages,
+    fallbackMessages: mergedMessages,
   });
 
   // DM state
@@ -507,7 +517,7 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
   const { visibleMessages: dedupedVisibleMessages, participantAgents: dmParticipantAgents } = useDirectMessage({
     currentHuman,
     currentUserName: currentUser?.displayName ?? null,
-    messages,
+    messages: mergedMessages,
     agents,
     selectedDmAgents,
     removedDmAgents,
@@ -1033,12 +1043,34 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
       return next;
     });
 
+    // Optimistic update for channel messages (Record<string, string[]> format)
+    const updateChannelReactions = (msgs: ChannelApiMessage[]): ChannelApiMessage[] => {
+      return msgs.map(m => {
+        if (m.id !== messageId) return m;
+        const reactions = { ...(m.reactions || {}) };
+        const agents = reactions[emoji] ? [...reactions[emoji]] : [];
+        if (hasReacted) {
+          reactions[emoji] = agents.filter(a => a !== userName);
+          if (reactions[emoji].length === 0) delete reactions[emoji];
+        } else {
+          if (!agents.includes(userName)) agents.push(userName);
+          reactions[emoji] = agents;
+        }
+        return { ...m, reactions };
+      });
+    };
+    setChannelMessages(prev => updateChannelReactions(prev));
+    setChannelMessageMap(prev => {
+      if (!selectedChannelId || !prev[selectedChannelId]) return prev;
+      return { ...prev, [selectedChannelId]: updateChannelReactions(prev[selectedChannelId]) };
+    });
+
     if (hasReacted) {
       api.removeReaction(messageId, emoji).catch(() => undefined);
     } else {
       api.addReaction(messageId, emoji).catch(() => undefined);
     }
-  }, [currentUser?.displayName]);
+  }, [currentUser?.displayName, selectedChannelId]);
 
   // Browser notifications and sounds
   useEffect(() => {
@@ -1127,7 +1159,7 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
   }, []);
 
   const value = useMemo<MessageContextValue>(() => ({
-    messages, threadMessages, currentChannel, setCurrentChannel,
+    messages: mergedMessages, threadMessages, currentChannel, setCurrentChannel,
     currentThread, setCurrentThread, activeThreads, totalUnreadThreadCount,
     sendMessage, isSending, sendError, thread,
     viewMode, setViewMode,
@@ -1157,7 +1189,7 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
     hasUnreadMessages, handlePresenceEvent,
     setChannelsList, appendChannelMessage,
   }), [
-    messages, threadMessages, currentChannel, setCurrentChannel,
+    mergedMessages, threadMessages, currentChannel, setCurrentChannel,
     currentThread, setCurrentThread, activeThreads, totalUnreadThreadCount,
     sendMessage, isSending, sendError, thread,
     viewMode,

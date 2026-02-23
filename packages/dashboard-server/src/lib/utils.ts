@@ -174,7 +174,7 @@ export function mapChannelForDashboard(channel: {
   id: string;
   name: string;
   topic: string | null;
-  member_count: number;
+  member_count?: number;
   created_at: string;
   is_archived: boolean;
 }): DashboardChannel {

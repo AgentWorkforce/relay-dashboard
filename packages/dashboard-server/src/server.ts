@@ -8,7 +8,8 @@ import crypto from 'crypto';
 import { exec, execFile, execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { createStorageAdapter, type StorageAdapter, type StoredMessage } from '@agent-relay/storage/adapter';
-import { RelayClient, type ClientState, type Envelope, type ChannelMessagePayload } from '@agent-relay/sdk';
+import type { Envelope, ChannelMessagePayload } from '@agent-relay/protocol';
+import { RelayClient, type ClientState } from './lib/relay-client.js';
 import { UserBridge } from './services/user-bridge.js';
 import { fetchCloudNeedsAttention, parseNeedsAttentionAgents } from './services/needs-attention.js';
 import { fetchCloudMetrics } from './services/metrics.js';
@@ -20,7 +21,7 @@ import { loadTeamsConfig } from '@agent-relay/config';
 import { getMemoryMonitor } from '@agent-relay/resiliency';
 import { detectWorkspacePath, getAgentOutboxTemplate } from '@agent-relay/config';
 import { BrokerSpawnReader } from './services/broker-spawn-reader.js';
-import type { RelayAdapter } from '@agent-relay/broker-sdk';
+import type { RelayAdapter } from '@agent-relay/sdk';
 // Dynamically find the dashboard static files directory
 // We can't import from @agent-relay/dashboard directly due to circular dependency
 function findDashboardDir(): string | null {
@@ -70,7 +71,7 @@ import {
   submitAuthCode,
   completeAuthSession,
   getSupportedProviders,
-} from '@agent-relay/daemon';
+} from './lib/cli-auth.js';
 import { fetchBrokerHealth } from './services/health-worker-manager.js';
 import { MessageBuffer } from './messageBuffer.js';
 import { fetchBrokerSpawnedAgents } from './lib/spawned-agents.js';
@@ -450,6 +451,16 @@ interface AgentSummary {
   context?: string;
 }
 
+interface ActiveWorker {
+  name: string;
+  cli: string;
+  task: string;
+  team?: string;
+  spawnerName?: string;
+  spawnedAt: number;
+  pid?: number;
+}
+
 export async function startDashboard(port: number, dataDir: string, teamDir: string, dbPath?: string): Promise<number>;
 export async function startDashboard(options: DashboardOptions): Promise<number>;
 export async function startDashboard(
@@ -471,14 +482,14 @@ export async function startDashboard(
   // works without the CLI.
   if (!relayAdapter && !externalSpawnManager && enableSpawner && projectRoot) {
     try {
-      const brokerSdk = await import('@agent-relay/broker-sdk');
+      const brokerSdk = await import('@agent-relay/sdk');
       relayAdapter = new brokerSdk.RelayAdapter({
         cwd: projectRoot,
         clientName: 'dashboard',
       });
       console.log('[dashboard] Auto-created RelayAdapter for broker mode');
     } catch {
-      // @agent-relay/broker-sdk not installed — fall back to legacy AgentSpawner
+      // @agent-relay/sdk RelayAdapter unavailable — fall back to legacy AgentSpawner
     }
   }
 
@@ -1257,7 +1268,6 @@ export async function startDashboard(
         cli: 'dashboard',
         reconnect: true,
         maxReconnectAttempts: 5,
-        _isSystemComponent: senderName === 'Dashboard',
       });
 
       client.onError = (err: Error) => {
@@ -1382,7 +1392,13 @@ export async function startDashboard(
   if (!useBrokerAdapter) {
     userBridge = new UserBridge({
       socketPath,
-      createRelayClient: async (options) => {
+      createRelayClient: async (options: {
+        socketPath: string;
+        agentName: string;
+        entityType: 'user';
+        displayName?: string;
+        avatarUrl?: string;
+      }) => {
         const client = new RelayClient({
           socketPath: options.socketPath,
           agentName: options.agentName,
@@ -3288,7 +3304,7 @@ export async function startDashboard(
               console.log(`[dashboard] User ${username} came online`);
 
               // Register user with relay daemon for messaging
-              userBridge?.registerUser(username, ws, { avatarUrl }).catch((err) => {
+              userBridge?.registerUser(username, ws, { avatarUrl }).catch((err: unknown) => {
                 console.error(`[dashboard] Failed to register user ${username} with relay:`, err);
               });
 
@@ -3378,19 +3394,20 @@ export async function startDashboard(
             console.warn(`[dashboard] Invalid channel_join: missing channel`);
             return;
           }
-          userBridge?.joinChannel(clientUsername, msg.channel).then((success) => {
+          userBridge?.joinChannel(clientUsername, msg.channel).then((success: boolean) => {
             ws.send(JSON.stringify({
               type: 'channel_joined',
               channel: msg.channel,
               success,
             }));
-          }).catch((err) => {
+          }).catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
             console.error(`[dashboard] Channel join error:`, err);
             ws.send(JSON.stringify({
               type: 'channel_joined',
               channel: msg.channel,
               success: false,
-              error: err.message,
+              error: message,
             }));
           });
         } else if (msg.type === 'channel_leave') {
@@ -3403,13 +3420,13 @@ export async function startDashboard(
             console.warn(`[dashboard] Invalid channel_leave: missing channel`);
             return;
           }
-          userBridge?.leaveChannel(clientUsername, msg.channel).then((success) => {
+          userBridge?.leaveChannel(clientUsername, msg.channel).then((success: boolean) => {
             ws.send(JSON.stringify({
               type: 'channel_left',
               channel: msg.channel,
               success,
             }));
-          }).catch((err) => {
+          }).catch((err: unknown) => {
             console.error(`[dashboard] Channel leave error:`, err);
           });
         } else if (msg.type === 'channel_message') {
@@ -3428,7 +3445,7 @@ export async function startDashboard(
           }
           userBridge?.sendChannelMessage(clientUsername, msg.channel, msg.body, {
             thread: msg.thread,
-          }).catch((err) => {
+          }).catch((err: unknown) => {
             console.error(`[dashboard] Channel message error:`, err);
           });
         } else if (msg.type === 'direct_message') {
@@ -3447,7 +3464,7 @@ export async function startDashboard(
           }
           userBridge?.sendDirectMessage(clientUsername, msg.to, msg.body, {
             thread: msg.thread,
-          }).catch((err) => {
+          }).catch((err: unknown) => {
             console.error(`[dashboard] Direct message error:`, err);
           });
         }
@@ -3511,7 +3528,7 @@ export async function startDashboard(
       }
       const channels = userBridge?.getUserChannels(username) ?? [];
       return res.json({
-        channels: channels.map((id) => ({
+        channels: channels.map((id: string) => ({
           id,
           name: id.startsWith('#') ? id.slice(1) : id,
           visibility: 'public',
@@ -5709,7 +5726,7 @@ export async function startDashboard(
 
     try {
       const workers = spawnReader.getActiveWorkers();
-      const agents = workers.map(w => ({
+      const agents = workers.map((w: ActiveWorker) => ({
         name: w.name,
         cli: w.cli,
         pid: w.pid,
@@ -6010,7 +6027,7 @@ export async function startDashboard(
 
     // Check if Architect already exists
     const activeWorkers = spawnReader?.getActiveWorkers() || [];
-    if (activeWorkers.some(w => w.name.toLowerCase() === 'architect')) {
+    if (activeWorkers.some((w: ActiveWorker) => w.name.toLowerCase() === 'architect')) {
       return res.status(409).json({
         success: false,
         error: 'Architect agent already running',
@@ -6731,7 +6748,7 @@ Start by greeting the project leads and asking for status updates.`;
         id: 'local',
         name: 'Local Daemon',
         status: 'healthy',
-        agents: localAgents.map(a => ({
+        agents: localAgents.map((a: ActiveWorker) => ({
           name: a.name,
           status: agentStatuses[a.name]?.status || 'unknown',
         })),

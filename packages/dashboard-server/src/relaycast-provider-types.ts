@@ -1,41 +1,34 @@
+import type { MessageWithMeta } from '@relaycast/types';
+
 export const DEFAULT_RELAYCAST_BASE_URL = 'https://api.relaycast.dev';
 export const DEFAULT_MESSAGE_LIMIT = 100;
 export const MAX_MESSAGE_LIMIT = 500;
 export const DASHBOARD_READER_NAME = 'dashboard-reader';
 export const DASHBOARD_DISPLAY_NAME = 'Dashboard';
 
-export type RelaycastRegistrationType = 'agent' | 'human';
+// ---------------------------------------------------------------------------
+// Wire types — re-exported from the canonical @relaycast/types package.
+// Dashboard-specific aliases preserve existing import names across the codebase.
+// ---------------------------------------------------------------------------
 
-export interface RelaycastAgentRecord {
-  name: string;
-  type?: string;
-  status?: string;
-  last_seen?: string | null;
-  metadata?: Record<string, unknown> | null;
-}
+export type { Agent as RelaycastAgentRecord } from '@relaycast/types';
+export type { Channel as RelaycastChannel } from '@relaycast/types';
+export type { DmConversationSummary as RelaycastDmConversation } from '@relaycast/types';
+export type { AgentType as RelaycastRegistrationType } from '@relaycast/types';
+export type { ReactionGroup } from '@relaycast/types';
 
-export interface RelaycastChannel {
-  id: string;
-  name: string;
-  topic: string | null;
-  member_count: number;
-  created_at: string;
-  is_archived: boolean;
-}
-
-export interface RelaycastMessage {
-  id: string;
-  agent_name: string;
-  text: string;
-  created_at: string;
+/**
+ * MessageWithMeta from @relaycast/types plus `thread_id` which the Relaycast
+ * API returns on channel/DM message list endpoints but is not part of the
+ * canonical MessageWithMeta schema (it lives on the raw Message type instead).
+ */
+export type RelaycastMessage = MessageWithMeta & {
   thread_id?: string | null;
-  reply_count?: number;
-}
+};
 
-export interface RelaycastDmConversation {
-  id: string;
-  participants?: string[];
-}
+// ---------------------------------------------------------------------------
+// Dashboard-specific domain types (no relaycast equivalent)
+// ---------------------------------------------------------------------------
 
 export interface RelaycastConfig {
   apiKey: string;
@@ -69,6 +62,8 @@ export interface Message {
   thread?: string;
   isBroadcast?: boolean;
   status?: string;
+  reactions?: Array<{ emoji: string; count: number; agents: string[] }>;
+  replyCount?: number;
 }
 
 export interface FetchChannelMessagesOptions {

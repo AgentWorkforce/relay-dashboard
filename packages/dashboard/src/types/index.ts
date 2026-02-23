@@ -4,6 +4,7 @@
 
 import type { AgentStatus } from '../lib/colors';
 import type { ThreadMetadata } from './threading';
+import type { ReactionGroup } from '@relaycast/types';
 
 export type { ThreadMetadata } from './threading';
 
@@ -101,12 +102,8 @@ export interface Attachment {
 }
 
 
-// Reaction Types
-export interface Reaction {
-  emoji: string;
-  count: number;
-  agents: string[];
-}
+// Reaction Types — sourced from canonical @relaycast/types
+export type Reaction = ReactionGroup;
 
 // Message Types
 export interface Message {

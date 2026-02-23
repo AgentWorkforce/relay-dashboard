@@ -426,7 +426,7 @@ export default function DashboardPageClient() {
 
   // Helper: wraps App with cloud config provider when in cloud mode
   const renderApp = (props?: { wsUrl?: string }) => {
-    const app = <App wsUrl={props?.wsUrl} />;
+    const app = <App wsUrl={props?.wsUrl} enableReactions />;
     if (cloudConfig) {
       return (
         <DashboardConfigProvider config={cloudConfig}>
