@@ -44,6 +44,16 @@ const __dirname = path.dirname(__filename);
 const PHANTOM_OFFLINE_MAX_AGE_MS = 5 * 60 * 1000;
 const STANDALONE_WS_POLL_MS = 3000;
 const SPAWNED_CACHE_TTL_MS = 3000;
+const WORKFLOW_BOOTSTRAP_TASK =
+  'You are connected to Agent Relay. Wait for relay messages and respond using Relaycast MCP tools.';
+const WORKFLOW_CONVENTIONS = [
+  'Messaging requirements:',
+  '- When you receive `Relay message from <sender> ...`, reply using `relay_send(to: "<sender>", message: "...")`.',
+  '- Send `ACK: ...` when you receive a task.',
+  '- Send `DONE: ...` when the task is complete.',
+  '- Do not reply only in terminal text; send the response via relay_send.',
+  '- Use relay_inbox() and relay_who() when context is missing.',
+].join('\n');
 
 type DashboardMode = 'proxy' | 'standalone' | 'mock';
 
@@ -139,6 +149,26 @@ function normalizeRelayUrl(relayUrl: string | undefined): string | undefined {
   const trimmed = relayUrl.trim();
   if (!trimmed) return undefined;
   return trimmed.replace(/\/+$/, '');
+}
+
+function withWorkflowConventions(
+  task: string | undefined,
+  includeWorkflowConventions: boolean,
+): string | undefined {
+  const normalized = typeof task === 'string' ? task.trim() : '';
+
+  if (!includeWorkflowConventions) {
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  if (normalized.length === 0) {
+    return `${WORKFLOW_BOOTSTRAP_TASK}\n\n${WORKFLOW_CONVENTIONS}`;
+  }
+
+  const lower = normalized.toLowerCase();
+  const alreadyConfigured =
+    lower.includes('relay_send(') || (lower.includes('ack:') && lower.includes('done:'));
+  return alreadyConfigured ? normalized : `${normalized}\n\n${WORKFLOW_CONVENTIONS}`;
 }
 
 function parseTimestamp(value: string | undefined): number | null {
@@ -373,7 +403,7 @@ function sendHtmlFileOrFallback(
   statusIfMissing = 404,
 ): void {
   if (fs.existsSync(filePath)) {
-    res.sendFile(filePath);
+    res.sendFile(path.resolve(filePath));
     return;
   }
 
@@ -1213,6 +1243,60 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     });
 
     if (brokerProxyEnabled && relayUrl) {
+      const forwardBrokerJson = async (
+        req: Request,
+        res: Response,
+        endpoint: string,
+        transformBody?: (body: Record<string, unknown>) => Record<string, unknown>,
+      ) => {
+        try {
+          const rawBody = isRecord(req.body) ? { ...req.body } : {};
+          const body = transformBody ? transformBody(rawBody) : rawBody;
+          const headers: Record<string, string> = {
+            'content-type': 'application/json',
+          };
+          const workspaceId = req.header('x-workspace-id');
+          if (workspaceId) {
+            headers['x-workspace-id'] = workspaceId;
+          }
+
+          const upstream = await fetch(`${relayUrl}${endpoint}`, {
+            method: req.method,
+            headers,
+            body: JSON.stringify(body),
+          });
+
+          const contentType = upstream.headers.get('content-type') ?? '';
+          const text = await upstream.text();
+          res.status(upstream.status);
+          if (contentType) {
+            res.setHeader('content-type', contentType);
+          }
+
+          if (!text) {
+            res.end();
+            return;
+          }
+
+          if (contentType.includes('application/json')) {
+            try {
+              res.json(JSON.parse(text));
+              return;
+            } catch {
+              // Fall back to raw text when upstream emits invalid JSON.
+            }
+          }
+          res.send(text);
+        } catch (err) {
+          console.error('[dashboard] Broker proxy error:', (err as Error).message);
+          res.status(502).json({
+            success: false,
+            error: 'Broker unavailable',
+            message: (err as Error).message,
+          });
+        }
+      };
+
       const brokerProxyOptions: ProxyOptions = {
         target: relayUrl,
         changeOrigin: true,
@@ -1233,7 +1317,21 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
         },
       };
 
-      app.post('/api/spawn', createProxyMiddleware(brokerProxyOptions));
+      app.post('/api/spawn', async (req: Request, res: Response) => {
+        await forwardBrokerJson(req, res, '/api/spawn', (rawBody) => {
+          const includeWorkflowConventions =
+            typeof rawBody.includeWorkflowConventions === 'boolean'
+              ? rawBody.includeWorkflowConventions
+              : true;
+          const task = typeof rawBody.task === 'string' ? rawBody.task : undefined;
+          return {
+            ...rawBody,
+            includeWorkflowConventions,
+            task: withWorkflowConventions(task, includeWorkflowConventions),
+          };
+        });
+      });
+
       app.get('/api/spawned', createProxyMiddleware(brokerProxyOptions));
       app.post('/api/release', createProxyMiddleware(brokerProxyOptions));
       app.post('/api/agents/by-name/:name/interrupt', createProxyMiddleware(brokerProxyOptions));
@@ -1241,7 +1339,16 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       app.get('/api/logs/:name', createProxyMiddleware(brokerProxyOptions));
       app.get('/api/agents/:name/online', createProxyMiddleware(brokerProxyOptions));
       app.put('/api/agents/:name/cwd', createProxyMiddleware(brokerProxyOptions));
-      app.post('/api/spawn/architect', createProxyMiddleware(brokerProxyOptions));
+      app.post('/api/spawn/architect', async (req: Request, res: Response) => {
+        await forwardBrokerJson(req, res, '/api/spawn/architect', (rawBody) => {
+          const task = typeof rawBody.task === 'string' ? rawBody.task : undefined;
+          return {
+            ...rawBody,
+            includeWorkflowConventions: true,
+            task: withWorkflowConventions(task, true),
+          };
+        });
+      });
       app.get('/api/bridge', createProxyMiddleware(brokerProxyOptions));
 
       // Keep legacy release path for older dashboard clients while broker migration completes.
