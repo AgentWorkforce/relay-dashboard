@@ -1,100 +1,68 @@
-/**
- * Derive which agents currently need attention based on message history.
- *
- * Heuristic:
- * - Track the most recent inbound message to an agent for each conversation key.
- * - Conversation key is thread ID if present, otherwise the counterparty agent.
- * - Track the most recent outbound message from the agent for the same key.
- * - An agent needs attention if their latest inbound message for any key is newer
- *   than their latest outbound message for that key.
- */
+import { buildDashboardProxyUrl, getDashboardProxyRoute } from '../lib/proxy-route-table.js';
 
-export interface AttentionMessage {
-  from: string;
-  to: string;
-  timestamp: string;
-  thread?: string;
-  /** Whether the message was sent as a broadcast (to: '*') */
-  isBroadcast?: boolean;
+export interface NeedsAttentionProxyRequest {
+  workspaceId?: string;
+  authorization?: string;
 }
 
-type TimestampMap = Map<string, number>;
+export type NeedsAttentionPayload =
+  | string[]
+  | { agents?: Array<string | { name?: string }> }
+  | { data?: { agents?: Array<string | { name?: string }> } };
 
-// Only consider messages from the last 30 minutes for "needs attention"
-const ATTENTION_WINDOW_MS = 30 * 60 * 1000;
-
-function updateLatest(map: Map<string, TimestampMap>, agent: string, key: string, ts: number): void {
-  const agentMap = map.get(agent) ?? new Map<string, number>();
-  const prev = agentMap.get(key) ?? -Infinity;
-  if (ts > prev) {
-    agentMap.set(key, ts);
-    map.set(agent, agentMap);
-  }
+function buildHeaders(request?: NeedsAttentionProxyRequest): Record<string, string> | undefined {
+  if (!request) return undefined;
+  const headers: Record<string, string> = {};
+  if (request.authorization) headers.authorization = request.authorization;
+  if (request.workspaceId) headers['x-workspace-id'] = request.workspaceId;
+  return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
-/**
- * Compute which agents have pending inbound messages they haven't answered.
- * Only considers messages within the attention window (last 30 minutes).
- */
-export function computeNeedsAttention(messages: AttentionMessage[]): Set<string> {
-  const latestInbound: Map<string, TimestampMap> = new Map();  // agent -> (key -> ts)
-  const latestOutbound: Map<string, TimestampMap> = new Map(); // agent -> (key -> ts)
-  const now = Date.now();
-  const cutoffTime = now - ATTENTION_WINDOW_MS;
-
-  for (const message of messages) {
-    const ts = Date.parse(message.timestamp);
-    if (Number.isNaN(ts)) continue;
-
-    // Detect broadcasts: either explicit isBroadcast flag or to === '*'
-    const isBroadcast = message.isBroadcast || message.to === '*';
-
-    // Inbound: messages directed to a specific agent (ignore broadcasts)
-    // Note: isBroadcast indicates the message was originally a broadcast, even though
-    // the 'to' field is set to the individual recipient for storage purposes
-    if (message.to && !isBroadcast) {
-      const inboundKey = message.thread ? `thread:${message.thread}` : `sender:${message.from}`;
-      updateLatest(latestInbound, message.to, inboundKey, ts);
-    }
-
-    // Outbound: track replies by thread (preferred) or by target agent
-    // Also treat broadcasts as clearing attention for all prior senders
-    if (message.from) {
-      const outboundKey = message.thread
-        ? `thread:${message.thread}`
-        : (message.to && !isBroadcast)
-          ? `sender:${message.to}`
-          : null;
-
-      if (outboundKey) {
-        updateLatest(latestOutbound, message.from, outboundKey, ts);
-      }
-
-      // Broadcasts clear attention: agent is actively participating
-      // Track as a "catch-all" outbound timestamp for this agent
-      if (isBroadcast) {
-        updateLatest(latestOutbound, message.from, '__broadcast__', ts);
-      }
+function normalizeEntry(entry: unknown): string | null {
+  if (typeof entry === 'string') {
+    return entry;
+  }
+  if (entry && typeof entry === 'object') {
+    const name = (entry as { name?: unknown }).name;
+    if (typeof name === 'string') {
+      return name;
     }
   }
+  return null;
+}
 
-  const needsAttention = new Set<string>();
+export function parseNeedsAttentionAgents(payload: NeedsAttentionPayload): Set<string> {
+  let direct: Array<string | { name?: string }> = [];
+  if (Array.isArray(payload)) {
+    direct = payload;
+  } else if ('agents' in payload && Array.isArray(payload.agents)) {
+    direct = payload.agents;
+  } else if ('data' in payload && payload.data?.agents && Array.isArray(payload.data.agents)) {
+    direct = payload.data.agents;
+  }
 
-  latestInbound.forEach((keyMap, agent) => {
-    keyMap.forEach((inboundTs, key) => {
-      // Skip if inbound message is too old (outside attention window)
-      if (inboundTs < cutoffTime) return;
+  const agents = new Set<string>();
+  for (const entry of direct) {
+    const normalized = normalizeEntry(entry);
+    if (normalized) {
+      agents.add(normalized);
+    }
+  }
+  return agents;
+}
 
-      const outboundTs = latestOutbound.get(agent)?.get(key) ?? -Infinity;
-      // Also check if agent sent a broadcast after the inbound message
-      const broadcastTs = latestOutbound.get(agent)?.get('__broadcast__') ?? -Infinity;
-      const latestReply = Math.max(outboundTs, broadcastTs);
+export async function fetchCloudNeedsAttention(opts: {
+  env?: NodeJS.ProcessEnv;
+  request?: NeedsAttentionProxyRequest;
+  query?: URLSearchParams;
+  fetchImpl?: typeof fetch;
+} = {}): Promise<Response> {
+  const route = getDashboardProxyRoute('cloudNeedsAttention');
+  const url = buildDashboardProxyUrl(route, { env: opts.env, query: opts.query });
+  const fetchImpl = opts.fetchImpl ?? fetch;
 
-      if (inboundTs > latestReply) {
-        needsAttention.add(agent);
-      }
-    });
+  return fetchImpl(url, {
+    method: route.method,
+    headers: buildHeaders(opts.request),
   });
-
-  return needsAttention;
 }

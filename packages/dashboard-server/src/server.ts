@@ -10,8 +10,8 @@ import { fileURLToPath } from 'url';
 import { createStorageAdapter, type StorageAdapter, type StoredMessage } from '@agent-relay/storage/adapter';
 import { RelayClient, type ClientState, type Envelope, type ChannelMessagePayload } from '@agent-relay/sdk';
 import { UserBridge } from './services/user-bridge.js';
-import { computeNeedsAttention } from './services/needs-attention.js';
-import { computeSystemMetrics, formatPrometheusMetrics } from './services/metrics.js';
+import { fetchCloudNeedsAttention, parseNeedsAttentionAgents } from './services/needs-attention.js';
+import { fetchCloudMetrics } from './services/metrics.js';
 import { MultiProjectClient } from '@agent-relay/bridge';
 import { AgentSpawner, type CloudPersistenceHandler } from '@agent-relay/bridge';
 import type { ProjectConfig, SpawnRequest } from '@agent-relay/bridge';
@@ -71,8 +71,9 @@ import {
   completeAuthSession,
   getSupportedProviders,
 } from '@agent-relay/daemon';
-import { HealthWorkerManager, getHealthPort } from './services/health-worker-manager.js';
+import { fetchBrokerHealth } from './services/health-worker-manager.js';
 import { MessageBuffer } from './messageBuffer.js';
+import { fetchBrokerSpawnedAgents } from './lib/spawned-agents.js';
 
 /**
  * Get the host to bind to.
@@ -2198,21 +2199,24 @@ export async function startDashboard(
       }
     });
 
-    // Detect agents with unanswered inbound messages (needs attention)
-    const needsAttentionAgents = computeNeedsAttention(allMessages.map((m) => ({
-      from: m.from,
-      to: m.to,
-      timestamp: m.timestamp,
-      thread: m.thread,
-      isBroadcast: m.isBroadcast,
-    })));
-
-    needsAttentionAgents.forEach((agentName) => {
-      const agent = agentsMap.get(agentName);
-      if (agent) {
-        agent.needsAttention = true;
+    // Needs-attention ownership moved to cloud; dashboard now consumes pass-through data.
+    try {
+      const response = await fetchCloudNeedsAttention({
+        request: { workspaceId: defaultWorkspaceId },
+      });
+      if (response.ok) {
+        const payload = await response.json() as Parameters<typeof parseNeedsAttentionAgents>[0];
+        const needsAttentionAgents = parseNeedsAttentionAgents(payload);
+        needsAttentionAgents.forEach((agentName) => {
+          const agent = agentsMap.get(agentName);
+          if (agent) {
+            agent.needsAttention = true;
+          }
+        });
       }
-    });
+    } catch (err) {
+      debug(`[dashboard] cloud needs-attention proxy failed: ${(err as Error).message}`);
+    }
 
     // Read processing state from daemon
     const processingStatePath = path.join(teamDir, 'processing-state.json');
@@ -4351,62 +4355,51 @@ export async function startDashboard(
   // ===== Health Check API =====
   /**
    * GET /health - Health check endpoint for monitoring
-   * Returns 200 if the daemon is healthy
+   * Pure pass-through to broker /health.
    */
   app.get('/health', async (req, res) => {
-    const uptime = process.uptime();
-    const memUsage = process.memoryUsage();
-    const socketExists = fs.existsSync(socketPath);
-
-    // Check relay client connectivity (check if default Dashboard client is connected)
-    const defaultClient = relayClients.get('Dashboard');
-    const relayConnected = defaultClient?.state === 'READY';
-
-    // If socket doesn't exist, daemon may not be running properly
-    if (!socketExists) {
-      return res.status(503).json({
-        status: 'unhealthy',
-        reason: 'Relay socket not found',
-        uptime,
-        memoryMB: Math.round(memUsage.heapUsed / 1024 / 1024),
+    try {
+      const workspaceId = resolveWorkspaceId(req);
+      const response = await fetchBrokerHealth({
+        request: {
+          workspaceId,
+          authorization: req.headers.authorization,
+        },
+      });
+      const body = await response.text();
+      const contentType = response.headers.get('content-type') ?? 'application/json; charset=utf-8';
+      res.status(response.status).setHeader('content-type', contentType).send(body);
+    } catch (err) {
+      res.status(502).json({
+        status: 'error',
+        error: 'Broker health proxy failed',
+        message: (err as Error).message,
       });
     }
-
-    res.json({
-      status: 'healthy',
-      uptime,
-      memoryMB: Math.round(memUsage.heapUsed / 1024 / 1024),
-      relayConnected,
-      websocketClients: wss.clients.size,
-    });
   });
 
   /**
    * GET /api/health - Alternative health endpoint (same as /health)
    */
   app.get('/api/health', async (req, res) => {
-    const uptime = process.uptime();
-    const memUsage = process.memoryUsage();
-    const socketExists = fs.existsSync(socketPath);
-    const defaultClient = relayClients.get('Dashboard');
-    const relayConnected = defaultClient?.state === 'READY';
-
-    if (!socketExists) {
-      return res.status(503).json({
-        status: 'unhealthy',
-        reason: 'Relay socket not found',
-        uptime,
-        memoryMB: Math.round(memUsage.heapUsed / 1024 / 1024),
+    try {
+      const workspaceId = resolveWorkspaceId(req);
+      const response = await fetchBrokerHealth({
+        request: {
+          workspaceId,
+          authorization: req.headers.authorization,
+        },
+      });
+      const body = await response.text();
+      const contentType = response.headers.get('content-type') ?? 'application/json; charset=utf-8';
+      res.status(response.status).setHeader('content-type', contentType).send(body);
+    } catch (err) {
+      res.status(502).json({
+        status: 'error',
+        error: 'Broker health proxy failed',
+        message: (err as Error).message,
       });
     }
-
-    res.json({
-      status: 'healthy',
-      uptime,
-      memoryMB: Math.round(memUsage.heapUsed / 1024 / 1024),
-      relayConnected,
-      websocketClients: wss.clients.size,
-    });
   });
 
   /**
@@ -4779,49 +4772,48 @@ export async function startDashboard(
   // ===== Metrics API =====
 
   /**
+   * GET /api/agents/needs-attention - Pass-through to cloud needs-attention endpoint.
+   */
+  app.get('/api/agents/needs-attention', async (req, res) => {
+    try {
+      const response = await fetchCloudNeedsAttention({
+        query: new URLSearchParams(req.query as Record<string, string>),
+        request: {
+          workspaceId: resolveWorkspaceId(req),
+          authorization: req.headers.authorization,
+        },
+      });
+      const body = await response.text();
+      const contentType = response.headers.get('content-type') ?? 'application/json; charset=utf-8';
+      res.status(response.status).setHeader('content-type', contentType).send(body);
+    } catch (err) {
+      res.status(502).json({
+        error: 'Cloud needs-attention proxy failed',
+        message: (err as Error).message,
+      });
+    }
+  });
+
+  /**
    * GET /api/metrics - JSON format metrics for dashboard
    */
   app.get('/api/metrics', async (req, res) => {
     try {
-      // Read agent registry for message counts
-      const agentsPath = path.join(teamDir, 'agents.json');
-      let agentRecords: Array<{
-        name: string;
-        messagesSent: number;
-        messagesReceived: number;
-        firstSeen: string;
-        lastSeen: string;
-      }> = [];
-
-      if (fs.existsSync(agentsPath)) {
-        const data = JSON.parse(fs.readFileSync(agentsPath, 'utf-8'));
-        agentRecords = (data.agents || []).map((a: any) => ({
-          name: a.name,
-          messagesSent: a.messagesSent ?? 0,
-          messagesReceived: a.messagesReceived ?? 0,
-          firstSeen: a.firstSeen ?? new Date().toISOString(),
-          lastSeen: a.lastSeen ?? new Date().toISOString(),
-        }));
-      }
-
-      // Get messages for throughput calculation - use storage directly for metrics
-      // (avoids daemon query timeouts that occur when daemon is busy)
-      let messages: Array<{ timestamp: string }> = [];
-      if (storage) {
-        const rows = await storage.getMessages({ limit: 100, order: 'desc' });
-        messages = rows.map(r => ({ timestamp: new Date(r.ts).toISOString() }));
-      }
-
-      // Get session data for lifecycle metrics
-      const sessions = storage?.getSessions
-        ? await storage.getSessions({ limit: 100 })
-        : [];
-
-      const metrics = computeSystemMetrics(agentRecords, messages, sessions);
-      res.json(metrics);
+      const response = await fetchCloudMetrics({
+        query: new URLSearchParams(req.query as Record<string, string>),
+        request: {
+          workspaceId: resolveWorkspaceId(req),
+          authorization: req.headers.authorization,
+        },
+      });
+      const body = await response.text();
+      const contentType = response.headers.get('content-type') ?? 'application/json; charset=utf-8';
+      res.status(response.status).setHeader('content-type', contentType).send(body);
     } catch (err) {
-      console.error('Failed to compute metrics', err);
-      res.status(500).json({ error: 'Failed to compute metrics' });
+      res.status(502).json({
+        error: 'Cloud metrics proxy failed',
+        message: (err as Error).message,
+      });
     }
   });
 
@@ -4830,48 +4822,20 @@ export async function startDashboard(
    */
   app.get('/api/metrics/prometheus', async (req, res) => {
     try {
-      // Read agent registry for message counts
-      const agentsPath = path.join(teamDir, 'agents.json');
-      let agentRecords: Array<{
-        name: string;
-        messagesSent: number;
-        messagesReceived: number;
-        firstSeen: string;
-        lastSeen: string;
-      }> = [];
-
-      if (fs.existsSync(agentsPath)) {
-        const data = JSON.parse(fs.readFileSync(agentsPath, 'utf-8'));
-        agentRecords = (data.agents || []).map((a: any) => ({
-          name: a.name,
-          messagesSent: a.messagesSent ?? 0,
-          messagesReceived: a.messagesReceived ?? 0,
-          firstSeen: a.firstSeen ?? new Date().toISOString(),
-          lastSeen: a.lastSeen ?? new Date().toISOString(),
-        }));
-      }
-
-      // Get messages for throughput calculation - use storage directly for metrics
-      // (avoids daemon query timeouts that occur when daemon is busy)
-      let messages: Array<{ timestamp: string }> = [];
-      if (storage) {
-        const rows = await storage.getMessages({ limit: 100, order: 'desc' });
-        messages = rows.map(r => ({ timestamp: new Date(r.ts).toISOString() }));
-      }
-
-      // Get session data for lifecycle metrics
-      const sessions = storage?.getSessions
-        ? await storage.getSessions({ limit: 100 })
-        : [];
-
-      const metrics = computeSystemMetrics(agentRecords, messages, sessions);
-      const prometheusOutput = formatPrometheusMetrics(metrics);
-
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.send(prometheusOutput);
+      const query = new URLSearchParams(req.query as Record<string, string>);
+      const response = await fetchCloudMetrics({
+        query,
+        request: {
+          workspaceId: resolveWorkspaceId(req),
+          authorization: req.headers.authorization,
+        },
+        upstreamPath: '/api/metrics/prometheus',
+      });
+      const body = await response.text();
+      const contentType = response.headers.get('content-type') ?? 'text/plain; charset=utf-8';
+      res.status(response.status).setHeader('content-type', contentType).send(body);
     } catch (err) {
-      console.error('Failed to compute Prometheus metrics', err);
-      res.status(500).send('# Error computing metrics\n');
+      res.status(502).send('# Cloud metrics proxy failed\n');
     }
   });
 
@@ -6176,83 +6140,27 @@ Start by greeting the project leads and asking for status updates.`;
   /**
    * GET /api/spawned - List active spawned agents
    *
-   * Returns agents from two sources:
-   * 1. Spawner's active workers (in-memory tracking)
-   * 2. Daemon's agents.json registry (persisted, survives restarts)
-   *
-   * This fallback ensures docker deployments show agents even after
-   * container restarts when spawner's in-memory state is lost but
-   * agents have reconnected to the daemon.
+   * Pure pass-through to broker /api/spawned.
    */
-  app.get('/api/spawned', (req, res) => {
-    // Collect agents from all available sources
-    const agentsByName = new Map<string, {
-      name: string;
-      cli?: string;
-      pid?: number;
-      spawnedAt?: number;
-      task?: string;
-      team?: string;
-      cwd?: string;
-      source: 'spawner' | 'daemon';
-    }>();
-
-    // Source 1: Spawner's active workers (authoritative for spawned agents)
-    if (spawnReader) {
-      for (const worker of spawnReader.getActiveWorkers()) {
-        agentsByName.set(worker.name, {
-          name: worker.name,
-          cli: worker.cli,
-          pid: worker.pid,
-          spawnedAt: worker.spawnedAt,
-          task: worker.task,
-          team: worker.team,
-          cwd: agentCwdMap.get(worker.name) || (worker as any).cwd,
-          source: 'spawner',
-        });
-      }
+  app.get('/api/spawned', async (req, res) => {
+    try {
+      const response = await fetchBrokerSpawnedAgents({
+        query: new URLSearchParams(req.query as Record<string, string>),
+        headers: {
+          workspaceId: resolveWorkspaceId(req),
+          authorization: req.headers.authorization,
+        },
+      });
+      const body = await response.text();
+      const contentType = response.headers.get('content-type') ?? 'application/json; charset=utf-8';
+      res.status(response.status).setHeader('content-type', contentType).send(body);
+    } catch (err) {
+      res.status(502).json({
+        success: false,
+        error: 'Broker spawned-agents proxy failed',
+        message: (err as Error).message,
+      });
     }
-
-    // Source 2: Daemon's agents.json registry (fallback for docker restarts)
-    // Only include agents not already tracked by spawner
-    const agentsPath = path.join(teamDir, 'agents.json');
-    if (fs.existsSync(agentsPath)) {
-      try {
-        const data = JSON.parse(fs.readFileSync(agentsPath, 'utf-8'));
-        const registeredAgents = data.agents || [];
-        const thirtySecondsAgo = Date.now() - 30 * 1000;
-
-        for (const agent of registeredAgents) {
-          // Skip if already tracked by spawner
-          if (agentsByName.has(agent.name)) continue;
-
-          // Only include recently active agents (within 30s heartbeat window)
-          const lastSeen = agent.lastSeen ? new Date(agent.lastSeen).getTime() : 0;
-          if (lastSeen < thirtySecondsAgo) continue;
-
-          agentsByName.set(agent.name, {
-            name: agent.name,
-            cli: agent.cli || 'unknown',
-            spawnedAt: agent.connectedAt ? new Date(agent.connectedAt).getTime() : undefined,
-            team: agent.team,
-            source: 'daemon',
-          });
-        }
-      } catch (err) {
-        console.error('[api/spawned] Failed to read agents.json:', err);
-      }
-    }
-
-    const agents = Array.from(agentsByName.values());
-    res.json({
-      success: true,
-      agents,
-      // Include source info for debugging
-      sources: {
-        spawnerEnabled: !!spawnReader,
-        daemonAgentsFile: fs.existsSync(agentsPath),
-      },
-    });
   });
 
   /**
@@ -7208,38 +7116,7 @@ Start by greeting the project leads and asking for status updates.`;
         spawner.setDashboardPort(availablePort);
       }
 
-      // Start health worker on separate thread for reliable health checks
-      // This ensures health checks respond even when main event loop is blocked
-      const healthPort = getHealthPort(availablePort);
-      const healthWorker = new HealthWorkerManager(
-        { port: healthPort },
-        {
-          getUptime: () => process.uptime(),
-          getMemoryMB: () => Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-          getRelayConnected: () => {
-            const defaultClient = relayClients.get('Dashboard');
-            return defaultClient?.state === 'READY';
-          },
-          getAgentCount: () => relayClients.size,
-          getStatus: () => {
-            const socketExists = fs.existsSync(socketPath);
-            if (!socketExists) return 'degraded';
-            const defaultClient = relayClients.get('Dashboard');
-            return defaultClient?.state === 'READY' ? 'healthy' : 'busy';
-          },
-        }
-      );
-
-      try {
-        await healthWorker.start();
-        console.log(`Health check worker running at http://localhost:${healthPort}/health`);
-      } catch (err) {
-        // Worker threads don't work in bundled binaries - this is expected
-        const isBundledError = err instanceof Error && err.message.includes('bundled binary');
-        if (!isBundledError) {
-          console.warn('[dashboard] Failed to start health worker, using main thread health check:', err);
-        }
-      }
+      // Health and spawned status are now pass-through broker/cloud proxies.
 
       resolve(availablePort);
     };
