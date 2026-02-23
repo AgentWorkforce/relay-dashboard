@@ -14,7 +14,7 @@ export { MessageStatusIndicator, type MessageStatusIndicatorProps } from './Mess
 export { MessageList, type MessageListProps } from './MessageList';
 export { ThreadPanel, type ThreadPanelProps } from './ThreadPanel';
 export { CommandPalette, type CommandPaletteProps, type Command } from './CommandPalette';
-export { SpawnModal, type SpawnModalProps, type SpawnConfig, type SpeakOnTrigger } from './SpawnModal';
+export { SpawnModal, type SpawnModalProps, type SpawnConfig, type SpeakOnTrigger, type ModelOption } from './SpawnModal';
 export { NewConversationModal, type NewConversationModalProps } from './NewConversationModal';
 export { TrajectoryViewer, type TrajectoryViewerProps, type TrajectoryStep } from './TrajectoryViewer';
 export { DecisionQueue, type DecisionQueueProps, type Decision } from './DecisionQueue';

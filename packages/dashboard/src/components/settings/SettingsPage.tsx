@@ -13,12 +13,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDashboardConfig, type DashboardFeatures } from '../../adapters';
 import type { Settings, CliType } from './types';
-import {
-  CLAUDE_MODEL_OPTIONS,
-  CURSOR_MODEL_OPTIONS,
-  CODEX_MODEL_OPTIONS,
-  GEMINI_MODEL_OPTIONS,
-} from 'agent-relay/broker';
+import type { ModelOption } from '../SpawnModal';
 
 type SettingsTab = 'dashboard' | 'workspace' | 'team' | 'billing';
 
@@ -37,6 +32,13 @@ export interface SettingsPageProps {
   activeWorkspaceId?: string | null;
   /** Callback when repos are added/removed in workspace settings */
   onReposChanged?: () => void;
+  /** Model options per agent type — provided by the host app */
+  modelOptions?: {
+    claude?: ModelOption[];
+    cursor?: ModelOption[];
+    codex?: ModelOption[];
+    gemini?: ModelOption[];
+  };
 }
 
 interface WorkspaceSummary {
@@ -56,15 +58,23 @@ function resolveInitialTab(initialTab: SettingsTab, features: DashboardFeatures)
   return isTabEnabled(initialTab, features) ? initialTab : 'dashboard';
 }
 
+const EMPTY_MODEL_OPTIONS: ModelOption[] = [];
+
 export function SettingsPage({
   initialTab = 'dashboard',
   onClose,
   settings,
   onUpdateSettings,
   activeWorkspaceId,
+  modelOptions,
 }: SettingsPageProps) {
   const config = useDashboardConfig();
   const { features, api, settingsSlots } = config;
+
+  const claudeModels = modelOptions?.claude ?? EMPTY_MODEL_OPTIONS;
+  const cursorModels = modelOptions?.cursor ?? EMPTY_MODEL_OPTIONS;
+  const codexModels = modelOptions?.codex ?? EMPTY_MODEL_OPTIONS;
+  const geminiModels = modelOptions?.gemini ?? EMPTY_MODEL_OPTIONS;
 
   const [activeTab, setActiveTab] = useState<SettingsTab>(() =>
     resolveInitialTab(initialTab, features)
@@ -384,7 +394,7 @@ export function SettingsPage({
                       description="Default model when spawning Claude agents"
                     >
                       <select
-                        value={settings.agentDefaults?.defaultModels?.claude ?? 'sonnet'}
+                        value={settings.agentDefaults?.defaultModels?.claude ?? claudeModels[0]?.value ?? ''}
                         onChange={(e) => updateSettings((prev) => ({
                           ...prev,
                           agentDefaults: {
@@ -397,7 +407,7 @@ export function SettingsPage({
                         }))}
                         className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
                       >
-                        {CLAUDE_MODEL_OPTIONS.map((model) => (
+                        {claudeModels.map((model) => (
                           <option key={model.value} value={model.value}>{model.label}</option>
                         ))}
                       </select>
@@ -408,7 +418,7 @@ export function SettingsPage({
                       description="Default model when spawning Cursor agents"
                     >
                       <select
-                        value={settings.agentDefaults?.defaultModels?.cursor ?? 'opus-4.5-thinking'}
+                        value={settings.agentDefaults?.defaultModels?.cursor ?? cursorModels[0]?.value ?? ''}
                         onChange={(e) => updateSettings((prev) => ({
                           ...prev,
                           agentDefaults: {
@@ -421,7 +431,7 @@ export function SettingsPage({
                         }))}
                         className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
                       >
-                        {CURSOR_MODEL_OPTIONS.map((model) => (
+                        {cursorModels.map((model) => (
                           <option key={model.value} value={model.value}>{model.label}</option>
                         ))}
                       </select>
@@ -432,7 +442,7 @@ export function SettingsPage({
                       description="Default model when spawning Codex agents"
                     >
                       <select
-                        value={settings.agentDefaults?.defaultModels?.codex ?? 'gpt-5.2-codex'}
+                        value={settings.agentDefaults?.defaultModels?.codex ?? codexModels[0]?.value ?? ''}
                         onChange={(e) => updateSettings((prev) => ({
                           ...prev,
                           agentDefaults: {
@@ -445,7 +455,7 @@ export function SettingsPage({
                         }))}
                         className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
                       >
-                        {CODEX_MODEL_OPTIONS.map((model) => (
+                        {codexModels.map((model) => (
                           <option key={model.value} value={model.value}>{model.label}</option>
                         ))}
                       </select>
@@ -456,7 +466,7 @@ export function SettingsPage({
                       description="Default model when spawning Gemini agents"
                     >
                       <select
-                        value={settings.agentDefaults?.defaultModels?.gemini ?? 'gemini-2.5-pro'}
+                        value={settings.agentDefaults?.defaultModels?.gemini ?? geminiModels[0]?.value ?? ''}
                         onChange={(e) => updateSettings((prev) => ({
                           ...prev,
                           agentDefaults: {
@@ -469,7 +479,7 @@ export function SettingsPage({
                         }))}
                         className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
                       >
-                        {GEMINI_MODEL_OPTIONS.map((model) => (
+                        {geminiModels.map((model) => (
                           <option key={model.value} value={model.value}>{model.label}</option>
                         ))}
                       </select>
