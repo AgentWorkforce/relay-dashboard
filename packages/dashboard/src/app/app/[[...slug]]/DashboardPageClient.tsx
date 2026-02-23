@@ -7,12 +7,13 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { App } from '../../../components/App';
 import { LogoIcon } from '../../../components/Logo';
 import { setActiveWorkspaceId } from '../../../lib/api';
 import { ProvisioningProgress } from '../../../components/ProvisioningProgress';
 import { ProviderConnectionList, type ProviderInfo } from '../../../components/ProviderConnectionList';
+import { DashboardConfigProvider, createCloudApiAdapter, createCloudAuthAdapter, setCloudCsrfToken } from '../../../adapters';
 
 interface Workspace {
   id: string;
@@ -55,6 +56,16 @@ const AI_PROVIDERS: ProviderInfo[] = [
 // Force cloud mode via env var - prevents silent fallback to local mode
 const FORCE_CLOUD_MODE = process.env.NEXT_PUBLIC_FORCE_CLOUD_MODE === 'true';
 
+// Detect cloud mode from server-injected config (relay-cloud injects this in app.html)
+function detectCloudConfig(): { isCloud: boolean; features?: Record<string, boolean> } {
+  if (typeof window !== 'undefined') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const config = (window as any).__RELAY_CLOUD_CONFIG__;
+    if (config) return config as { isCloud: boolean; features?: Record<string, boolean> };
+  }
+  return { isCloud: false };
+}
+
 export default function DashboardPageClient() {
   const [state, setState] = useState<PageState>('loading');
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -62,8 +73,7 @@ export default function DashboardPageClient() {
   const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null);
   const [wsUrl, setWsUrl] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  // Track cloud mode for potential future use
-  const [_isCloudMode, setIsCloudMode] = useState(FORCE_CLOUD_MODE);
+  const [isCloudMode, setIsCloudMode] = useState(() => FORCE_CLOUD_MODE || detectCloudConfig().isCloud);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [provisioningInfo, setProvisioningInfo] = useState<ProvisioningInfo | null>(null);
   const [connectedProviders, setConnectedProviders] = useState<string[]>([]);
@@ -89,6 +99,7 @@ export default function DashboardPageClient() {
         const token = sessionRes.headers.get('X-CSRF-Token');
         if (token) {
           setCsrfToken(token);
+          setCloudCsrfToken(token);
         }
 
         const session = await sessionRes.json();
@@ -394,6 +405,38 @@ export default function DashboardPageClient() {
     }
   }, [connectToWorkspace, csrfToken]);
 
+  // Create cloud config for wrapping App when in cloud mode.
+  // Memoized to avoid recreating adapters on every render.
+  // IMPORTANT: All hooks must be called before any early returns (React rules of hooks).
+  const cloudConfig = useMemo(() => {
+    if (!isCloudMode) return null;
+    const serverConfig = detectCloudConfig();
+    return {
+      features: {
+        workspaces: true,
+        auth: true,
+        billing: serverConfig.features?.billing ?? true,
+        teams: serverConfig.features?.teams ?? true,
+      },
+      api: createCloudApiAdapter(),
+      auth: createCloudAuthAdapter(),
+      isCloudMode: true,
+    };
+  }, [isCloudMode]);
+
+  // Helper: wraps App with cloud config provider when in cloud mode
+  const renderApp = (props?: { wsUrl?: string }) => {
+    const app = <App wsUrl={props?.wsUrl} />;
+    if (cloudConfig) {
+      return (
+        <DashboardConfigProvider config={cloudConfig}>
+          {app}
+        </DashboardConfigProvider>
+      );
+    }
+    return app;
+  };
+
   // Loading state
   if (state === 'loading') {
     return (
@@ -411,12 +454,12 @@ export default function DashboardPageClient() {
 
   // Local mode - just render the App component
   if (state === 'local') {
-    return <App />;
+    return renderApp();
   }
 
   // Connected to workspace - render App with workspace's WebSocket
   if (state === 'connected' && wsUrl) {
-    return <App wsUrl={wsUrl} />;
+    return renderApp({ wsUrl });
   }
 
   // Connecting state

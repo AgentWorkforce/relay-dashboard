@@ -8,16 +8,40 @@
 import fs from 'fs';
 import path from 'path';
 import {
-  RelaycastApi,
-  createWorkspaceReader,
-  type RelaycastChannel,
-  type RelaycastMessage,
-  type WorkspaceReader,
+  createRelaycastClient,
+  type AgentClient,
 } from '@agent-relay/sdk';
 
 const DEFAULT_RELAYCAST_BASE_URL = 'https://api.relaycast.dev';
 const DEFAULT_MESSAGE_LIMIT = 100;
 const MAX_MESSAGE_LIMIT = 500;
+const DASHBOARD_READER_NAME = 'dashboard-reader';
+
+interface RelaycastAgentRecord {
+  name: string;
+  type?: string;
+  status?: string;
+  last_seen?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+interface RelaycastChannel {
+  id: string;
+  name: string;
+  topic: string | null;
+  member_count: number;
+  created_at: string;
+  is_archived: boolean;
+}
+
+interface RelaycastMessage {
+  id: string;
+  agent_name: string;
+  text: string;
+  created_at: string;
+  thread_id?: string | null;
+  reply_count?: number;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -151,30 +175,104 @@ function getMessageLimit(limit: number | undefined): number {
   return Math.min(Math.floor(limit), MAX_MESSAGE_LIMIT);
 }
 
-function createWriter(config: RelaycastConfig, agentName: string, dataDir?: string): RelaycastApi {
-  const opts: ConstructorParameters<typeof RelaycastApi>[0] = {
-    apiKey: config.apiKey,
-    baseUrl: config.baseUrl,
-    agentName,
-  };
-  if (dataDir) {
-    opts.cachePath = path.join(dataDir, 'relaycast.json');
-  }
-  return new RelaycastApi(opts);
+const readerClientCache = new Map<string, Promise<AgentClient>>();
+const writerClientCache = new Map<string, Promise<AgentClient>>();
+
+function getCachePath(dataDir?: string): string | undefined {
+  if (!dataDir) return undefined;
+  return path.join(dataDir, 'relaycast.json');
 }
 
-function mapAgentStatus(agent: {
-  name: string;
-  type: string;
-  status: string;
-  last_seen: string | null;
-  metadata: Record<string, unknown> | null;
-}): AgentStatus {
+function getClientCacheKey(config: RelaycastConfig, agentName: string, dataDir?: string): string {
+  const cachePath = getCachePath(dataDir) ?? '';
+  return `${config.baseUrl}|${config.apiKey}|${agentName}|${cachePath}`;
+}
+
+async function getCachedClient(
+  cache: Map<string, Promise<AgentClient>>,
+  config: RelaycastConfig,
+  agentName: string,
+  dataDir?: string,
+): Promise<AgentClient> {
+  const key = getClientCacheKey(config, agentName, dataDir);
+  const existing = cache.get(key);
+  if (existing) {
+    return existing;
+  }
+
+  const clientPromise = createRelaycastClient({
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    cachePath: getCachePath(dataDir),
+    agentName,
+  }).catch((err) => {
+    cache.delete(key);
+    throw err;
+  });
+
+  cache.set(key, clientPromise);
+  return clientPromise;
+}
+
+function getReaderClient(config: RelaycastConfig, dataDir?: string): Promise<AgentClient> {
+  return getCachedClient(readerClientCache, config, DASHBOARD_READER_NAME, dataDir);
+}
+
+function getWriterClient(config: RelaycastConfig, senderName: string, dataDir?: string): Promise<AgentClient> {
+  return getCachedClient(writerClientCache, config, senderName, dataDir);
+}
+
+function parseCliAndModel(
+  cliValue: unknown,
+  modelValue: unknown,
+): { cli: string; model?: string } {
+  const explicitModel =
+    typeof modelValue === 'string' && modelValue.trim().length > 0
+      ? modelValue.trim()
+      : undefined;
+  const cliSource = typeof cliValue === 'string' ? cliValue.trim() : '';
+
+  if (!cliSource) {
+    return {
+      cli: 'unknown',
+      model: explicitModel,
+    };
+  }
+
+  const parts = cliSource.split(/\s+/);
+  const cli = parts[0] ?? 'unknown';
+  const args = parts.slice(1);
+  let model = explicitModel;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--model') {
+      const next = args[index + 1];
+      if (!model && typeof next === 'string' && next.trim()) {
+        model = next.trim();
+      }
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--model=')) {
+      if (!model) {
+        const value = arg.slice('--model='.length).trim();
+        if (value) model = value;
+      }
+    }
+  }
+
+  return { cli, model };
+}
+
+function mapAgentStatus(agent: RelaycastAgentRecord): AgentStatus {
   const meta = agent.metadata || {};
+  const runtime = parseCliAndModel(meta.cli, meta.model);
   return {
     name: agent.name,
     role: (meta.role as string) || 'Agent',
-    cli: (meta.cli as string) || 'unknown',
+    cli: runtime.cli,
+    model: runtime.model,
     messageCount: 0,
     status: agent.status === 'online' ? 'online' : 'offline',
     lastSeen: agent.last_seen ?? undefined,
@@ -191,7 +289,7 @@ function mapDashboardMessage(channelName: string, msg: RelaycastMessage): Messag
     content: msg.text,
     timestamp: msg.created_at,
     id: msg.id,
-    thread: msg.thread_id,
+    thread: msg.thread_id ?? undefined,
   };
 }
 
@@ -218,11 +316,8 @@ export function loadRelaycastConfig(dataDir: string): RelaycastConfig | null {
   }
 }
 
-/**
- * Create a WorkspaceReader from config.
- */
-export function createReader(config: RelaycastConfig): WorkspaceReader {
-  return createWorkspaceReader({ apiKey: config.apiKey, baseUrl: config.baseUrl });
+async function createReader(config: RelaycastConfig): Promise<AgentClient> {
+  return getReaderClient(config);
 }
 
 // ---------------------------------------------------------------------------
@@ -234,10 +329,11 @@ export function createReader(config: RelaycastConfig): WorkspaceReader {
  */
 export async function fetchAgents(config: RelaycastConfig): Promise<AgentStatus[]> {
   try {
-    const reader = createReader(config);
-    const agents = await reader.listAgents();
+    const reader = await createReader(config);
+    const agents = await reader.client.get<RelaycastAgentRecord[]>('/v1/agents');
     return agents
       .filter((agent) => agent.type !== 'human')
+      .filter((agent) => agent.name.toLowerCase() !== DASHBOARD_READER_NAME.toLowerCase())
       .map(mapAgentStatus);
   } catch (err) {
     console.warn('[relaycast-provider] Failed to fetch agents:', (err as Error).message);
@@ -250,8 +346,14 @@ export async function fetchAgents(config: RelaycastConfig): Promise<AgentStatus[
  */
 export async function fetchChannels(config: RelaycastConfig): Promise<RelaycastChannel[]> {
   try {
-    const reader = createReader(config);
-    const channels = await reader.listChannels();
+    const reader = await createReader(config);
+    const channelsRaw = await reader.channels.list({ include_archived: true }) as Array<Omit<RelaycastChannel, 'member_count'> & {
+      member_count?: number;
+    }>;
+    const channels: RelaycastChannel[] = channelsRaw.map((channel) => ({
+      ...channel,
+      member_count: typeof channel.member_count === 'number' ? channel.member_count : 0,
+    }));
     return channels.sort((a, b) => a.name.localeCompare(b.name));
   } catch (err) {
     console.warn('[relaycast-provider] Failed to fetch channels:', (err as Error).message);
@@ -271,19 +373,19 @@ export async function fetchChannelMessages(
   if (!channelName) return [];
 
   try {
-    const reader = createReader(config);
+    const reader = await createReader(config);
     const limit = getMessageLimit(options.limit);
-    let messages = await reader.listMessages(channelName, { limit });
+    let messages = await reader.messages(channelName, { limit }) as RelaycastMessage[];
 
     if (typeof options.before === 'number' && Number.isFinite(options.before)) {
       const beforeTs = options.before;
-      messages = messages.filter((msg) => {
+      messages = messages.filter((msg: RelaycastMessage) => {
         const ts = parseTimestamp(msg.created_at);
         return ts !== null && ts < beforeTs;
       });
     }
 
-    messages.sort((a, b) => {
+    messages.sort((a: RelaycastMessage, b: RelaycastMessage) => {
       const aTs = parseTimestamp(a.created_at) ?? 0;
       const bTs = parseTimestamp(b.created_at) ?? 0;
       return aTs - bTs;
@@ -350,8 +452,12 @@ export async function sendMessage(config: RelaycastConfig, input: SendMessageInp
   }
 
   const senderName = input.from?.trim() ? input.from.trim() : 'Dashboard';
-  const relaycast = createWriter(config, senderName, input.dataDir);
-  await relaycast.send(target, message);
+  const relaycast = await getWriterClient(config, senderName, input.dataDir);
+  if (target.startsWith('#')) {
+    await relaycast.send(target.slice(1), message);
+  } else {
+    await relaycast.dm(target, message);
+  }
   return { messageId: `relaycast-${Date.now()}` };
 }
 
@@ -363,8 +469,11 @@ export async function createChannel(config: RelaycastConfig, input: CreateChanne
 
   // Relaycast channel creation currently ignores visibility.
   void input.visibility;
-  const relaycast = createWriter(config, input.creator?.trim() || 'Dashboard', input.dataDir);
-  await relaycast.createChannel(channelName, input.description?.trim() || undefined);
+  const relaycast = await getWriterClient(config, input.creator?.trim() || 'Dashboard', input.dataDir);
+  await relaycast.channels.create({
+    name: channelName,
+    ...(input.description?.trim() ? { topic: input.description.trim() } : {}),
+  });
 }
 
 export async function inviteToChannel(
@@ -376,7 +485,7 @@ export async function inviteToChannel(
     throw new Error('channel is required');
   }
 
-  const relaycast = createWriter(config, input.invitedBy?.trim() || 'Dashboard', input.dataDir);
+  const relaycast = await getWriterClient(config, input.invitedBy?.trim() || 'Dashboard', input.dataDir);
   const invited: Array<{ id: string; type: 'user' | 'agent'; success: boolean; reason?: string }> = [];
 
   for (const member of input.members) {
@@ -384,7 +493,7 @@ export async function inviteToChannel(
     if (!memberId) continue;
 
     try {
-      await relaycast.inviteToChannel(channelName, memberId);
+      await relaycast.channels.invite(channelName, memberId);
       invited.push({ id: memberId, type: member.type === 'user' ? 'user' : 'agent', success: true });
     } catch (err) {
       invited.push({
@@ -403,15 +512,16 @@ export async function joinChannel(config: RelaycastConfig, input: JoinChannelInp
   const channelName = normalizeChannelName(input.channel);
   if (!channelName || channelName.startsWith('dm:')) return;
 
-  const relaycast = createWriter(config, input.username.trim() || 'Dashboard', input.dataDir);
-  await relaycast.joinChannel(channelName);
+  const relaycast = await getWriterClient(config, input.username.trim() || 'Dashboard', input.dataDir);
+  await relaycast.channels.join(channelName);
 }
 
-export async function leaveChannel(_config: RelaycastConfig, input: LeaveChannelInput): Promise<void> {
-  // RelaycastApi does not currently expose channel leave. Keep API-compatible no-op.
-  if (process.env.VERBOSE === 'true') {
-    console.warn(`[relaycast-provider] leaveChannel no-op for ${input.username} on ${input.channel}`);
-  }
+export async function leaveChannel(config: RelaycastConfig, input: LeaveChannelInput): Promise<void> {
+  const channelName = normalizeChannelName(input.channel);
+  if (!channelName || channelName.startsWith('dm:')) return;
+
+  const relaycast = await getWriterClient(config, input.username.trim() || 'Dashboard');
+  await relaycast.channels.leave(channelName);
 }
 
 export async function setChannelArchived(

@@ -442,7 +442,7 @@ export function SpawnModal({
                 id="claude-model"
                 className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
                 value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value as ClaudeModel)}
+                onChange={(e) => setSelectedModel(e.target.value)}
                 disabled={isSpawning}
               >
                 {claudeModels.map((model) => (
@@ -464,7 +464,7 @@ export function SpawnModal({
                 id="cursor-model"
                 className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
                 value={selectedCursorModel}
-                onChange={(e) => setSelectedCursorModel(e.target.value as CursorModel)}
+                onChange={(e) => setSelectedCursorModel(e.target.value)}
                 disabled={isSpawning}
               >
                 {cursorModels.map((model) => (
@@ -486,7 +486,7 @@ export function SpawnModal({
                 id="codex-model"
                 className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
                 value={selectedCodexModel}
-                onChange={(e) => setSelectedCodexModel(e.target.value as CodexModel)}
+                onChange={(e) => setSelectedCodexModel(e.target.value)}
                 disabled={isSpawning}
               >
                 {codexModels.map((model) => (
@@ -508,7 +508,7 @@ export function SpawnModal({
                 id="gemini-model"
                 className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
                 value={selectedGeminiModel}
-                onChange={(e) => setSelectedGeminiModel(e.target.value as GeminiModel)}
+                onChange={(e) => setSelectedGeminiModel(e.target.value)}
                 disabled={isSpawning}
               >
                 {geminiModels.map((model) => (

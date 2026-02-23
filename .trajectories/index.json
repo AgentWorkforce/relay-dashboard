@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "lastUpdated": "2026-02-14T13:32:08.812Z",
+  "lastUpdated": "2026-02-23T11:26:51.327Z",
   "trajectories": {
     "traj_3q3jtxrg7enr": {
       "title": "Refactor channel system: remove legacy general broadcast, make Activity feed show events only, #general is real channel",
@@ -43,6 +43,48 @@
       "startedAt": "2026-02-14T13:32:04.308Z",
       "completedAt": "2026-02-14T13:32:08.747Z",
       "path": ".trajectories/completed/2026-02/traj_191ud9xwn44t.json"
+    },
+    "traj_w694f6rhwhfs": {
+      "title": "Switch dashboard-server log WS to SDK followLogs",
+      "status": "completed",
+      "startedAt": "2026-02-23T10:26:45.155Z",
+      "completedAt": "2026-02-23T10:28:37.514Z",
+      "path": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/.trajectories/completed/2026-02/traj_w694f6rhwhfs.json"
+    },
+    "traj_mnkoqhz53hay": {
+      "title": "Fix /api/send target resolution and agent cli/model display",
+      "status": "completed",
+      "startedAt": "2026-02-23T10:40:07.258Z",
+      "completedAt": "2026-02-23T10:40:21.072Z",
+      "path": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/.trajectories/completed/2026-02/traj_mnkoqhz53hay.json"
+    },
+    "traj_ksvrgkw9yun9": {
+      "title": "Fix dashboard 409 send by routing messages through broker HTTP API",
+      "status": "completed",
+      "startedAt": "2026-02-23T10:53:43.230Z",
+      "completedAt": "2026-02-23T11:04:14.503Z",
+      "path": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/.trajectories/completed/2026-02/traj_ksvrgkw9yun9.json"
+    },
+    "traj_0pxwves811az": {
+      "title": "Use local SDK for relay-dashboard and validate tests",
+      "status": "completed",
+      "startedAt": "2026-02-23T11:14:25.621Z",
+      "completedAt": "2026-02-23T11:22:08.853Z",
+      "path": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/.trajectories/completed/2026-02/traj_0pxwves811az.json"
+    },
+    "traj_c4lanhclhjdk": {
+      "title": "Hard-cut legacy /api/release and /api/agents/:name/cwd endpoints",
+      "status": "completed",
+      "startedAt": "2026-02-23T11:23:28.406Z",
+      "completedAt": "2026-02-23T11:24:28.095Z",
+      "path": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/.trajectories/completed/2026-02/traj_c4lanhclhjdk.json"
+    },
+    "traj_3qqi2pr39ivq": {
+      "title": "Prepare local SDK and dashboard-server builds for local testing",
+      "status": "completed",
+      "startedAt": "2026-02-23T11:25:48.630Z",
+      "completedAt": "2026-02-23T11:26:51.193Z",
+      "path": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/.trajectories/completed/2026-02/traj_3qqi2pr39ivq.json"
     }
   }
 }

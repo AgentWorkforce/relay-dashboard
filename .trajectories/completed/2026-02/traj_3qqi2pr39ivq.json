@@ -1,0 +1,25 @@
+{
+  "id": "traj_3qqi2pr39ivq",
+  "version": 1,
+  "task": {
+    "title": "Prepare local SDK and dashboard-server builds for local testing"
+  },
+  "status": "completed",
+  "startedAt": "2026-02-23T11:25:48.630Z",
+  "agents": [],
+  "chapters": [],
+  "commits": [],
+  "filesChanged": [],
+  "projectId": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard",
+  "tags": [],
+  "_trace": {
+    "startRef": "2bdeabcb5f18847085c55510f64a38180c196dfa",
+    "endRef": "2bdeabcb5f18847085c55510f64a38180c196dfa"
+  },
+  "completedAt": "2026-02-23T11:26:51.193Z",
+  "retrospective": {
+    "summary": "Built local SDK and dashboard-server, verified standalone server returns 410 endpoint_removed for /api/release and /api/agents/:name/cwd.",
+    "approach": "Standard approach",
+    "confidence": 0.97
+  }
+}

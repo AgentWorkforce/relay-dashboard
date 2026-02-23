@@ -1381,8 +1381,10 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   // In cloud mode, useOrchestrator is disabled so `workspaces` is empty.
   // Use effectiveWorkspaces which unifies orchestrator and cloud workspaces.
   const hasWorkspaces = effectiveWorkspaces.length > 0;
+  const bridgeBootstrapFetchedRef = useRef(false);
   useEffect(() => {
     if (hasWorkspaces) {
+      bridgeBootstrapFetchedRef.current = false;
       // If we have repos for the active workspace, show each repo as a project folder
       if (workspaceRepos.length > 1 && effectiveActiveWorkspaceId) {
         // Create empty project shells from workspace repos.
@@ -1448,8 +1450,11 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
   useEffect(() => {
     if (hasWorkspaces) return; // Skip if using orchestrator or cloud workspaces
 
+    let cancelled = false;
     const fetchProjects = async () => {
       const result = await api.getBridgeData();
+      if (cancelled) return;
+
       if (result.success && result.data) {
         // Bridge data returns { projects, messages, connected }
         const bridgeData = result.data as {
@@ -1458,7 +1463,7 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
             name?: string;
             path: string;
             connected?: boolean;
-            agents?: Array<{ name: string; status: string; task?: string; cli?: string }>;
+            agents?: Array<{ name: string; status: string; task?: string; cli?: string; model?: string; cwd?: string }>;
             lead?: { name: string; connected: boolean };
           }>;
           connected?: boolean;
@@ -1479,24 +1484,38 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
                 status: a.status === 'online' || a.status === 'active' ? 'online' : 'offline',
                 currentTask: a.task,
                 cli: a.cli,
+                model: a.model,
+                cwd: a.cwd,
               })) as Agent[],
             lead: p.lead,
           }));
           setProjects(projectList);
-          // Set first project as current if none selected
-          if (!currentProject && projectList.length > 0) {
-            setCurrentProject(projectList[0].id);
-          }
+          // Set first project as current if none selected.
+          setCurrentProject((previous) => previous || projectList[0]?.id || previous);
         }
       }
     };
 
-    // Fetch immediately on mount
-    fetchProjects();
-    // Poll for updates
+    // Bootstrap once per local broker mode entry.
+    if (!bridgeBootstrapFetchedRef.current) {
+      bridgeBootstrapFetchedRef.current = true;
+      void fetchProjects();
+    }
+
+    // Fallback polling only while WebSocket is disconnected.
+    if (isConnected) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void fetchProjects();
     const interval = setInterval(fetchProjects, 5000);
-    return () => clearInterval(interval);
-  }, [hasWorkspaces, currentProject]);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [hasWorkspaces, isConnected]);
 
   // Bridge-level agents (like Architect) that should be shown separately
   const BRIDGE_AGENT_NAMES = ['architect'];

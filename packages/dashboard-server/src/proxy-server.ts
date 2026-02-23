@@ -7,588 +7,54 @@
  * 3. Mock mode: fixture-backed standalone mode for demos/tests
  */
 
-import fs from 'fs';
-import express, { type Express, type Request, type Response, type NextFunction } from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import { createServer as createHttpServer, type Server } from 'http';
-import { createProxyMiddleware, type Options as ProxyOptions } from 'http-proxy-middleware';
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocketServer } from 'ws';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import {
-  getTrajectoryHistory,
-  getTrajectoryStatus,
-  listTrajectorySteps,
-} from '@agent-relay/trajectory';
 import { registerMockRoutes } from './mocks/routes.js';
-import {
-  mockAgents,
-  mockMessages,
-  mockSessions,
-} from './mocks/fixtures.js';
 import {
   fetchAgents,
   fetchAllMessages,
-  fetchChannelMembers,
-  fetchChannelMessages,
   fetchChannels,
-  inviteToChannel,
-  joinChannel,
-  leaveChannel,
   sendMessage,
-  setChannelArchived,
-  createChannel,
   loadRelaycastConfig,
-  type AgentStatus,
-  type Message,
-  type RelaycastConfig,
 } from './relaycast-provider.js';
+import type {
+  DashboardMode,
+  DashboardSnapshot,
+  DashboardChannel,
+  DashboardServerOptions,
+  DashboardServer,
+  RouteContext,
+} from './lib/types.js';
+import { EMPTY_DASHBOARD_SNAPSHOT } from './lib/types.js';
+import {
+  normalizeRelayUrl,
+  normalizeAgentName,
+  isDirectRecipient,
+  sendHtmlFileOrFallback,
+  getBindHost,
+  mapChannelForDashboard,
+} from './lib/utils.js';
+import {
+  filterPhantomAgents,
+  mergeBrokerSpawnedAgents,
+  createSpawnedAgentsCaches,
+} from './lib/spawned-agents.js';
+import { handleMockWebSocket } from './websocket/mock.js';
+import { handleStandaloneWebSocket } from './websocket/standalone.js';
+import { handleStandaloneLogWebSocket } from './websocket/logs.js';
+import { registerHealthRoutes } from './routes/health.js';
+import { registerDataRoutes } from './routes/data.js';
+import { registerAgentRoutes } from './routes/agents.js';
+import { registerChannelRoutes } from './routes/channels.js';
+import { registerBrokerProxyRoutes } from './routes/broker-proxy.js';
+
+export type { DashboardServerOptions, DashboardServer } from './lib/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const PHANTOM_OFFLINE_MAX_AGE_MS = 5 * 60 * 1000;
-const STANDALONE_WS_POLL_MS = 3000;
-const STANDALONE_LOG_POLL_MS = 1000;
-const STANDALONE_LOG_HISTORY_LINES = 200;
-const SPAWNED_CACHE_TTL_MS = 3000;
-const WORKFLOW_BOOTSTRAP_TASK =
-  'You are connected to Agent Relay. Wait for relay messages and respond using Relaycast MCP tools.';
-const WORKFLOW_CONVENTIONS = [
-  'Messaging requirements:',
-  '- When you receive `Relay message from <sender> ...`, reply using `relay_send(to: "<sender>", message: "...")`.',
-  '- Send `ACK: ...` when you receive a task.',
-  '- Send `DONE: ...` when the task is complete.',
-  '- Do not reply only in terminal text; send the response via relay_send.',
-  '- Use relay_inbox() and relay_who() when context is missing.',
-].join('\n');
-
-type DashboardMode = 'proxy' | 'standalone' | 'mock';
-
-interface DashboardSnapshot {
-  agents: AgentStatus[];
-  users: AgentStatus[];
-  messages: Message[];
-  activity: Message[];
-  sessions: Array<Record<string, unknown>>;
-  summaries: Array<Record<string, unknown>>;
-}
-
-interface DashboardChannel {
-  id: string;
-  name: string;
-  description?: string;
-  topic?: string;
-  visibility: 'public' | 'private';
-  status: 'active' | 'archived';
-  createdAt: string;
-  createdBy: string;
-  memberCount: number;
-  unreadCount: number;
-  hasMentions: boolean;
-  isDm: boolean;
-}
-
-interface FileSearchResult {
-  path: string;
-  name: string;
-  isDirectory: boolean;
-}
-
-const EMPTY_DASHBOARD_SNAPSHOT: DashboardSnapshot = {
-  agents: [],
-  users: [],
-  messages: [],
-  activity: [],
-  sessions: [],
-  summaries: [],
-};
-
-const FILE_SEARCH_IGNORE_DIRS = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  'build',
-  '.next',
-  'coverage',
-  '__pycache__',
-  '.venv',
-  'venv',
-  '.cache',
-  '.turbo',
-  '.vercel',
-  '.nuxt',
-  '.output',
-  'vendor',
-  'target',
-  '.idea',
-  '.vscode',
-]);
-
-const FILE_SEARCH_IGNORE_PATTERNS = [
-  /\.lock$/,
-  /\.log$/,
-  /\.min\.(js|css)$/,
-  /\.map$/,
-  /\.d\.ts$/,
-  /\.pyc$/,
-];
-
-/**
- * Get the host to bind to.
- * In cloud environments, bind to '::' (IPv6 any) which also accepts IPv4 on dual-stack.
- * This is required for Fly.io's internal IPv6 network (6PN) connectivity.
- * Locally, let Node.js use its default behavior.
- */
-function getBindHost(): string | undefined {
-  if (process.env.BIND_HOST) {
-    return process.env.BIND_HOST;
-  }
-  const isCloudEnvironment =
-    process.env.FLY_APP_NAME ||
-    process.env.WORKSPACE_ID ||
-    process.env.RELAY_WORKSPACE_ID ||
-    process.env.RUNNING_IN_DOCKER === 'true';
-  return isCloudEnvironment ? '::' : undefined;
-}
-
-function normalizeRelayUrl(relayUrl: string | undefined): string | undefined {
-  if (!relayUrl) return undefined;
-  const trimmed = relayUrl.trim();
-  if (!trimmed) return undefined;
-  return trimmed.replace(/\/+$/, '');
-}
-
-function withWorkflowConventions(
-  task: string | undefined,
-  includeWorkflowConventions: boolean,
-): string | undefined {
-  const normalized = typeof task === 'string' ? task.trim() : '';
-
-  if (!includeWorkflowConventions) {
-    return normalized.length > 0 ? normalized : undefined;
-  }
-
-  if (normalized.length === 0) {
-    return `${WORKFLOW_BOOTSTRAP_TASK}\n\n${WORKFLOW_CONVENTIONS}`;
-  }
-
-  const lower = normalized.toLowerCase();
-  const alreadyConfigured =
-    lower.includes('relay_send(') || (lower.includes('ack:') && lower.includes('done:'));
-  return alreadyConfigured ? normalized : `${normalized}\n\n${WORKFLOW_CONVENTIONS}`;
-}
-
-function parseTimestamp(value: string | undefined): number | null {
-  if (!value) return null;
-  const timestamp = new Date(value).getTime();
-  return Number.isNaN(timestamp) ? null : timestamp;
-}
-
-function countOnlineAgents(agents: Array<{ status?: string }>): number {
-  return agents.reduce((count, agent) => {
-    return (agent.status ?? '').toLowerCase() === 'online' ? count + 1 : count;
-  }, 0);
-}
-
-function normalizeAgentName(value: string | undefined): string {
-  return (value ?? '').trim().toLowerCase();
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-interface SpawnedAgentNamesResult {
-  names: Set<string>;
-  hasSpawnedList: boolean;
-}
-
-function extractSpawnedAgentNames(payload: unknown): SpawnedAgentNamesResult {
-  const names = new Set<string>();
-  let hasSpawnedList = false;
-  let candidates: unknown[] = [];
-
-  const resolveCandidates = (value: unknown): unknown[] => {
-    if (Array.isArray(value)) {
-      hasSpawnedList = true;
-      return value;
-    }
-    if (!isRecord(value)) {
-      return [];
-    }
-    if (Array.isArray(value.agents)) {
-      hasSpawnedList = true;
-      return value.agents;
-    }
-    if (Array.isArray(value.workers)) {
-      hasSpawnedList = true;
-      return value.workers;
-    }
-    if (Array.isArray(value.spawned)) {
-      hasSpawnedList = true;
-      return value.spawned;
-    }
-    return [];
-  };
-
-  candidates = resolveCandidates(payload);
-  if (candidates.length === 0 && isRecord(payload)) {
-    candidates = resolveCandidates(payload.data);
-  }
-
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string') {
-      const name = normalizeAgentName(candidate);
-      if (name) {
-        names.add(name);
-      }
-      continue;
-    }
-
-    if (!isRecord(candidate)) {
-      continue;
-    }
-
-    const name = typeof candidate.name === 'string'
-      ? candidate.name
-      : (typeof candidate.id === 'string' ? candidate.id : '');
-
-    const normalized = normalizeAgentName(name);
-    if (normalized) {
-      names.add(normalized);
-    }
-  }
-
-  return { names, hasSpawnedList };
-}
-
-function normalizeChannelTarget(channel: string): string {
-  const trimmed = channel.trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('#') || trimmed.startsWith('dm:')) {
-    return trimmed;
-  }
-  return `#${trimmed}`;
-}
-
-function normalizeChannelName(channel: string): string {
-  const target = normalizeChannelTarget(channel);
-  if (target.startsWith('#')) {
-    return target.slice(1);
-  }
-  return target;
-}
-
-function parseInviteMembers(invites: unknown): Array<{ id: string; type: 'user' | 'agent' }> {
-  if (typeof invites === 'string') {
-    return invites
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .map((id) => ({ id, type: 'agent' as const }));
-  }
-
-  if (Array.isArray(invites)) {
-    return invites
-      .map((item) => {
-        if (typeof item === 'string') {
-          const id = item.trim();
-          return id ? { id, type: 'agent' as const } : null;
-        }
-
-        if (!isRecord(item) || typeof item.id !== 'string') {
-          return null;
-        }
-
-        const id = item.id.trim();
-        if (!id) {
-          return null;
-        }
-
-        const type = item.type === 'user' ? 'user' : 'agent';
-        return { id, type };
-      })
-      .filter((item): item is { id: string; type: 'user' | 'agent' } => item !== null);
-  }
-
-  return [];
-}
-
-function getWorkerLogsDir(dataDir: string): string {
-  return path.join(dataDir, 'team', 'worker-logs');
-}
-
-function sanitizeLogAgentName(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('\0')) {
-    return null;
-  }
-  return trimmed;
-}
-
-function listStandaloneLogAgents(dataDir: string): string[] {
-  const logsDir = getWorkerLogsDir(dataDir);
-  if (!fs.existsSync(logsDir)) {
-    return [];
-  }
-
-  try {
-    return fs
-      .readdirSync(logsDir)
-      .filter((name) => name.endsWith('.log'))
-      .map((name) => name.slice(0, -4))
-      .sort((a, b) => a.localeCompare(b));
-  } catch {
-    return [];
-  }
-}
-
-function readRecentLogLines(filePath: string, lineLimit = STANDALONE_LOG_HISTORY_LINES): string[] {
-  try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const lines = content.split(/\r?\n/);
-    if (lines.length > 0 && lines[lines.length - 1] === '') {
-      lines.pop();
-    }
-    return lines.slice(-lineLimit);
-  } catch {
-    return [];
-  }
-}
-
-function readLogDelta(
-  filePath: string,
-  offset: number,
-): { nextOffset: number; content: string } {
-  let fd: number | undefined;
-  try {
-    fd = fs.openSync(filePath, 'r');
-    const stats = fs.fstatSync(fd);
-    const start = stats.size < offset ? 0 : offset;
-    if (stats.size <= start) {
-      return { nextOffset: start, content: '' };
-    }
-
-    const length = stats.size - start;
-    const buffer = Buffer.alloc(length);
-    fs.readSync(fd, buffer, 0, length, start);
-    return {
-      nextOffset: stats.size,
-      content: buffer.toString('utf-8'),
-    };
-  } catch {
-    return { nextOffset: offset, content: '' };
-  } finally {
-    if (fd !== undefined) {
-      try {
-        fs.closeSync(fd);
-      } catch {
-        // Ignore close failures.
-      }
-    }
-  }
-}
-
-interface LocalStateAgentSummary {
-  name: string;
-  cli: string;
-  startedAt: string;
-  online: boolean;
-  pid?: number;
-  cwd?: string;
-}
-
-function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function toIsoTimestamp(epochSeconds: unknown): string {
-  if (typeof epochSeconds !== 'number' || !Number.isFinite(epochSeconds) || epochSeconds <= 0) {
-    return new Date(0).toISOString();
-  }
-  return new Date(epochSeconds * 1000).toISOString();
-}
-
-function readStandaloneStateAgents(dataDir: string): LocalStateAgentSummary[] {
-  const statePath = path.join(dataDir, 'state.json');
-  if (!fs.existsSync(statePath)) {
-    return [];
-  }
-
-  try {
-    const raw = JSON.parse(fs.readFileSync(statePath, 'utf-8')) as Record<string, unknown>;
-    if (!isRecord(raw.agents)) {
-      return [];
-    }
-
-    const agents: LocalStateAgentSummary[] = [];
-    for (const [name, value] of Object.entries(raw.agents)) {
-      if (!isRecord(value)) {
-        continue;
-      }
-
-      const pid = typeof value.pid === 'number' ? value.pid : undefined;
-      const spec = isRecord(value.spec) ? value.spec : undefined;
-      const cli = typeof spec?.cli === 'string' && spec.cli.trim() ? spec.cli : 'unknown';
-      const cwd = typeof spec?.cwd === 'string' && spec.cwd.trim() ? spec.cwd : undefined;
-
-      agents.push({
-        name,
-        cli,
-        cwd,
-        pid,
-        online: pid !== undefined ? isPidAlive(pid) : false,
-        startedAt: toIsoTimestamp(value.started_at),
-      });
-    }
-
-    agents.sort((a, b) => a.name.localeCompare(b.name));
-    return agents;
-  } catch {
-    return [];
-  }
-}
-
-async function searchFiles(rootDir: string, query: string, limit: number): Promise<FileSearchResult[]> {
-  const results: FileSearchResult[] = [];
-  const normalizedQuery = query.trim().toLowerCase();
-
-  const shouldIgnore = (name: string, isDirectory: boolean): boolean => {
-    if (isDirectory) {
-      return FILE_SEARCH_IGNORE_DIRS.has(name);
-    }
-    return FILE_SEARCH_IGNORE_PATTERNS.some((pattern) => pattern.test(name));
-  };
-
-  const matches = (relativePath: string, name: string): boolean => {
-    if (!normalizedQuery) return true;
-    const lowerPath = relativePath.toLowerCase();
-    const lowerName = name.toLowerCase();
-
-    if (normalizedQuery.includes('/')) {
-      return lowerPath.includes(normalizedQuery);
-    }
-
-    return lowerName.includes(normalizedQuery) || lowerPath.includes(normalizedQuery);
-  };
-
-  const visit = async (dir: string, relativePath = ''): Promise<void> => {
-    if (results.length >= limit) return;
-
-    let entries: fs.Dirent[];
-    try {
-      entries = await fs.promises.readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    entries.sort((a, b) => {
-      if (a.isDirectory() !== b.isDirectory()) {
-        return a.isDirectory() ? -1 : 1;
-      }
-      return a.name.localeCompare(b.name);
-    });
-
-    for (const entry of entries) {
-      if (results.length >= limit) break;
-      if (shouldIgnore(entry.name, entry.isDirectory())) continue;
-
-      const entryPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
-      if (matches(entryPath, entry.name)) {
-        results.push({
-          path: entryPath,
-          name: entry.name,
-          isDirectory: entry.isDirectory(),
-        });
-      }
-
-      if (entry.isDirectory()) {
-        await visit(path.join(dir, entry.name), entryPath);
-      }
-    }
-  };
-
-  await visit(rootDir);
-  return results;
-}
-
-function mapChannelForDashboard(channel: {
-  id: string;
-  name: string;
-  topic: string | null;
-  member_count: number;
-  created_at: string;
-  is_archived: boolean;
-}): DashboardChannel {
-  const channelId = channel.name.startsWith('#') ? channel.name : `#${channel.name}`;
-
-  return {
-    id: channelId,
-    name: channel.name,
-    description: channel.topic ?? undefined,
-    topic: channel.topic ?? undefined,
-    visibility: 'public',
-    status: channel.is_archived ? 'archived' : 'active',
-    createdAt: channel.created_at,
-    createdBy: 'system',
-    memberCount: channel.member_count ?? 0,
-    unreadCount: 0,
-    hasMentions: false,
-    isDm: channel.name.startsWith('dm:'),
-  };
-}
-
-function sendHtmlFileOrFallback(
-  res: Response,
-  filePath: string,
-  fallbackHtml?: string,
-  statusIfMissing = 404,
-): void {
-  if (fs.existsSync(filePath)) {
-    res.sendFile(path.resolve(filePath));
-    return;
-  }
-
-  if (fallbackHtml) {
-    res.type('html').send(fallbackHtml);
-    return;
-  }
-
-  res.status(statusIfMissing).json({ error: 'Not found' });
-}
-
-export interface DashboardServerOptions {
-  /** Port to listen on (default: 3888) */
-  port?: number;
-  /** Relay broker URL for proxy mode */
-  relayUrl?: string;
-  /** Path to static files directory (default: ../out) */
-  staticDir?: string;
-  /** Data directory containing relaycast.json credentials */
-  dataDir?: string;
-  /** Enable verbose logging */
-  verbose?: boolean;
-  /** Run in mock mode (no relay broker required) */
-  mock?: boolean;
-  /** CORS allowed origins (comma-separated, or '*' for all) */
-  corsOrigins?: string;
-  /** Request timeout in milliseconds (default: 30000) */
-  requestTimeout?: number;
-}
-
-export interface DashboardServer {
-  app: Express;
-  server: Server;
-  wss: WebSocketServer;
-  close: () => Promise<void>;
-  mode: DashboardMode;
-}
 
 /**
  * Create the dashboard server without starting it
@@ -648,198 +114,15 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     });
   }
 
-  app.get('/health', (_req: Request, res: Response) => {
-    res.json({
-      status: 'ok',
-      service: 'relay-dashboard',
-      mode,
-      uptime: process.uptime(),
-      brokerProxyEnabled,
-    });
+  // --- Build shared context ---
+
+  const resolveRelaycastConfig = () => loadRelaycastConfig(dataDir);
+  const { getSpawnedAgents, getLocalAgentNames } = createSpawnedAgentsCaches({
+    brokerProxyEnabled,
+    relayUrl,
+    dataDir,
+    verbose,
   });
-
-  app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({
-      status: 'ok',
-      service: 'relay-dashboard',
-      mode,
-      uptime: process.uptime(),
-      brokerProxyEnabled,
-    });
-  });
-
-  app.get('/keep-alive', async (_req: Request, res: Response) => {
-    let activeAgentCount = 0;
-
-    if (mode === 'mock') {
-      activeAgentCount = countOnlineAgents(mockAgents);
-    } else {
-      try {
-        const snapshot = await getRelaycastSnapshot();
-        activeAgentCount = countOnlineAgents(snapshot.agents);
-      } catch {
-        activeAgentCount = 0;
-      }
-    }
-
-    res.json({
-      ok: true,
-      mode,
-      timestamp: Date.now(),
-      activeAgentCount,
-    });
-  });
-
-  if (!mock) {
-    app.get('/api/workspaces/primary', (_req: Request, res: Response) => {
-      res.json({
-        success: true,
-        data: {
-          exists: false,
-          statusMessage: 'Running locally',
-          workspace: null,
-        },
-      });
-    });
-
-    app.get('/api/usage', (_req: Request, res: Response) => {
-      res.json({ success: true, data: null });
-    });
-  }
-
-  let spawnedAgentsCache: { expiresAt: number; names: Set<string> | null } = {
-    expiresAt: 0,
-    names: null,
-  };
-  let localAgentNamesCache: { expiresAt: number; names: Set<string> | null } = {
-    expiresAt: 0,
-    names: null,
-  };
-
-  const resolveRelaycastConfig = (): RelaycastConfig | null => loadRelaycastConfig(dataDir);
-
-  const getSpawnedAgentNames = async (): Promise<Set<string> | null> => {
-    if (!brokerProxyEnabled || !relayUrl) {
-      return null;
-    }
-
-    const now = Date.now();
-    if (spawnedAgentsCache.expiresAt > now) {
-      return spawnedAgentsCache.names;
-    }
-
-    try {
-      const response = await fetch(`${relayUrl}/api/spawned`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-      });
-
-      if (!response.ok) {
-        if (verbose) {
-          console.warn(`[dashboard] Failed to fetch /api/spawned from broker: ${response.status}`);
-        }
-        spawnedAgentsCache = {
-          expiresAt: now + SPAWNED_CACHE_TTL_MS,
-          names: null,
-        };
-        return null;
-      }
-
-      const payload = await response.json() as unknown;
-      const { names, hasSpawnedList } = extractSpawnedAgentNames(payload);
-      const resolvedNames = hasSpawnedList ? names : null;
-
-      if (!hasSpawnedList && verbose) {
-        console.warn('[dashboard] /api/spawned payload missing agents/workers list; skipping phantom cross-reference');
-      }
-
-      spawnedAgentsCache = {
-        expiresAt: now + SPAWNED_CACHE_TTL_MS,
-        names: resolvedNames,
-      };
-      return resolvedNames;
-    } catch (err) {
-      if (verbose) {
-        console.warn('[dashboard] Failed to fetch /api/spawned from broker:', (err as Error).message);
-      }
-      spawnedAgentsCache = {
-        expiresAt: now + SPAWNED_CACHE_TTL_MS,
-        names: null,
-      };
-      return null;
-    }
-  };
-
-  const getLocalAgentNames = (): Set<string> | null => {
-    if (brokerProxyEnabled) {
-      return null;
-    }
-
-    const now = Date.now();
-    if (localAgentNamesCache.expiresAt > now) {
-      return localAgentNamesCache.names;
-    }
-
-    const names = new Set<string>();
-    const addName = (value: unknown): void => {
-      if (typeof value !== 'string') return;
-      const normalized = normalizeAgentName(value);
-      if (normalized) {
-        names.add(normalized);
-      }
-    };
-
-    try {
-      const statePath = path.join(dataDir, 'state.json');
-      if (fs.existsSync(statePath)) {
-        const stateRaw = JSON.parse(fs.readFileSync(statePath, 'utf-8')) as Record<string, unknown>;
-        if (isRecord(stateRaw.agents)) {
-          for (const agentName of Object.keys(stateRaw.agents)) {
-            addName(agentName);
-          }
-        }
-      }
-    } catch {
-      // Ignore local state parsing failures.
-    }
-
-    const resolvedNames = names;
-    localAgentNamesCache = {
-      expiresAt: now + (resolvedNames.size > 0 ? SPAWNED_CACHE_TTL_MS : 500),
-      names: resolvedNames,
-    };
-
-    return resolvedNames;
-  };
-
-  const filterPhantomAgents = (
-    agents: AgentStatus[],
-    spawnedAgentNames: Set<string> | null,
-    localAgentNames: Set<string> | null
-  ): AgentStatus[] => {
-    const now = Date.now();
-
-    return agents.filter((agent) => {
-      const status = (agent.status ?? '').toLowerCase();
-      const lastSeenTs = parseTimestamp(agent.lastSeen ?? agent.lastActive);
-
-      if (status === 'offline' && lastSeenTs !== null && (now - lastSeenTs) > PHANTOM_OFFLINE_MAX_AGE_MS) {
-        return false;
-      }
-
-      if (localAgentNames !== null) {
-        const normalizedAgentName = normalizeAgentName(agent.name);
-        return normalizedAgentName ? localAgentNames.has(normalizedAgentName) : false;
-      }
-
-      if (spawnedAgentNames !== null) {
-        const normalizedAgentName = normalizeAgentName(agent.name);
-        return normalizedAgentName ? spawnedAgentNames.has(normalizedAgentName) : false;
-      }
-
-      return true;
-    });
-  };
 
   const getRelaycastSnapshot = async (): Promise<DashboardSnapshot> => {
     const config = resolveRelaycastConfig();
@@ -847,16 +130,17 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       return { ...EMPTY_DASHBOARD_SNAPSHOT };
     }
 
-    const [agents, messages, spawnedAgentNames, localAgentNames] = await Promise.all([
+    const [agents, messages, spawnedAgents, localAgentNames] = await Promise.all([
       fetchAgents(config),
       fetchAllMessages(config),
-      brokerProxyEnabled ? getSpawnedAgentNames() : Promise.resolve(null),
+      brokerProxyEnabled ? getSpawnedAgents() : Promise.resolve({ names: null, agents: null }),
       brokerProxyEnabled ? Promise.resolve(null) : Promise.resolve(getLocalAgentNames()),
     ]);
 
-    const filteredAgents = filterPhantomAgents(agents, spawnedAgentNames, localAgentNames);
+    const filteredAgents = filterPhantomAgents(agents, spawnedAgents.names, localAgentNames);
+    const mergedAgents = mergeBrokerSpawnedAgents(filteredAgents, spawnedAgents.agents);
     return {
-      agents: filteredAgents,
+      agents: mergedAgents,
       users: [],
       messages,
       activity: messages,
@@ -888,10 +172,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     activeChannels.sort((a, b) => a.name.localeCompare(b.name));
     archivedChannels.sort((a, b) => a.name.localeCompare(b.name));
 
-    return {
-      channels: activeChannels,
-      archivedChannels,
-    };
+    return { channels: activeChannels, archivedChannels };
   };
 
   const sendRelaycastMessage = async (
@@ -907,8 +188,28 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     }
 
     try {
+      const rawTarget = params.to.trim();
+      let resolvedTarget = rawTarget;
+
+      if (isDirectRecipient(rawTarget)) {
+        const relayAgents = await fetchAgents(config);
+        const relayMatch = relayAgents.find((agent) => normalizeAgentName(agent.name) === normalizeAgentName(rawTarget));
+        if (relayMatch) {
+          resolvedTarget = relayMatch.name;
+        } else if (brokerProxyEnabled) {
+          const spawned = await getSpawnedAgents();
+          if (spawned.names?.has(normalizeAgentName(rawTarget))) {
+            return {
+              success: false,
+              status: 409,
+              error: `Agent "${rawTarget}" is spawned but not connected to relay messaging yet. Wait for it to appear online, then retry.`,
+            };
+          }
+        }
+      }
+
       const result = await sendMessage(config, {
-        to: params.to.trim(),
+        to: resolvedTarget,
         message: params.message.trim(),
         from: params.from?.trim() ? params.from.trim() : 'Dashboard',
         dataDir,
@@ -918,13 +219,46 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
         messageId: result.messageId,
       };
     } catch (err) {
+      const message = (err as Error).message || 'Failed to send message';
+      if (isDirectRecipient(params.to) && /agent\s+\".+\"\s+not\s+found/i.test(message)) {
+        const relayAgents = await fetchAgents(config);
+        const available = relayAgents.map((agent) => agent.name).sort();
+        const suffix = available.length > 0
+          ? ` Available relay agents: ${available.join(', ')}.`
+          : ' No relay agents are currently online.';
+        return {
+          success: false,
+          status: 404,
+          error: `${message}.${suffix}`,
+        };
+      }
       return {
         success: false,
         status: 502,
-        error: (err as Error).message || 'Failed to send message',
+        error: message,
       };
     }
   };
+
+  const ctx: RouteContext = {
+    mode,
+    dataDir,
+    staticDir,
+    verbose,
+    relayUrl,
+    brokerProxyEnabled,
+    resolveRelaycastConfig,
+    getRelaycastSnapshot,
+    getRelaycastChannels,
+    sendRelaycastMessage,
+    getSpawnedAgents,
+    getLocalAgentNames,
+    filterPhantomAgents,
+  };
+
+  // --- Register routes ---
+
+  registerHealthRoutes(app, ctx);
 
   if (mock) {
     console.log('[dashboard] Running in MOCK mode - no relay broker required');
@@ -936,848 +270,13 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       console.log('[dashboard] Running in STANDALONE mode - relaycast only (read-only broker surface)');
     }
 
-    app.get('/api/files', async (req: Request, res: Response) => {
-      const query = typeof req.query.q === 'string' ? req.query.q : '';
-      const limitRaw = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 15;
-      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 15;
-      const searchRoot = path.dirname(dataDir);
-
-      try {
-        const files = await searchFiles(searchRoot, query, limit);
-        res.json({
-          files,
-          query,
-          searchRoot: path.basename(searchRoot),
-        });
-      } catch (err) {
-        console.error('[dashboard] File search failed:', err);
-        res.status(500).json({ error: 'Failed to search files', files: [] });
-      }
-    });
-
-    app.get('/api/data', async (_req: Request, res: Response) => {
-      try {
-        const snapshot = await getRelaycastSnapshot();
-        res.json(snapshot);
-      } catch (err) {
-        console.error('[dashboard] Failed to fetch Relaycast dashboard data:', err);
-        res.status(500).json({ error: 'Failed to load Relaycast data' });
-      }
-    });
-
-    const daemonEndpointRemoved = (req: Request, res: Response): void => {
-      res.status(410).json({
-        success: false,
-        code: 'daemon_removed',
-        error: 'BREAKING CHANGE: daemon API endpoints were removed.',
-        details: `Update dashboard/broker integrations to broker endpoints. Requested: ${req.path}`,
-        requiredEndpoints: [
-          '/api/brokers/*',
-          '/api/brokers/workspace/:workspaceId/agents',
-          '/api/brokers/link',
-        ],
-      });
-    };
-
-    app.all('/api/daemons', daemonEndpointRemoved);
-    app.all('/api/daemons/{*path}', daemonEndpointRemoved);
-
-    if (!brokerProxyEnabled) {
-      const unsupportedBrokerOperation = (
-        res: Response,
-        operation: string,
-        extra: Record<string, unknown> = {},
-      ): void => {
-        res.status(501).json({
-          success: false,
-          code: 'unsupported_operation',
-          mode: 'standalone',
-          error: `${operation} is unavailable in standalone mode.`,
-          suggestion: 'Start dashboard in proxy mode with a broker API relay URL to enable broker-managed operations.',
-          ...extra,
-        });
-      };
-
-      app.all('/api/brokers', (_req: Request, res: Response) => {
-        unsupportedBrokerOperation(res, 'Broker API');
-      });
-
-      app.all('/api/brokers/{*path}', (req: Request, res: Response) => {
-        unsupportedBrokerOperation(res, 'Broker API', { path: req.path });
-      });
-
-      app.get('/api/spawned', (_req: Request, res: Response) => {
-        const agents = readStandaloneStateAgents(dataDir);
-        res.json({
-          success: true,
-          agents: agents.map((agent) => ({
-            name: agent.name,
-            cli: agent.cli,
-            startedAt: agent.startedAt,
-            online: agent.online,
-            pid: agent.pid,
-            cwd: agent.cwd,
-          })),
-        });
-      });
-
-      app.post('/api/spawn', (req: Request, res: Response) => {
-        const requestedName =
-          typeof req.body?.name === 'string' && req.body.name.trim()
-            ? req.body.name.trim()
-            : 'unknown';
-        unsupportedBrokerOperation(res, 'Agent spawn', { name: requestedName });
-      });
-
-      app.post('/api/spawn/architect', (_req: Request, res: Response) => {
-        unsupportedBrokerOperation(res, 'Architect spawn');
-      });
-
-      app.post('/api/release', (_req: Request, res: Response) => {
-        unsupportedBrokerOperation(res, 'Agent release');
-      });
-
-      app.delete('/api/spawned/:name', (req: Request, res: Response) => {
-        const name = typeof req.params.name === 'string' ? decodeURIComponent(req.params.name) : '';
-        unsupportedBrokerOperation(res, 'Agent release', { name });
-      });
-
-      app.post('/api/agents/by-name/:name/interrupt', (req: Request, res: Response) => {
-        const name = typeof req.params.name === 'string' ? decodeURIComponent(req.params.name) : '';
-        unsupportedBrokerOperation(res, 'Agent interrupt', { name });
-      });
-
-      app.put('/api/agents/:name/cwd', (req: Request, res: Response) => {
-        const name = typeof req.params.name === 'string' ? decodeURIComponent(req.params.name) : '';
-        unsupportedBrokerOperation(res, 'Agent cwd update', { name });
-      });
-
-      app.get('/api/agents/:name/online', (req: Request, res: Response) => {
-        const name = typeof req.params.name === 'string' ? decodeURIComponent(req.params.name) : '';
-        const normalizedName = normalizeAgentName(name);
-        const agent = readStandaloneStateAgents(dataDir).find((item) => normalizeAgentName(item.name) === normalizedName);
-        res.json({
-          success: true,
-          name,
-          online: agent?.online ?? false,
-          pid: agent?.pid ?? null,
-        });
-      });
-    }
-
-    if (!brokerProxyEnabled) {
-      app.get('/api/logs', (_req: Request, res: Response) => {
-        const agents = listStandaloneLogAgents(dataDir);
-        res.json({ success: true, agents });
-      });
-
-      app.get('/api/logs/:name', (req: Request, res: Response) => {
-        const raw = Array.isArray(req.params.name) ? req.params.name[0] : req.params.name;
-        const decoded = decodeURIComponent(raw ?? '');
-        const agentName = sanitizeLogAgentName(decoded);
-
-        if (!agentName) {
-          res.status(400).json({ error: 'Agent name is required' });
-          return;
-        }
-
-        const logsDir = getWorkerLogsDir(dataDir);
-        const logFile = path.join(logsDir, `${agentName}.log`);
-        const availableAgents = listStandaloneLogAgents(dataDir);
-
-        if (!fs.existsSync(logFile)) {
-          res.status(404).json({
-            agent: agentName,
-            found: false,
-            lineCount: 0,
-            content: '',
-            availableAgents,
-            error: `No local logs for '${agentName}'.`,
-          });
-          return;
-        }
-
-        const lines = readRecentLogLines(logFile);
-        res.json({
-          agent: agentName,
-          found: true,
-          lineCount: lines.length,
-          content: lines.join('\n'),
-          availableAgents,
-        });
-      });
-    }
-
-    if (!brokerProxyEnabled) {
-      app.get('/api/bridge', async (_req: Request, res: Response) => {
-        try {
-          const snapshot = await getRelaycastSnapshot();
-          const projectPath = path.dirname(dataDir);
-          const projectName = path.basename(projectPath) || projectPath;
-
-          res.json({
-            projects: [
-              {
-                id: 'local',
-                name: projectName,
-                path: projectPath,
-                connected: true,
-                agents: snapshot.agents.map((agent) => ({
-                  name: agent.name,
-                  status: (agent.status ?? 'offline').toLowerCase(),
-                  cli: agent.cli,
-                })),
-              },
-            ],
-            bridgeAgents: snapshot.agents,
-            messages: snapshot.messages,
-            connected: false,
-            currentProjectPath: projectPath,
-          });
-        } catch (err) {
-          console.error('[dashboard] Failed to build local bridge view:', err);
-          res.status(500).json({
-            projects: [],
-            bridgeAgents: [],
-            messages: [],
-            connected: false,
-            error: 'Failed to build local bridge view',
-          });
-        }
-      });
-    }
-
-    app.get('/api/trajectory', async (_req: Request, res: Response) => {
-      try {
-        const status = await getTrajectoryStatus();
-        res.json(status);
-      } catch (err) {
-        console.error('[dashboard] Failed to fetch trajectory status:', err);
-        res.status(500).json({ success: false, active: false, error: 'Failed to fetch trajectory status' });
-      }
-    });
-
-    app.get('/api/trajectory/history', async (_req: Request, res: Response) => {
-      try {
-        const history = await getTrajectoryHistory();
-        res.json(history);
-      } catch (err) {
-        console.error('[dashboard] Failed to fetch trajectory history:', err);
-        res.status(500).json({ success: false, trajectories: [], error: 'Failed to fetch trajectory history' });
-      }
-    });
-
-    app.get('/api/trajectory/steps', async (req: Request, res: Response) => {
-      const trajectoryId =
-        typeof req.query.trajectoryId === 'string' && req.query.trajectoryId.trim()
-          ? req.query.trajectoryId.trim()
-          : undefined;
-
-      try {
-        const steps = await listTrajectorySteps(trajectoryId);
-        res.json(steps);
-      } catch (err) {
-        console.error('[dashboard] Failed to fetch trajectory steps:', err);
-        res.status(500).json({ success: false, steps: [], error: 'Failed to fetch trajectory steps' });
-      }
-    });
-
-    app.get('/api/channels', async (_req: Request, res: Response) => {
-      try {
-        const channels = await getRelaycastChannels();
-        res.json({
-          success: true,
-          ...channels,
-        });
-      } catch (err) {
-        console.error('[dashboard] Failed to fetch Relaycast channels:', err);
-        res.status(500).json({ error: 'Failed to load channels' });
-      }
-    });
-
-    app.get('/api/channels/available-members', async (_req: Request, res: Response) => {
-      try {
-        const snapshot = await getRelaycastSnapshot();
-        const agents = snapshot.agents.map((agent) => ({
-          id: agent.name,
-          displayName: agent.name,
-          entityType: 'agent' as const,
-          status: (agent.status ?? 'online').toLowerCase() === 'online' ? 'online' : 'offline',
-        }));
-
-        res.json({
-          success: true,
-          members: [],
-          agents,
-        });
-      } catch (err) {
-        console.error('[dashboard] Failed to build available members:', err);
-        res.status(500).json({ error: 'Failed to load members' });
-      }
-    });
-
-    app.get('/api/channels/:channel/members', async (req: Request, res: Response) => {
-      const channelParamRaw = Array.isArray(req.params.channel) ? req.params.channel[0] : req.params.channel;
-      const channelParam = decodeURIComponent(channelParamRaw ?? '');
-      const channelName = channelParam.startsWith('#') ? channelParam.slice(1) : channelParam;
-
-      if (!channelName) {
-        res.status(400).json({ error: 'Channel is required' });
-        return;
-      }
-
-      const config = resolveRelaycastConfig();
-      if (!config) {
-        res.json({ members: [] });
-        return;
-      }
-
-      try {
-        const [members, spawnedAgentNames, localAgentNames] = await Promise.all([
-          fetchChannelMembers(config, channelName),
-          brokerProxyEnabled ? getSpawnedAgentNames() : Promise.resolve(null),
-          brokerProxyEnabled ? Promise.resolve(null) : Promise.resolve(getLocalAgentNames()),
-        ]);
-
-        const filteredMembers = filterPhantomAgents(members, spawnedAgentNames, localAgentNames);
-        res.json({
-          members: filteredMembers.map((agent) => ({
-            id: agent.name,
-            displayName: agent.name,
-            entityType: 'agent' as const,
-            role: 'member' as const,
-            status: (agent.status ?? 'online').toLowerCase() === 'online' ? 'online' : 'offline',
-            joinedAt: agent.lastSeen ?? new Date().toISOString(),
-          })),
-        });
-      } catch (err) {
-        console.error('[dashboard] Failed to fetch channel members:', err);
-        res.status(500).json({ error: 'Failed to load channel members' });
-      }
-    });
-
-    app.get('/api/channels/:channel/messages', async (req: Request, res: Response) => {
-      const channelParamRaw = Array.isArray(req.params.channel) ? req.params.channel[0] : req.params.channel;
-      const channelParam = decodeURIComponent(channelParamRaw ?? '');
-      const channelName = channelParam.startsWith('#') ? channelParam.slice(1) : channelParam;
-      const limitRaw = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
-      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 500) : 100;
-      const beforeRaw = req.query.before ? parseInt(req.query.before as string, 10) : NaN;
-      const beforeTs = Number.isFinite(beforeRaw) ? beforeRaw : null;
-
-      if (!channelName) {
-        res.status(400).json({ error: 'Channel is required' });
-        return;
-      }
-
-      const config = resolveRelaycastConfig();
-      if (!config) {
-        res.json({ messages: [], hasMore: false });
-        return;
-      }
-
-      try {
-        const requestedLimit = beforeTs ? Math.min(limit * 2, 500) : limit;
-        const messages = await fetchChannelMessages(config, channelName, {
-          limit: requestedLimit,
-          before: beforeTs === null ? undefined : beforeTs,
-        });
-
-        const trimmed = messages.slice(-limit);
-        const hasMore = messages.length > limit;
-
-        res.json({
-          messages: trimmed.map((message) => ({
-            id: message.id,
-            channelId: channelParam.startsWith('#') ? channelParam : `#${channelName}`,
-            from: message.agent_name,
-            fromEntityType: 'agent' as const,
-            content: message.text,
-            timestamp: message.created_at,
-            threadId: message.thread_id,
-            threadSummary: typeof message.reply_count === 'number' && message.reply_count > 0 ? {
-              threadId: message.id,
-              replyCount: message.reply_count,
-              lastReplyAt: message.created_at,
-            } : undefined,
-            isRead: true,
-          })),
-          hasMore,
-        });
-      } catch (err) {
-        console.error('[dashboard] Failed to fetch Relaycast channel messages:', err);
-        res.status(500).json({ error: 'Failed to load channel messages' });
-      }
-    });
-
-    const handleRelaycastSend = async (req: Request, res: Response): Promise<void> => {
-      const { to, from } = req.body ?? {};
-      const messageValue = req.body?.message ?? req.body?.text ?? req.body?.body ?? req.body?.content;
-      const message = typeof messageValue === 'string' ? messageValue.trim() : '';
-
-      if (typeof to !== 'string' || !to.trim() || !message) {
-        res.status(400).json({ success: false, error: 'Missing required fields: to, message' });
-        return;
-      }
-
-      const result = await sendRelaycastMessage({
-        to: to.trim(),
-        message,
-        from: typeof from === 'string' ? from : undefined,
-      });
-
-      if (!result.success) {
-        res.status(result.status).json({
-          success: false,
-          error: result.error,
-        });
-        return;
-      }
-
-      res.json({
-        success: true,
-        messageId: result.messageId,
-      });
-    };
-
-    app.post('/api/send', handleRelaycastSend);
-    app.post('/api/dm', handleRelaycastSend);
-    app.post('/api/relay/send', handleRelaycastSend);
-
-    app.post('/api/channels', async (req: Request, res: Response) => {
-      const { name, description, topic, isPrivate, visibility, invites } = req.body ?? {};
-      const username = typeof req.body?.username === 'string' && req.body.username.trim()
-        ? req.body.username.trim()
-        : 'Dashboard';
-      const rawName = typeof name === 'string' ? name : '';
-      const channelName = normalizeChannelName(rawName);
-
-      if (!channelName || channelName.startsWith('dm:')) {
-        res.status(400).json({ error: 'name is required' });
-        return;
-      }
-
-      const config = resolveRelaycastConfig();
-      if (!config) {
-        res.status(503).json({
-          success: false,
-          error: `Relaycast credentials not found in ${path.join(dataDir, 'relaycast.json')}`,
-        });
-        return;
-      }
-
-      try {
-        await createChannel(config, {
-          name: channelName,
-          description: typeof description === 'string' ? description : (typeof topic === 'string' ? topic : undefined),
-          visibility: visibility === 'private' || isPrivate === true ? 'private' : 'public',
-          creator: username,
-          dataDir,
-        });
-        await joinChannel(config, { channel: channelName, username, dataDir }).catch(() => {});
-
-        const inviteMembers = parseInviteMembers(invites);
-        const inviteResult = inviteMembers.length > 0
-          ? await inviteToChannel(config, {
-              channel: channelName,
-              members: inviteMembers,
-              invitedBy: username,
-              dataDir,
-            })
-          : { invited: [] };
-
-        res.json({
-          success: true,
-          channel: {
-            id: `#${channelName}`,
-            name: channelName,
-            description: typeof description === 'string' ? description : undefined,
-            topic: typeof topic === 'string' ? topic : undefined,
-            visibility: visibility === 'private' || isPrivate === true ? 'private' : 'public',
-            status: 'active',
-            createdAt: new Date().toISOString(),
-            createdBy: username,
-            memberCount: Math.max(1, inviteResult.invited.filter((member) => member.success).length + 1),
-            unreadCount: 0,
-            hasMentions: false,
-            isDm: false,
-          },
-          invited: inviteResult.invited,
-        });
-      } catch (err) {
-        console.error('[dashboard] Failed to create Relaycast channel:', err);
-        res.status(500).json({ error: (err as Error).message || 'Failed to create channel' });
-      }
-    });
-
-    app.post('/api/channels/invite', async (req: Request, res: Response) => {
-      const { channel, invites, invitedBy } = req.body ?? {};
-      const channelName = typeof channel === 'string' ? normalizeChannelName(channel) : '';
-      const inviteMembers = parseInviteMembers(invites);
-
-      if (!channelName || inviteMembers.length === 0 || channelName.startsWith('dm:')) {
-        res.status(400).json({ error: 'channel and invites are required' });
-        return;
-      }
-
-      const config = resolveRelaycastConfig();
-      if (!config) {
-        res.status(503).json({
-          success: false,
-          error: `Relaycast credentials not found in ${path.join(dataDir, 'relaycast.json')}`,
-        });
-        return;
-      }
-
-      const inviteResult = await inviteToChannel(config, {
-        channel: channelName,
-        members: inviteMembers,
-        invitedBy: typeof invitedBy === 'string' && invitedBy.trim() ? invitedBy.trim() : 'Dashboard',
-        dataDir,
-      });
-
-      res.json({
-        channel: normalizeChannelTarget(channelName),
-        invited: inviteResult.invited,
-      });
-    });
-
-    app.get('/api/channels/users', (_req: Request, res: Response) => {
-      res.json({ users: [] });
-    });
-
-    app.post('/api/channels/join', async (req: Request, res: Response) => {
-      const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
-      const channel = typeof req.body?.channel === 'string' ? req.body.channel : '';
-      const channelName = normalizeChannelName(channel);
-      const channelTarget = normalizeChannelTarget(channel);
-
-      if (!username || !channelName) {
-        res.status(400).json({ error: 'username and channel required' });
-        return;
-      }
-
-      if (channelName.startsWith('dm:')) {
-        res.json({ success: true, channel: channelTarget });
-        return;
-      }
-
-      const config = resolveRelaycastConfig();
-      if (!config) {
-        res.status(503).json({
-          success: false,
-          error: `Relaycast credentials not found in ${path.join(dataDir, 'relaycast.json')}`,
-        });
-        return;
-      }
-
-      try {
-        await joinChannel(config, { channel: channelName, username, dataDir });
-      } catch (err) {
-        console.error('[dashboard] Failed to join Relaycast channel:', err);
-        res.status(500).json({ error: (err as Error).message || 'Failed to join channel' });
-        return;
-      }
-
-      res.json({ success: true, channel: channelTarget });
-    });
-
-    app.post('/api/channels/leave', async (req: Request, res: Response) => {
-      const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
-      const channel = typeof req.body?.channel === 'string' ? normalizeChannelTarget(req.body.channel) : '';
-      if (!username || !channel) {
-        res.status(400).json({ error: 'username and channel required' });
-        return;
-      }
-
-      const config = resolveRelaycastConfig();
-      if (config) {
-        try {
-          await leaveChannel(config, { channel, username });
-        } catch (err) {
-          if (verbose) {
-            console.warn('[dashboard] Leave channel fallback failed:', (err as Error).message);
-          }
-        }
-      }
-
-      res.json({ success: true, channel });
-    });
-
-    app.post('/api/channels/admin-join', async (req: Request, res: Response) => {
-      const channel = typeof req.body?.channel === 'string' ? normalizeChannelName(req.body.channel) : '';
-      const member = typeof req.body?.member === 'string' ? req.body.member.trim() : '';
-
-      if (!channel || !member || channel.startsWith('dm:')) {
-        res.status(400).json({ error: 'channel and member required' });
-        return;
-      }
-
-      const config = resolveRelaycastConfig();
-      if (!config) {
-        res.status(503).json({
-          success: false,
-          error: `Relaycast credentials not found in ${path.join(dataDir, 'relaycast.json')}`,
-        });
-        return;
-      }
-
-      try {
-        await inviteToChannel(config, {
-          channel,
-          members: [{ id: member, type: 'agent' }],
-          invitedBy: 'Dashboard',
-          dataDir,
-        });
-        res.json({ success: true, channel: normalizeChannelTarget(channel), member });
-      } catch (err) {
-        console.error('[dashboard] Failed to admin-join channel member:', err);
-        res.status(500).json({ error: (err as Error).message || 'Failed to add member' });
-      }
-    });
-
-    app.post('/api/channels/admin-remove', (req: Request, res: Response) => {
-      const channel = typeof req.body?.channel === 'string' ? normalizeChannelTarget(req.body.channel) : '';
-      const member = typeof req.body?.member === 'string' ? req.body.member.trim() : '';
-      if (!channel || !member) {
-        res.status(400).json({ error: 'channel and member required' });
-        return;
-      }
-      // Relaycast membership removal is not exposed by the current SDK wrapper.
-      res.json({ success: true, channel, member });
-    });
-
-    app.post('/api/channels/subscribe', async (req: Request, res: Response) => {
-      const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
-      const channelsRaw: unknown[] = Array.isArray(req.body?.channels) ? req.body.channels : ['#general'];
-      const channelNames = channelsRaw
-        .filter((entry: unknown): entry is string => typeof entry === 'string')
-        .map((entry: string) => normalizeChannelName(entry))
-        .filter(Boolean);
-
-      if (!username) {
-        res.status(400).json({ error: 'username required' });
-        return;
-      }
-
-      const config = resolveRelaycastConfig();
-      if (!config) {
-        res.status(503).json({
-          success: false,
-          error: `Relaycast credentials not found in ${path.join(dataDir, 'relaycast.json')}`,
-        });
-        return;
-      }
-
-      const joinedChannels: string[] = [];
-
-      for (const channelName of channelNames) {
-        if (channelName.startsWith('dm:')) {
-          joinedChannels.push(channelName);
-          continue;
-        }
-
-        try {
-          await joinChannel(config, { channel: channelName, username, dataDir });
-          joinedChannels.push(normalizeChannelTarget(channelName));
-        } catch (err) {
-          if (verbose) {
-            console.warn(`[dashboard] Failed to subscribe ${username} to ${channelName}:`, (err as Error).message);
-          }
-        }
-      }
-
-      res.json({
-        success: true,
-        channels: joinedChannels,
-      });
-    });
-
-    app.post('/api/channels/message', async (req: Request, res: Response) => {
-      const username = typeof req.body?.username === 'string' && req.body.username.trim()
-        ? req.body.username.trim()
-        : 'Dashboard';
-      const channel = typeof req.body?.channel === 'string' ? req.body.channel : '';
-      const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
-
-      if (!channel || !body) {
-        res.status(400).json({ error: 'username, channel, and body required' });
-        return;
-      }
-
-      const result = await sendRelaycastMessage({
-        to: normalizeChannelTarget(channel),
-        message: body,
-        from: username,
-      });
-
-      if (!result.success) {
-        res.status(result.status).json({
-          success: false,
-          error: result.error,
-        });
-        return;
-      }
-
-      res.json({ success: true, messageId: result.messageId });
-    });
-
-    app.post('/api/channels/archive', async (req: Request, res: Response) => {
-      const channel = typeof req.body?.channel === 'string' ? normalizeChannelTarget(req.body.channel) : '';
-      if (!channel) {
-        res.status(400).json({ error: 'channel required' });
-        return;
-      }
-
-      const config = resolveRelaycastConfig();
-      if (config) {
-        try {
-          await setChannelArchived(config, { channel, archived: true, updatedBy: 'Dashboard' });
-        } catch (err) {
-          if (verbose) {
-            console.warn('[dashboard] Archive channel fallback failed:', (err as Error).message);
-          }
-        }
-      }
-
-      res.json({ success: true, channel });
-    });
-
-    app.post('/api/channels/unarchive', async (req: Request, res: Response) => {
-      const channel = typeof req.body?.channel === 'string' ? normalizeChannelTarget(req.body.channel) : '';
-      if (!channel) {
-        res.status(400).json({ error: 'channel required' });
-        return;
-      }
-
-      const config = resolveRelaycastConfig();
-      if (config) {
-        try {
-          await setChannelArchived(config, { channel, archived: false, updatedBy: 'Dashboard' });
-        } catch (err) {
-          if (verbose) {
-            console.warn('[dashboard] Unarchive channel fallback failed:', (err as Error).message);
-          }
-        }
-      }
-
-      res.json({ success: true, channel });
-    });
-
-    if (brokerProxyEnabled && relayUrl) {
-      const forwardBrokerJson = async (
-        req: Request,
-        res: Response,
-        endpoint: string,
-        transformBody?: (body: Record<string, unknown>) => Record<string, unknown>,
-      ) => {
-        try {
-          const rawBody = isRecord(req.body) ? { ...req.body } : {};
-          const body = transformBody ? transformBody(rawBody) : rawBody;
-          const headers: Record<string, string> = {
-            'content-type': 'application/json',
-          };
-          const workspaceId = req.header('x-workspace-id');
-          if (workspaceId) {
-            headers['x-workspace-id'] = workspaceId;
-          }
-
-          const upstream = await fetch(`${relayUrl}${endpoint}`, {
-            method: req.method,
-            headers,
-            body: JSON.stringify(body),
-          });
-
-          const contentType = upstream.headers.get('content-type') ?? '';
-          const text = await upstream.text();
-          res.status(upstream.status);
-          if (contentType) {
-            res.setHeader('content-type', contentType);
-          }
-
-          if (!text) {
-            res.end();
-            return;
-          }
-
-          if (contentType.includes('application/json')) {
-            try {
-              res.json(JSON.parse(text));
-              return;
-            } catch {
-              // Fall back to raw text when upstream emits invalid JSON.
-            }
-          }
-          res.send(text);
-        } catch (err) {
-          console.error('[dashboard] Broker proxy error:', (err as Error).message);
-          res.status(502).json({
-            success: false,
-            error: 'Broker unavailable',
-            message: (err as Error).message,
-          });
-        }
-      };
-
-      const brokerProxyOptions: ProxyOptions = {
-        target: relayUrl,
-        changeOrigin: true,
-        ws: false,
-        logger: verbose ? console : undefined,
-        on: {
-          error: (err, _req, res) => {
-            console.error('[dashboard] Broker proxy error:', (err as Error).message);
-            if (res && 'writeHead' in res && typeof res.writeHead === 'function') {
-              res.writeHead(502, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({
-                success: false,
-                error: 'Broker unavailable',
-                message: (err as Error).message,
-              }));
-            }
-          },
-        },
-      };
-
-      app.post('/api/spawn', async (req: Request, res: Response) => {
-        await forwardBrokerJson(req, res, '/api/spawn', (rawBody) => {
-          const includeWorkflowConventions =
-            typeof rawBody.includeWorkflowConventions === 'boolean'
-              ? rawBody.includeWorkflowConventions
-              : true;
-          const task = typeof rawBody.task === 'string' ? rawBody.task : undefined;
-          return {
-            ...rawBody,
-            includeWorkflowConventions,
-            task: withWorkflowConventions(task, includeWorkflowConventions),
-          };
-        });
-      });
-
-      app.get('/api/spawned', createProxyMiddleware(brokerProxyOptions));
-      app.post('/api/release', createProxyMiddleware(brokerProxyOptions));
-      app.post('/api/agents/by-name/:name/interrupt', createProxyMiddleware(brokerProxyOptions));
-      app.get('/api/logs', createProxyMiddleware(brokerProxyOptions));
-      app.get('/api/logs/:name', createProxyMiddleware(brokerProxyOptions));
-      app.get('/api/agents/:name/online', createProxyMiddleware(brokerProxyOptions));
-      app.put('/api/agents/:name/cwd', createProxyMiddleware(brokerProxyOptions));
-      app.post('/api/spawn/architect', async (req: Request, res: Response) => {
-        await forwardBrokerJson(req, res, '/api/spawn/architect', (rawBody) => {
-          const task = typeof rawBody.task === 'string' ? rawBody.task : undefined;
-          return {
-            ...rawBody,
-            includeWorkflowConventions: true,
-            task: withWorkflowConventions(task, true),
-          };
-        });
-      });
-      app.use('/api/brokers', createProxyMiddleware(brokerProxyOptions));
-      app.get('/api/bridge', createProxyMiddleware(brokerProxyOptions));
-
-      // Keep legacy release path for older dashboard clients while broker migration completes.
-      app.delete('/api/spawned/:name', createProxyMiddleware(brokerProxyOptions));
-    }
+    registerAgentRoutes(app, ctx);
+    registerDataRoutes(app, ctx);
+    registerChannelRoutes(app, ctx);
+    registerBrokerProxyRoutes(app, ctx);
   }
+
+  // --- Static files and SPA fallback ---
 
   const fallbackHtml = `<!doctype html>
 <html lang="en">
@@ -1832,6 +331,8 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     sendHtmlFileOrFallback(res, indexPath, fallbackHtml, 200);
   });
 
+  // --- WebSocket ---
+
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (request, socket, head) => {
@@ -1841,8 +342,6 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       wss.handleUpgrade(request, socket, head, (ws) => {
         if (mode === 'mock') {
           handleMockWebSocket(ws, verbose);
-        } else if (mode === 'proxy' && relayUrl) {
-          handleProxyWebSocket(ws, relayUrl, verbose, '/ws');
         } else {
           handleStandaloneWebSocket(ws, getRelaycastSnapshot, verbose);
         }
@@ -1850,16 +349,9 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       return;
     }
 
-    if (mode !== 'proxy' && (pathname === '/ws/logs' || pathname.startsWith('/ws/logs/'))) {
+    if (mode !== 'mock' && (pathname === '/ws/logs' || pathname.startsWith('/ws/logs/'))) {
       wss.handleUpgrade(request, socket, head, (ws) => {
         handleStandaloneLogWebSocket(ws, pathname, dataDir, getLocalAgentNames, verbose);
-      });
-      return;
-    }
-
-    if (mode === 'proxy' && relayUrl && (pathname === '/ws/logs' || pathname.startsWith('/ws/logs/'))) {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        handleProxyWebSocket(ws, relayUrl, verbose, pathname);
       });
       return;
     }
@@ -1878,281 +370,6 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
   };
 
   return { app, server, wss, close, mode };
-}
-
-/**
- * Handle mock WebSocket connections.
- */
-function handleMockWebSocket(ws: WebSocket, verbose: boolean): void {
-  if (verbose) {
-    console.log('[dashboard] Mock WebSocket client connected');
-  }
-
-  const sendData = () => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        agents: mockAgents,
-        messages: mockMessages,
-        sessions: mockSessions,
-      }));
-    }
-  };
-
-  sendData();
-  const interval = setInterval(sendData, 5000);
-
-  ws.on('message', (data) => {
-    try {
-      const message = JSON.parse(data.toString());
-      if (verbose) {
-        console.log('[dashboard] Mock WS received:', message);
-      }
-      if (message.type === 'ping') {
-        ws.send(JSON.stringify({ type: 'pong' }));
-      } else if (message.type === 'subscribe') {
-        sendData();
-      }
-    } catch {
-      // Ignore parse errors
-    }
-  });
-
-  ws.on('close', () => {
-    if (verbose) {
-      console.log('[dashboard] Mock WebSocket client disconnected');
-    }
-    clearInterval(interval);
-  });
-
-  ws.on('error', (err) => {
-    console.error('[dashboard] Mock WebSocket error:', err.message);
-    clearInterval(interval);
-  });
-}
-
-/**
- * Handle standalone WebSocket connections with periodic Relaycast snapshot polling.
- */
-function handleStandaloneWebSocket(
-  ws: WebSocket,
-  getSnapshot: () => Promise<DashboardSnapshot>,
-  verbose: boolean,
-): void {
-  if (verbose) {
-    console.log('[dashboard] Standalone WebSocket client connected');
-  }
-
-  let lastPayload = '';
-
-  const sendSnapshot = async (force = false): Promise<void> => {
-    if (ws.readyState !== WebSocket.OPEN) return;
-
-    try {
-      const snapshot = await getSnapshot();
-      const payload = JSON.stringify(snapshot);
-      if (!force && payload === lastPayload) {
-        return;
-      }
-      lastPayload = payload;
-      ws.send(payload);
-    } catch (err) {
-      if (verbose) {
-        console.warn('[dashboard] Standalone WS snapshot error:', (err as Error).message);
-      }
-    }
-  };
-
-  void sendSnapshot(true);
-  const interval = setInterval(() => {
-    void sendSnapshot();
-  }, STANDALONE_WS_POLL_MS);
-
-  ws.on('message', (data) => {
-    try {
-      const message = JSON.parse(data.toString());
-      if (message.type === 'ping') {
-        ws.send(JSON.stringify({ type: 'pong' }));
-      } else if (message.type === 'subscribe' || message.type === 'refresh' || message.type === 'replay') {
-        void sendSnapshot(true);
-      }
-    } catch {
-      // Ignore parse errors
-    }
-  });
-
-  ws.on('close', () => {
-    if (verbose) {
-      console.log('[dashboard] Standalone WebSocket client disconnected');
-    }
-    clearInterval(interval);
-  });
-
-  ws.on('error', (err) => {
-    if (verbose) {
-      console.warn('[dashboard] Standalone WebSocket error:', err.message);
-    }
-    clearInterval(interval);
-  });
-}
-
-/**
- * Handle standalone log WebSocket connections by tailing local worker log files.
- */
-function handleStandaloneLogWebSocket(
-  ws: WebSocket,
-  pathname: string,
-  dataDir: string,
-  getLocalAgentNames: () => Set<string> | null,
-  verbose: boolean,
-): void {
-  const segments = pathname.split('/').filter(Boolean);
-  const encodedAgentName = segments.length >= 3 ? segments[segments.length - 1] : '';
-  const agentName = sanitizeLogAgentName(decodeURIComponent(encodedAgentName));
-
-  if (!agentName) {
-    ws.send(JSON.stringify({ type: 'error', error: 'Agent name is required' }));
-    ws.close(4404, 'Agent name is required');
-    return;
-  }
-
-  if (verbose) {
-    console.log(`[dashboard] Standalone log WebSocket connected for ${agentName}`);
-  }
-
-  const logFile = path.join(getWorkerLogsDir(dataDir), `${agentName}.log`);
-  const availableAgents = (): string[] => listStandaloneLogAgents(dataDir);
-  const normalizedName = normalizeAgentName(agentName);
-
-  let offset = 0;
-  const syncOffsetToEnd = (): void => {
-    try {
-      const stats = fs.statSync(logFile);
-      offset = stats.size;
-    } catch {
-      offset = 0;
-    }
-  };
-
-  const sendHistory = (): void => {
-    const lines = readRecentLogLines(logFile);
-    ws.send(JSON.stringify({ type: 'subscribed', agent: agentName }));
-    ws.send(JSON.stringify({ type: 'history', agent: agentName, lines }));
-    syncOffsetToEnd();
-  };
-
-  const knownLocalAgents = getLocalAgentNames();
-  const isKnownLocalAgent =
-    knownLocalAgents !== null && knownLocalAgents.has(normalizedName);
-
-  if (!fs.existsSync(logFile) && !isKnownLocalAgent) {
-    ws.send(JSON.stringify({
-      type: 'error',
-      agent: agentName,
-      error: `No local logs for '${agentName}'.`,
-      availableAgents: availableAgents(),
-    }));
-    ws.close(4404, 'Agent logs not found');
-    return;
-  }
-
-  if (fs.existsSync(logFile)) {
-    sendHistory();
-  } else {
-    ws.send(JSON.stringify({ type: 'subscribed', agent: agentName }));
-    ws.send(JSON.stringify({ type: 'history', agent: agentName, lines: [] }));
-  }
-
-  const interval = setInterval(() => {
-    if (ws.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    if (!fs.existsSync(logFile)) {
-      return;
-    }
-
-    const delta = readLogDelta(logFile, offset);
-    offset = delta.nextOffset;
-    if (delta.content) {
-      ws.send(JSON.stringify({
-        type: 'log',
-        agent: agentName,
-        content: delta.content,
-      }));
-    }
-  }, STANDALONE_LOG_POLL_MS);
-
-  ws.on('message', (data) => {
-    try {
-      const message = JSON.parse(data.toString()) as { type?: string };
-      if (message.type === 'ping') {
-        ws.send(JSON.stringify({ type: 'pong' }));
-      } else if (message.type === 'subscribe' || message.type === 'replay' || message.type === 'refresh') {
-        sendHistory();
-      }
-    } catch {
-      // Ignore parse errors.
-    }
-  });
-
-  ws.on('close', () => {
-    if (verbose) {
-      console.log(`[dashboard] Standalone log WebSocket disconnected for ${agentName}`);
-    }
-    clearInterval(interval);
-  });
-
-  ws.on('error', (err) => {
-    if (verbose) {
-      console.warn(`[dashboard] Standalone log WebSocket error for ${agentName}:`, err.message);
-    }
-    clearInterval(interval);
-  });
-}
-
-/**
- * Handle proxy WebSocket connections.
- */
-function handleProxyWebSocket(ws: WebSocket, relayUrl: string, verbose: boolean, targetPath = '/ws'): void {
-  const relayUrlObj = new URL(relayUrl);
-  const wsProtocol = relayUrlObj.protocol === 'https:' ? 'wss:' : 'ws:';
-  const relayWs = new WebSocket(`${wsProtocol}//${relayUrlObj.host}${targetPath}`);
-
-  relayWs.on('open', () => {
-    if (verbose) {
-      console.log(`[dashboard] WebSocket connected to broker (${targetPath})`);
-    }
-  });
-
-  ws.on('message', (data) => {
-    if (relayWs.readyState === WebSocket.OPEN) {
-      relayWs.send(data);
-    }
-  });
-
-  relayWs.on('message', (data) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(data);
-    }
-  });
-
-  ws.on('close', () => {
-    relayWs.close();
-  });
-
-  relayWs.on('close', () => {
-    ws.close();
-  });
-
-  ws.on('error', (err) => {
-    console.error('[dashboard] Client WebSocket error:', err.message);
-    relayWs.close();
-  });
-
-  relayWs.on('error', (err) => {
-    console.error('[dashboard] Relay WebSocket error:', err.message);
-    ws.close();
-  });
 }
 
 /**
