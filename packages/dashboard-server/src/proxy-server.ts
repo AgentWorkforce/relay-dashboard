@@ -192,17 +192,30 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       let resolvedTarget = rawTarget;
 
       if (isDirectRecipient(rawTarget)) {
-        if (brokerProxyEnabled) {
+        // Resolve the relay-side agent name for Relaycast delivery.
+        const relayAgents = await fetchAgents(config);
+        const relayMatch = relayAgents.find((agent) => normalizeAgentName(agent.name) === normalizeAgentName(rawTarget));
+        if (relayMatch) {
+          resolvedTarget = relayMatch.name;
+        }
+
+        // Dual-send for spawned agents: send via Relaycast (for observer
+        // visibility) AND via broker /api/send (for reliable PTY injection).
+        if (brokerProxyEnabled && relayUrl) {
           const spawned = await getSpawnedAgents();
           if (spawned.names?.has(normalizeAgentName(rawTarget))) {
-            if (!relayUrl) {
-              return {
-                success: false,
-                status: 502,
-                error: 'Broker proxy mode is enabled but relay URL is missing.',
-              };
-            }
+            // Fire-and-forget Relaycast send for observer visibility.
+            // Errors here are non-fatal — the broker send is the authoritative path.
+            sendMessage(config, {
+              to: resolvedTarget,
+              message: params.message.trim(),
+              from: params.from?.trim() ? params.from.trim() : 'Dashboard',
+              dataDir,
+            }).catch(() => {
+              // Silently ignore — broker /api/send is the primary delivery path.
+            });
 
+            // Broker send for reliable agent delivery
             try {
               const brokerResponse = await fetch(`${relayUrl}/api/send`, {
                 method: 'POST',
@@ -244,12 +257,6 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
               };
             }
           }
-        }
-
-        const relayAgents = await fetchAgents(config);
-        const relayMatch = relayAgents.find((agent) => normalizeAgentName(agent.name) === normalizeAgentName(rawTarget));
-        if (relayMatch) {
-          resolvedTarget = relayMatch.name;
         }
       }
 

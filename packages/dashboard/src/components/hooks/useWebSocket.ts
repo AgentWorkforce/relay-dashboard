@@ -94,7 +94,10 @@ function getDefaultUrl(): string {
  * if the event is not relevant for the UI.
  */
 function applyBrokerEvent(prev: DashboardData | null, event: BrokerEvent): DashboardData | null {
-  if (!prev) return prev;
+  if (!prev) {
+    // Bootstrap empty state so events arriving before the snapshot aren't lost
+    prev = { agents: [], messages: [] };
+  }
 
   switch (event.kind) {
     case 'relay_inbound': {
@@ -298,6 +301,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         // Other event messages (direct_message, channel_message, presence, etc.)
         onEventRef.current?.(payload as WebSocketEvent);
       }
+    } else if (payload && typeof payload === 'object' && 'kind' in payload && typeof payload.kind === 'string') {
+      // Raw (unwrapped) broker event — apply as incremental patch
+      setData((prev) => applyBrokerEvent(prev, payload as BrokerEvent));
     } else {
       // Full dashboard snapshot — replace state
       setData(payload as DashboardData);

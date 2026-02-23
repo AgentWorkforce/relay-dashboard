@@ -98,7 +98,9 @@ export function handleHybridWebSocket(
   let fallbackInterval: ReturnType<typeof setInterval> | null = null;
   let reconnectAttempts = 0;
 
-  // Send initial snapshot
+  // Send initial snapshot BEFORE connecting to broker WS.
+  // This ensures `data` is non-null in the browser before incremental
+  // broker events arrive (which would otherwise be silently dropped).
   void getSnapshot()
     .then((snapshot) => {
       if (!closed && ws.readyState === WebSocket.OPEN) {
@@ -108,6 +110,12 @@ export function handleHybridWebSocket(
     .catch((err) => {
       if (verbose) {
         console.warn('[dashboard] Hybrid WS initial snapshot error:', (err as Error).message);
+      }
+    })
+    .finally(() => {
+      // Only start streaming broker events after the snapshot is sent
+      if (!closed) {
+        connectBrokerWs();
       }
     });
 
@@ -281,6 +289,6 @@ export function handleHybridWebSocket(
     cleanup();
   });
 
-  // Start the broker WS connection
-  connectBrokerWs();
+  // Broker WS connection is started in the getSnapshot().finally() above
+  // to ensure the initial snapshot is sent before streaming events.
 }
