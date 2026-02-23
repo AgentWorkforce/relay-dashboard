@@ -40,6 +40,13 @@ describe('relaycast-provider fetchAllMessages', () => {
       const url = getRequestUrl(input);
       const pathname = url.pathname;
 
+      if (pathname === '/v1/agents') {
+        return makeJsonResponse({
+          ok: true,
+          data: [],
+        });
+      }
+
       if (pathname === '/v1/channels') {
         return makeJsonResponse({
           ok: true,
@@ -66,7 +73,7 @@ describe('relaycast-provider fetchAllMessages', () => {
         });
       }
 
-      if (pathname === '/v1/dm/conversations/all') {
+      if (pathname === '/v1/dm/conversations/all' || pathname === '/v1/dm/conversations') {
         return makeJsonResponse({
           ok: true,
           data: [{
@@ -116,12 +123,19 @@ describe('relaycast-provider fetchAllMessages', () => {
     });
   });
 
-  it('reuses cached DM history when conversation message_count is unchanged', async () => {
+  it('fetches DM history for each refresh when using SDK readers', async () => {
     let dmHistoryFetches = 0;
 
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = getRequestUrl(input);
       const pathname = url.pathname;
+
+      if (pathname === '/v1/agents') {
+        return makeJsonResponse({
+          ok: true,
+          data: [],
+        });
+      }
 
       if (pathname === '/v1/channels') {
         return makeJsonResponse({
@@ -130,7 +144,7 @@ describe('relaycast-provider fetchAllMessages', () => {
         });
       }
 
-      if (pathname === '/v1/dm/conversations/all') {
+      if (pathname === '/v1/dm/conversations/all' || pathname === '/v1/dm/conversations') {
         return makeJsonResponse({
           ok: true,
           data: [{
@@ -168,13 +182,20 @@ describe('relaycast-provider fetchAllMessages', () => {
     await fetchAllMessages(CONFIG);
     await fetchAllMessages(CONFIG);
 
-    expect(dmHistoryFetches).toBe(1);
+    expect(dmHistoryFetches).toBe(2);
   });
 
-  it('falls back to conversation last_message when DM history endpoint fails', async () => {
+  it('returns no DM messages when DM history endpoint fails', async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = getRequestUrl(input);
       const pathname = url.pathname;
+
+      if (pathname === '/v1/agents') {
+        return makeJsonResponse({
+          ok: true,
+          data: [],
+        });
+      }
 
       if (pathname === '/v1/channels') {
         return makeJsonResponse({
@@ -183,7 +204,7 @@ describe('relaycast-provider fetchAllMessages', () => {
         });
       }
 
-      if (pathname === '/v1/dm/conversations/all') {
+      if (pathname === '/v1/dm/conversations/all' || pathname === '/v1/dm/conversations') {
         return makeJsonResponse({
           ok: true,
           data: [{
@@ -214,13 +235,7 @@ describe('relaycast-provider fetchAllMessages', () => {
     const { fetchAllMessages } = await import('./relaycast-provider.js');
     const messages = await fetchAllMessages(CONFIG);
 
-    expect(messages).toHaveLength(1);
-    expect(messages[0]?.id.startsWith('dm_last_dm_1_')).toBe(true);
-    expect(messages[0]).toMatchObject({
-      from: 'Lead',
-      to: 'Dashboard',
-      content: 'Fallback DM',
-    });
+    expect(messages).toHaveLength(0);
   });
 });
 
@@ -239,11 +254,18 @@ describe('relaycast-provider broker identity detection', () => {
       const url = getRequestUrl(input);
       const pathname = url.pathname;
 
+      if (pathname === '/v1/agents') {
+        return makeJsonResponse({
+          ok: true,
+          data: [],
+        });
+      }
+
       if (pathname === '/v1/channels') {
         return makeJsonResponse({ ok: true, data: [] });
       }
 
-      if (pathname === '/v1/dm/conversations/all') {
+      if (pathname === '/v1/dm/conversations/all' || pathname === '/v1/dm/conversations') {
         return makeJsonResponse({
           ok: true,
           data: [{
