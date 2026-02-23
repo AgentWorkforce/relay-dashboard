@@ -1,0 +1,19 @@
+{
+  "id": "traj_cudn4n6wb6ol",
+  "version": 1,
+  "task": {
+    "title": "Fix /api/send false 409 when spawned agent is actually online in Relaycast"
+  },
+  "status": "active",
+  "startedAt": "2026-02-23T11:33:36.394Z",
+  "agents": [],
+  "chapters": [],
+  "commits": [],
+  "filesChanged": [],
+  "projectId": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard",
+  "tags": [],
+  "_trace": {
+    "startRef": "e1e8d00efc419a3431a0175764737a67778e5825",
+    "endRef": "e1e8d00efc419a3431a0175764737a67778e5825"
+  }
+}
