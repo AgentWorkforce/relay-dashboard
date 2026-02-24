@@ -1,12 +1,13 @@
 {
   "version": 1,
-  "lastUpdated": "2026-02-24T11:39:47.815Z",
+  "lastUpdated": "2026-02-24T11:40:04.356Z",
   "trajectories": {
     "traj_6qttpknwx172": {
       "title": "Replace hardcoded 'Dashboard' sender name with project name derived from workspace directory",
-      "status": "active",
+      "status": "completed",
       "startedAt": "2026-02-24T11:39:35.774Z",
-      "path": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/packages/dashboard-server/.trajectories/active/traj_6qttpknwx172.json"
+      "completedAt": "2026-02-24T11:40:04.219Z",
+      "path": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/packages/dashboard-server/.trajectories/completed/2026-02/traj_6qttpknwx172.json"
     }
   }
 }
