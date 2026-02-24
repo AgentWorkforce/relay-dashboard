@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "lastUpdated": "2026-02-23T20:43:40.263Z",
+  "lastUpdated": "2026-02-24T00:27:22.997Z",
   "trajectories": {
     "traj_3q3jtxrg7enr": {
       "title": "Refactor channel system: remove legacy general broadcast, make Activity feed show events only, #general is real channel",
@@ -92,6 +92,20 @@
       "startedAt": "2026-02-23T20:43:35.380Z",
       "completedAt": "2026-02-23T20:43:39.725Z",
       "path": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/.worktrees/dash-provider-sdk/.trajectories/completed/2026-02/traj_fyunktog47v4.json"
+    },
+    "traj_cudn4n6wb6ol": {
+      "title": "Fix /api/send false 409 when spawned agent is actually online in Relaycast",
+      "status": "completed",
+      "startedAt": "2026-02-23T11:33:36.394Z",
+      "completedAt": "2026-02-24T00:07:15.560Z",
+      "path": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/.trajectories/completed/2026-02/traj_cudn4n6wb6ol.json"
+    },
+    "traj_4uueirz6ed4w": {
+      "title": "Fix C1 hook-order issue and finalize relaycast migration",
+      "status": "completed",
+      "startedAt": "2026-02-24T00:23:50.919Z",
+      "completedAt": "2026-02-24T00:27:22.898Z",
+      "path": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/.trajectories/completed/2026-02/traj_4uueirz6ed4w.json"
     }
   }
 }
