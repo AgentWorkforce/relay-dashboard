@@ -17,6 +17,7 @@ import {
   useSendMessage as useRelaySendMessage,
   useReaction as useRelayReaction,
   useDMs as useRelayDMs,
+  useAgent as useRelayAgent,
 } from '@relaycast/react';
 import { useMessages as useMessagesHook } from '../components/hooks/useMessages';
 import { useThread } from '../components/hooks/useThread';
@@ -572,6 +573,7 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
   const relaySendMessageState = useRelaySendMessage();
   const relayReactionState = useRelayReaction();
   const relayDMsState = useRelayDMs();
+  const relayAgent = useRelayAgent();
   const relayMappedChannels = useMemo(
     () => relayChannelsState.channels.map(mapRelayChannelToDashboard),
     [relayChannelsState.channels],
@@ -1026,9 +1028,24 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
     appendChannelMessage(selectedChannelId, optimisticMessage, { incrementUnread: false });
 
     try {
-      const relayEligible = relayConfigured && selectedChannelId.startsWith('#') && !threadId;
+      const relayEligible = relayConfigured && selectedChannelId.startsWith('#');
+      const relayThreadReplyEligible = threadId
+        ? relayMappedChannelMessages.some((message) => message.id === threadId)
+        : false;
+
       if (relayEligible) {
-        await relaySendMessageState.send(selectedChannelId.slice(1), content);
+        if (threadId && relayThreadReplyEligible) {
+          await relayAgent.reply(threadId, content);
+        } else if (!threadId) {
+          await relaySendMessageState.send(selectedChannelId.slice(1), content);
+        } else {
+          // Topic threads can have non-message thread IDs; keep REST fallback for those.
+          await sendChannelApiMessage(
+            effectiveActiveWorkspaceId || 'local',
+            selectedChannelId,
+            { content, threadId }
+          );
+        }
       } else {
         await sendChannelApiMessage(
           effectiveActiveWorkspaceId || 'local',
@@ -1045,6 +1062,8 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
     currentUser?.displayName,
     appendChannelMessage,
     relayConfigured,
+    relayMappedChannelMessages,
+    relayAgent,
     relaySendMessageState.send,
   ]);
 
