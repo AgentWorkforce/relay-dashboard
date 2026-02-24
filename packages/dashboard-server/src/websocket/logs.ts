@@ -24,7 +24,14 @@ export function handleStandaloneLogWebSocket(
 ): void {
   const segments = pathname.split('/').filter(Boolean);
   const encodedAgentName = segments.length >= 3 ? segments[segments.length - 1] : '';
-  const agentName = sanitizeLogAgentName(decodeURIComponent(encodedAgentName));
+  let agentName: string | null;
+  try {
+    agentName = sanitizeLogAgentName(decodeURIComponent(encodedAgentName));
+  } catch {
+    ws.send(JSON.stringify({ type: 'error', error: 'Invalid agent name encoding' }));
+    ws.close(4400, 'Invalid agent name encoding');
+    return;
+  }
 
   if (!agentName) {
     ws.send(JSON.stringify({ type: 'error', error: 'Agent name is required' }));

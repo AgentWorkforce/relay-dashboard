@@ -367,10 +367,10 @@ export function createSpawnedAgentsCaches(opts: {
 
     localAgentNamesCache = {
       expiresAt: now + (names.size > 0 ? SPAWNED_CACHE_TTL_MS : 500),
-      names,
+      names: names.size > 0 ? names : null,
     };
 
-    return names;
+    return names.size > 0 ? names : null;
   };
 
   return { getSpawnedAgents, getLocalAgentNames };

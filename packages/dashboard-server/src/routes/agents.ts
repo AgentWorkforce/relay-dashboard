@@ -110,15 +110,6 @@ export function registerAgentRoutes(app: Express, ctx: RouteContext): void {
     });
   }
 
-  // Agent interrupt — broker does not have this endpoint yet.
-  app.post('/api/agents/by-name/:name/interrupt', (req: Request, res: Response) => {
-    const name = typeof req.params.name === 'string' ? decodeURIComponent(req.params.name) : '';
-    res.status(501).json({
-      success: false,
-      error: 'Agent interrupt is not yet supported by the broker HTTP API.',
-      name,
-    });
-  });
 
   // Always serve agent-online and logs locally.
   app.get('/api/agents/:name/online', async (req: Request, res: Response) => {

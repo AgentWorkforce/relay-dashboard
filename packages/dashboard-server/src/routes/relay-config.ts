@@ -1,9 +1,35 @@
+import crypto from 'crypto';
 import path from 'path';
 import type { Express, Request, Response } from 'express';
 import type { RouteContext } from '../lib/types.js';
 
 export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void {
-  app.get('/api/relay-config', (_req: Request, res: Response) => {
+  app.get('/api/relay-config', (req: Request, res: Response) => {
+    // In cloud deployments (WORKSPACE_TOKEN set), require a valid token.
+    const expectedToken = process.env.WORKSPACE_TOKEN;
+    if (expectedToken) {
+      const authHeader = req.headers.authorization;
+      const token = authHeader?.startsWith('Bearer ')
+        ? authHeader.substring(7)
+        : null;
+
+      if (!token) {
+        res.status(401).json({ error: 'Unauthorized - missing workspace token' });
+        return;
+      }
+
+      const tokenBuffer = Buffer.from(token);
+      const expectedBuffer = Buffer.from(expectedToken);
+      const isValidToken =
+        tokenBuffer.length === expectedBuffer.length &&
+        crypto.timingSafeEqual(tokenBuffer, expectedBuffer);
+
+      if (!isValidToken) {
+        res.status(401).json({ error: 'Unauthorized - invalid workspace token' });
+        return;
+      }
+    }
+
     const config = ctx.resolveRelaycastConfig();
     if (!config) {
       res.status(503).json({

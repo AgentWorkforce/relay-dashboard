@@ -12,6 +12,7 @@ import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import type { ChannelMessage, ChannelMessageListProps, UnreadState } from './types';
 import type { Reaction } from '../../types';
 import { ReactionChips } from '../ReactionChips';
+import { ThinkingIndicator } from '../ThinkingIndicator';
 import { formatMessageBody } from '../utils/messageFormatting';
 import { formatRelayReplyCountLabel } from '../../lib/relaycastMessageAdapters';
 
@@ -175,6 +176,26 @@ export function ChannelMessageList({
                 </React.Fragment>
               );
             })}
+          </div>
+        ))}
+
+        {/* Thinking indicators for processing agents */}
+        {agents.filter((a) => a.isProcessing).map((agent) => (
+          <div key={`thinking-${agent.name}`} className="flex gap-3 py-1 mt-3">
+            <div className="w-9 flex-shrink-0">
+              <Avatar name={agent.name} avatarUrl={agent.avatarUrl} entityType="agent" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-sm font-semibold text-text-primary">{agent.name}</span>
+              </div>
+              <ThinkingIndicator
+                isProcessing={true}
+                processingStartedAt={agent.processingStartedAt}
+                size="small"
+                showLabel={true}
+              />
+            </div>
           </div>
         ))}
 

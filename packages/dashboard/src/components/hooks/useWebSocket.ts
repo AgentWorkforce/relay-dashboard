@@ -124,9 +124,20 @@ export function applyBrokerEvent(prev: DashboardData | null, event: BrokerEvent)
       const senderIsProcessingAgent = prev.agents.some(
         (a) => a.name === event.from && a.isProcessing,
       );
+      // If this is a thread reply, increment replyCount on the parent message
+      const updatedMessages = [...prev.messages, newMessage];
+      if (event.thread_id) {
+        const parentIdx = updatedMessages.findIndex((m) => m.id === event.thread_id);
+        if (parentIdx !== -1) {
+          updatedMessages[parentIdx] = {
+            ...updatedMessages[parentIdx],
+            replyCount: (updatedMessages[parentIdx].replyCount ?? 0) + 1,
+          };
+        }
+      }
       return {
         ...prev,
-        messages: [...prev.messages, newMessage],
+        messages: updatedMessages,
         agents: senderIsProcessingAgent
           ? prev.agents.map((a) =>
               a.name === event.from
