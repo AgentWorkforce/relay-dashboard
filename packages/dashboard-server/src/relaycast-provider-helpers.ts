@@ -46,6 +46,10 @@ export function setProjectIdentity(identity?: string): void {
   projectIdentity = trimmed ? trimmed : null;
 }
 
+export function getProjectIdentity(): string | null {
+  return projectIdentity;
+}
+
 export function parseTimestamp(value: string | null | undefined): number | null {
   if (!value) return null;
   const timestamp = new Date(value).getTime();
@@ -86,7 +90,7 @@ export function normalizeIdentity(name: string): string {
     // Match Dashboard-<hex> names (Relaycast conflict suffix)
     || /^dashboard-[0-9a-f]{6,}$/i.test(trimmed)
   ) {
-    return DASHBOARD_DISPLAY_NAME;
+    return projectIdentity || DASHBOARD_DISPLAY_NAME;
   }
 
   return trimmed;
@@ -104,7 +108,7 @@ function resolveDmRecipient(participants: string[], sender: string): string {
   }
 
   const fallback = normalizeIdentity(participants[0] ?? '');
-  return fallback || DASHBOARD_DISPLAY_NAME;
+  return fallback || projectIdentity || DASHBOARD_DISPLAY_NAME;
 }
 
 function getCachePath(dataDir?: string): string | undefined {
@@ -127,6 +131,7 @@ function senderRegistrationType(agentName: string): RelaycastRegistrationType {
   if (
     normalized === DASHBOARD_DISPLAY_NAME.toLowerCase()
     || normalized === DASHBOARD_READER_NAME
+    || (projectIdentity && normalized === projectIdentity.toLowerCase())
   ) {
     return 'human';
   }

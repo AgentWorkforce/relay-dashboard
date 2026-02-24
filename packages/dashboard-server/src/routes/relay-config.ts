@@ -26,7 +26,7 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
       baseUrl: config.baseUrl,
       apiKey: config.apiKey,
       agentToken: config.agentToken,
-      agentName: config.agentName ?? null,
+      agentName: config.agentName ?? path.basename(path.resolve(ctx.dataDir, '..')),
     });
   });
 }

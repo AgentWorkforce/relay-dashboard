@@ -201,7 +201,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
         }
       }
 
-      const projectIdentity = config.agentName?.trim() || 'Dashboard';
+      const projectIdentity = config.agentName?.trim() || path.basename(path.resolve(dataDir, '..'));
       const senderName = params.from?.trim() ? params.from.trim() : projectIdentity;
 
       const result = await sendMessage(config, {

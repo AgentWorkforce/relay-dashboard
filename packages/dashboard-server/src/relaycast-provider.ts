@@ -43,8 +43,13 @@ import {
   normalizeIdentity,
   normalizeTarget,
   parseTimestamp,
+  getProjectIdentity,
   setProjectIdentity,
 } from './relaycast-provider-helpers.js';
+
+function dashboardDisplayName(): string {
+  return getProjectIdentity() || DASHBOARD_DISPLAY_NAME;
+}
 
 export type {
   AgentStatus,
@@ -276,7 +281,7 @@ export async function sendMessage(config: RelaycastConfig, input: SendMessageInp
     throw new Error('Missing required fields: to, message');
   }
 
-  const senderName = input.from?.trim() ? input.from.trim() : DASHBOARD_DISPLAY_NAME;
+  const senderName = input.from?.trim() ? input.from.trim() : dashboardDisplayName();
   const relaycast = await getWriterClient(config, senderName, input.dataDir);
 
   if (target.startsWith('#')) {
@@ -297,7 +302,7 @@ export async function createChannel(config: RelaycastConfig, input: CreateChanne
   // Relaycast channel creation currently ignores visibility.
   void input.visibility;
 
-  const relaycast = await getWriterClient(config, input.creator?.trim() || DASHBOARD_DISPLAY_NAME, input.dataDir);
+  const relaycast = await getWriterClient(config, input.creator?.trim() || dashboardDisplayName(), input.dataDir);
   await relaycast.channels.create({
     name: channelName,
     ...(input.description?.trim() ? { topic: input.description.trim() } : {}),
@@ -313,7 +318,7 @@ export async function inviteToChannel(
     throw new Error('channel is required');
   }
 
-  const relaycast = await getWriterClient(config, input.invitedBy?.trim() || DASHBOARD_DISPLAY_NAME, input.dataDir);
+  const relaycast = await getWriterClient(config, input.invitedBy?.trim() || dashboardDisplayName(), input.dataDir);
   const invited: Array<{ id: string; type: 'user' | 'agent'; success: boolean; reason?: string }> = [];
 
   for (const member of input.members) {
@@ -340,7 +345,7 @@ export async function joinChannel(config: RelaycastConfig, input: JoinChannelInp
   const channelName = normalizeChannelName(input.channel);
   if (!channelName || channelName.startsWith('dm:')) return;
 
-  const relaycast = await getWriterClient(config, input.username.trim() || DASHBOARD_DISPLAY_NAME, input.dataDir);
+  const relaycast = await getWriterClient(config, input.username.trim() || dashboardDisplayName(), input.dataDir);
   await relaycast.channels.join(channelName);
 }
 
@@ -348,7 +353,7 @@ export async function leaveChannel(config: RelaycastConfig, input: LeaveChannelI
   const channelName = normalizeChannelName(input.channel);
   if (!channelName || channelName.startsWith('dm:')) return;
 
-  const relaycast = await getWriterClient(config, input.username.trim() || DASHBOARD_DISPLAY_NAME);
+  const relaycast = await getWriterClient(config, input.username.trim() || dashboardDisplayName());
   await relaycast.channels.leave(channelName);
 }
 

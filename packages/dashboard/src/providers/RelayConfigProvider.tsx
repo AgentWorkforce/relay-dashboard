@@ -8,6 +8,7 @@ interface RelayConfigResponse {
   baseUrl?: string;
   apiKey?: string;
   agentToken?: string;
+  agentName?: string | null;
 }
 
 export interface RelayConfigProviderProps {
@@ -17,11 +18,13 @@ export interface RelayConfigProviderProps {
 interface RelayConfigStatus {
   configured: boolean;
   loading: boolean;
+  agentName: string | null;
 }
 
 const RelayConfigStatusContext = createContext<RelayConfigStatus>({
   configured: false,
   loading: true,
+  agentName: null,
 });
 
 export function useRelayConfigStatus(): RelayConfigStatus {
@@ -77,7 +80,7 @@ export function RelayConfigProvider({ children }: RelayConfigProviderProps) {
   }, [configured, config]);
 
   return (
-    <RelayConfigStatusContext.Provider value={{ configured, loading: !loaded }}>
+    <RelayConfigStatusContext.Provider value={{ configured, loading: !loaded, agentName: config?.agentName ?? null }}>
       <RelayProvider
         baseUrl={providerConfig.baseUrl}
         apiKey={providerConfig.apiKey}

@@ -269,7 +269,7 @@ describe('relaycast-provider loadRelaycastConfig', () => {
       agentName: 'my-project',
       agentToken: 'agt_test_token',
     });
-    expect(normalizeIdentity('my-project')).toBe('Dashboard');
+    expect(normalizeIdentity('my-project')).toBe('my-project');
     expect(normalizeIdentity('worker-1')).toBe('worker-1');
 
     fs.rmSync(dataDir, { recursive: true, force: true });

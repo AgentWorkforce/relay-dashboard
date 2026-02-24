@@ -94,8 +94,9 @@ function mapRelayMessageToChannelMessage(
 // Helper
 // ---------------------------------------------------------------------------
 
-function isHumanSender(sender: string, agentNames: Set<string>): boolean {
+function isHumanSender(sender: string, agentNames: Set<string>, projectIdentity?: string | null): boolean {
   return sender !== 'Dashboard' &&
+    (projectIdentity ? sender !== projectIdentity : true) &&
     sender !== '*' &&
     !agentNames.has(sender.toLowerCase());
 }
@@ -229,7 +230,7 @@ export interface MessageProviderProps {
 export function MessageProvider({ children, data, rawData: _rawData, enableReactions = false }: MessageProviderProps) {
   const { currentUser, effectiveActiveWorkspaceId, isWorkspaceFeaturesEnabled } = useCloudWorkspace();
   const { agents, combinedAgents, addActivityEvent } = useAgentContext();
-  const { configured: relayConfigured } = useRelayConfigStatus();
+  const { configured: relayConfigured, agentName: relayAgentName } = useRelayConfigStatus();
   const { settings } = useSettings();
 
   // View mode
@@ -361,7 +362,7 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
           visibility: 'public',
           status: 'active',
           createdAt: new Date().toISOString(),
-          createdBy: currentUser?.displayName || 'Dashboard',
+          createdBy: currentUser?.displayName || relayAgentName || 'Dashboard',
           memberCount: 1,
           unreadCount: 1,
           hasMentions: false,
@@ -456,7 +457,7 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
     } else if (event?.type === 'direct_message') {
       if (relayRealtimeEnabledRef.current) return;
       const sender = event.from || 'unknown';
-      const recipient = currentUser?.displayName || event.targetUser || 'Dashboard';
+      const recipient = currentUser?.displayName || event.targetUser || relayAgentName || 'Dashboard';
 
       const participants = [sender, recipient].sort();
       const dmChannelId = `dm:${participants.join(':')}`;
@@ -559,7 +560,7 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
       id: m.id,
       channelId: selectedChannelId,
       from: m.from,
-      fromEntityType: (m.from === 'Dashboard' || m.from === currentUser?.displayName) ? 'user' : 'agent' as const,
+      fromEntityType: (m.from === 'Dashboard' || m.from === relayAgentName || m.from === currentUser?.displayName) ? 'user' : 'agent' as const,
       content: m.content,
       timestamp: m.timestamp,
       isRead: m.isRead ?? true,
@@ -613,6 +614,7 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
       const currentUserName = currentUser?.displayName.toLowerCase();
       for (const conversation of relayDMsState.conversations) {
         for (const participant of conversation.participants) {
+          if (typeof participant !== 'string') continue;
           const lowered = participant.toLowerCase();
           if (currentUserName && lowered === currentUserName) continue;
           if (agentNames.has(lowered)) continue;
@@ -625,7 +627,7 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
 
     for (const msg of data?.messages ?? []) {
       const sender = msg.from;
-      if (sender && isHumanSender(sender, agentNames) && !seenUsers.has(sender.toLowerCase())) {
+      if (sender && isHumanSender(sender, agentNames, relayAgentName) && !seenUsers.has(sender.toLowerCase())) {
         seenUsers.set(sender.toLowerCase(), { username: sender });
       }
     }
@@ -646,6 +648,7 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
         if (!conversation.unread_count) continue;
 
         const participant = conversation.participants.find((name) => {
+          if (typeof name !== 'string') return false;
           const lowered = name.toLowerCase();
           return lowered !== currentUserName && !agentNames.has(lowered);
         });
@@ -1013,7 +1016,7 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
   const handleSendChannelMessage = useCallback(async (content: string, threadId?: string, attachmentIds?: string[]) => {
     if (!selectedChannelId) return false;
 
-    const senderName = currentUser?.displayName || 'Dashboard';
+    const senderName = currentUser?.displayName || relayAgentName || 'Dashboard';
     const optimisticMessage: ChannelApiMessage = {
       id: `local-${Date.now()}`,
       channelId: selectedChannelId,
@@ -1222,6 +1225,7 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
 
     const isFromCurrentUser = (message: Message) =>
       message.from === 'Dashboard' ||
+      message.from === relayAgentName ||
       (currentUser && message.from === currentUser.displayName);
 
     const isMessageInCurrentChannel = (message: Message) => {
