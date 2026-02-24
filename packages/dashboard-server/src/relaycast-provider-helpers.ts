@@ -1,9 +1,9 @@
 import path from 'path';
 import {
   createRelaycastClient,
-  type AgentClient,
 } from '@agent-relay/sdk';
 import { isBrokerIdentity } from '@agent-relay/contracts';
+import { RelayCast } from '@relaycast/sdk';
 import type {
   AgentStatus,
   Message,
@@ -19,8 +19,32 @@ import {
   MAX_MESSAGE_LIMIT,
 } from './relaycast-provider-types.js';
 
-const readerClientCache = new Map<string, Promise<AgentClient>>();
-const writerClientCache = new Map<string, Promise<AgentClient>>();
+export interface RelaycastClientLike {
+  client: {
+    get<T>(path: string, query?: Record<string, string>): Promise<T>;
+  };
+  channels: {
+    list(opts?: { include_archived?: boolean }): Promise<unknown>;
+    create(data: { name: string; topic?: string }): Promise<unknown>;
+    join(name: string): Promise<unknown>;
+    leave(name: string): Promise<unknown>;
+    invite(channel: string, agent: string): Promise<unknown>;
+  };
+  send(channel: string, text: string): Promise<unknown>;
+  dm(agent: string, text: string): Promise<unknown>;
+  dms: {
+    conversations(): Promise<unknown>;
+  };
+}
+
+const readerClientCache = new Map<string, Promise<RelaycastClientLike>>();
+const writerClientCache = new Map<string, Promise<RelaycastClientLike>>();
+let projectIdentity: string | null = null;
+
+export function setProjectIdentity(identity?: string): void {
+  const trimmed = identity?.trim();
+  projectIdentity = trimmed ? trimmed : null;
+}
 
 export function parseTimestamp(value: string | null | undefined): number | null {
   if (!value) return null;
@@ -52,10 +76,12 @@ export function normalizeIdentity(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return '';
   const lowered = trimmed.toLowerCase();
+  const projectIdentityKey = projectIdentity?.toLowerCase();
 
   if (
     lowered === DASHBOARD_DISPLAY_NAME.toLowerCase()
     || lowered === DASHBOARD_READER_NAME
+    || (projectIdentityKey !== undefined && lowered === projectIdentityKey)
     || isBrokerIdentity(trimmed)
     // Match Dashboard-<hex> names (Relaycast conflict suffix)
     || /^dashboard-[0-9a-f]{6,}$/i.test(trimmed)
@@ -93,7 +119,7 @@ function getClientCacheKey(
   dataDir?: string,
 ): string {
   const cachePath = getCachePath(dataDir) ?? '';
-  return `${config.baseUrl}|${config.apiKey}|${agentName}|${registrationType}|${cachePath}`;
+  return `${config.baseUrl}|${config.apiKey}|${config.agentToken ?? ''}|${agentName}|${registrationType}|${cachePath}`;
 }
 
 function senderRegistrationType(agentName: string): RelaycastRegistrationType {
@@ -108,12 +134,12 @@ function senderRegistrationType(agentName: string): RelaycastRegistrationType {
 }
 
 async function getCachedClient(
-  cache: Map<string, Promise<AgentClient>>,
+  cache: Map<string, Promise<RelaycastClientLike>>,
   config: RelaycastConfig,
   agentName: string,
   registrationType: RelaycastRegistrationType,
   dataDir?: string,
-): Promise<AgentClient> {
+): Promise<RelaycastClientLike> {
   const key = getClientCacheKey(config, agentName, registrationType, dataDir);
   const existing = cache.get(key);
   if (existing) {
@@ -135,11 +161,39 @@ async function getCachedClient(
   return clientPromise;
 }
 
-export function getReaderClient(config: RelaycastConfig): Promise<AgentClient> {
+export function getReaderClient(config: RelaycastConfig): Promise<RelaycastClientLike> {
   return getCachedClient(readerClientCache, config, DASHBOARD_READER_NAME, 'human');
 }
 
-export function getWriterClient(config: RelaycastConfig, senderName: string, dataDir?: string): Promise<AgentClient> {
+export function getWriterClient(
+  config: RelaycastConfig,
+  senderName: string,
+  dataDir?: string,
+): Promise<RelaycastClientLike> {
+  const normalizedSender = senderName.trim().toLowerCase();
+  const normalizedProjectIdentity = config.agentName?.trim().toLowerCase();
+
+  // Reuse the broker-issued project token so Dashboard writes as the same identity.
+  if (config.agentToken && normalizedProjectIdentity && normalizedSender === normalizedProjectIdentity) {
+    const key = `token:${config.baseUrl}|${config.apiKey}|${config.agentName}|${config.agentToken}`;
+    const existing = writerClientCache.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    const clientPromise = Promise.resolve(
+      new RelayCast({
+        apiKey: config.apiKey,
+        baseUrl: config.baseUrl,
+      }).as(config.agentToken),
+    ).catch((err) => {
+      writerClientCache.delete(key);
+      throw err;
+    });
+    writerClientCache.set(key, clientPromise);
+    return clientPromise;
+  }
+
   return getCachedClient(
     writerClientCache,
     config,

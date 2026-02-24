@@ -1,3 +1,6 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RelaycastConfig } from './relaycast-provider.js';
 
@@ -236,6 +239,40 @@ describe('relaycast-provider fetchAllMessages', () => {
     const messages = await fetchAllMessages(CONFIG);
 
     expect(messages).toHaveLength(0);
+  });
+});
+
+describe('relaycast-provider loadRelaycastConfig', () => {
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  it('reads project identity fields from relaycast.json', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-config-'));
+    const configPath = path.join(dataDir, 'relaycast.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        api_key: 'rk_test',
+        agent_name: 'my-project',
+        agent_token: 'agt_test_token',
+      }),
+      'utf-8',
+    );
+
+    const { loadRelaycastConfig } = await import('./relaycast-provider.js');
+    const { normalizeIdentity } = await import('./relaycast-provider-helpers.js');
+    const loaded = loadRelaycastConfig(dataDir);
+
+    expect(loaded).toMatchObject({
+      apiKey: 'rk_test',
+      agentName: 'my-project',
+      agentToken: 'agt_test_token',
+    });
+    expect(normalizeIdentity('my-project')).toBe('Dashboard');
+    expect(normalizeIdentity('worker-1')).toBe('worker-1');
+
+    fs.rmSync(dataDir, { recursive: true, force: true });
   });
 });
 

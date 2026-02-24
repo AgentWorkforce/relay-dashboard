@@ -7,8 +7,10 @@
  * - Handles user presence announcements
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getWebSocketUrl } from '../../lib/config';
+import { usePresence as useRelayPresence } from '@relaycast/react';
+import { useRelayConfigStatus } from '../../providers/RelayConfigProvider';
 
 /** User presence information */
 export interface UserPresence {
@@ -75,6 +77,9 @@ function getPresenceUrl(): string {
 
 export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn {
   const { currentUser, wsUrl, autoConnect = true, onEvent, workspaceId } = options;
+  const relayPresenceState = useRelayPresence();
+  const { configured: relayConfigured } = useRelayConfigStatus();
+  const usingRelayPresence = relayConfigured;
 
   const [onlineUsers, setOnlineUsers] = useState<UserPresence[]>([]);
   const [typingUsers, setTypingUsers] = useState<TypingIndicator[]>([]);
@@ -94,6 +99,16 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent; // Keep ref in sync with callback prop
 
+  const relayOnlineUsers = useMemo<UserPresence[]>(() => {
+    return relayPresenceState.agents
+      .filter((agent) => agent.status === 'online' && agent.type === 'human')
+      .map((agent) => ({
+        username: agent.name,
+        connectedAt: agent.created_at,
+        lastSeen: agent.last_seen,
+      }));
+  }, [relayPresenceState]);
+
   // Clear stale typing indicators (after 3 seconds of no update)
   useEffect(() => {
     const interval = setInterval(() => {
@@ -107,6 +122,7 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
   }, []);
 
   const connect = useCallback(() => {
+    if (usingRelayPresence) return;
     const user = currentUserRef.current;
     if (!user) return; // Don't connect without user info
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -251,7 +267,7 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
     } catch (e) {
       console.error('[usePresence] Failed to create WebSocket:', e);
     }
-  }, [wsUrl]); // Use ref for currentUser to avoid dependency
+  }, [wsUrl, usingRelayPresence]); // Use refs for currentUser/workspace/onEvent to avoid dependencies
 
   const disconnect = useCallback(() => {
     // Clear reconnect timeout first
@@ -288,6 +304,7 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
 
   // Send typing indicator
   const sendTyping = useCallback((isTyping: boolean) => {
+    if (usingRelayPresence) return;
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     const user = currentUserRef.current;
     if (!user) return;
@@ -312,10 +329,11 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
         sendTyping(false);
       }, 3000);
     }
-  }, []); // Use ref for currentUser to avoid dependency
+  }, [usingRelayPresence]); // Use ref for currentUser to avoid dependency
 
   // Connect when user is available
   useEffect(() => {
+    if (usingRelayPresence) return;
     if (!autoConnect || !currentUserRef.current) return;
 
     // Prevent connecting if already connected or connecting
@@ -329,10 +347,11 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
       disconnect();
     };
     // Callbacks are now stable (use refs internally), so only need to depend on user identity
-  }, [autoConnect, currentUser?.username, connect, disconnect]);
+  }, [autoConnect, currentUser?.username, connect, disconnect, usingRelayPresence]);
 
   // Send leave on page unload
   useEffect(() => {
+    if (usingRelayPresence) return;
     const handleUnload = () => {
       const user = currentUserRef.current;
       if (wsRef.current?.readyState === WebSocket.OPEN && user) {
@@ -346,10 +365,11 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
 
     window.addEventListener('beforeunload', handleUnload);
     return () => window.removeEventListener('beforeunload', handleUnload);
-  }, []); // Use ref for currentUser to avoid dependency
+  }, [usingRelayPresence]); // Use ref for currentUser to avoid dependency
 
   // Visibility change listener: reconnect when tab becomes visible
   useEffect(() => {
+    if (usingRelayPresence) return;
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         // Check if connection is dead and reconnect
@@ -365,7 +385,26 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [connect]);
+  }, [connect, usingRelayPresence]);
+
+  // If Relay SDK presence is active, ensure any legacy presence socket is closed.
+  useEffect(() => {
+    if (!usingRelayPresence) return;
+    disconnect();
+  }, [disconnect, usingRelayPresence]);
+
+  if (usingRelayPresence) {
+    const relayConnected = !relayPresenceState.loading && !relayPresenceState.error;
+    return {
+      onlineUsers: relayOnlineUsers,
+      typingUsers: [],
+      sendTyping: () => undefined,
+      isConnected: relayConnected,
+      connectionState: relayPresenceState.loading
+        ? 'reconnecting'
+        : (relayPresenceState.error ? 'disconnected' : 'connected'),
+    };
+  }
 
   return {
     onlineUsers,

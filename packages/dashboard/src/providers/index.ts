@@ -10,6 +10,9 @@ export type { SettingsProviderProps } from './SettingsProvider';
 export { CloudWorkspaceProvider, useCloudWorkspace } from './CloudWorkspaceProvider';
 export type { CloudWorkspaceProviderProps, CloudWorkspace } from './CloudWorkspaceProvider';
 
+export { RelayConfigProvider } from './RelayConfigProvider';
+export type { RelayConfigProviderProps } from './RelayConfigProvider';
+
 export { AgentProvider, useAgentContext } from './AgentProvider';
 export type { AgentProviderProps } from './AgentProvider';
 

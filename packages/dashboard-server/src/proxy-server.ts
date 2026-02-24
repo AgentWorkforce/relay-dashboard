@@ -51,6 +51,7 @@ import { registerAgentRoutes } from './routes/agents.js';
 import { registerChannelRoutes } from './routes/channels.js';
 import { registerBrokerProxyRoutes } from './routes/broker-proxy.js';
 import { registerReactionRoutes } from './routes/reactions.js';
+import { registerRelayConfigRoutes } from './routes/relay-config.js';
 
 export type { DashboardServerOptions, DashboardServer } from './lib/types.js';
 
@@ -193,57 +194,6 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       let resolvedTarget = rawTarget;
 
       if (isDirectRecipient(rawTarget)) {
-        // For spawned agents in proxy mode, send via broker /api/send.
-        // The broker is the only entity that can deliver to local PTY workers —
-        // Relaycast DMs between Dashboard and an agent are invisible to the broker
-        // because it isn't a participant in that conversation.
-        if (brokerProxyEnabled && relayUrl) {
-          const spawned = await getSpawnedAgents();
-          if (spawned.names?.has(normalizeAgentName(rawTarget))) {
-            try {
-              const brokerResponse = await fetch(`${relayUrl}/api/send`, {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({
-                  to: rawTarget,
-                  message: params.message.trim(),
-                  from: params.from?.trim() ? params.from.trim() : 'Dashboard',
-                }),
-              });
-              const payload = await brokerResponse.json().catch(() => ({} as Record<string, unknown>));
-              const payloadSuccess = payload && typeof payload === 'object' && (payload as Record<string, unknown>).success;
-              const payloadError = payload && typeof payload === 'object' ? (payload as Record<string, unknown>).error : undefined;
-              const payloadEventId = payload && typeof payload === 'object' ? (payload as Record<string, unknown>).event_id : undefined;
-              const payloadMessageId = payload && typeof payload === 'object' ? (payload as Record<string, unknown>).messageId : undefined;
-
-              if (!brokerResponse.ok || payloadSuccess === false) {
-                return {
-                  success: false,
-                  status: brokerResponse.status || 502,
-                  error:
-                    (typeof payloadError === 'string' ? payloadError : undefined) ||
-                    `Broker send failed (${brokerResponse.status})`,
-                };
-              }
-              return {
-                success: true,
-                messageId: String(
-                  (typeof payloadEventId === 'string' ? payloadEventId : undefined) ??
-                    (typeof payloadMessageId === 'string' ? payloadMessageId : undefined) ??
-                    `broker-${Date.now()}`,
-                ),
-              };
-            } catch (error) {
-              return {
-                success: false,
-                status: 502,
-                error: `Failed to reach broker send endpoint: ${(error as Error).message}`,
-              };
-            }
-          }
-        }
-
-        // Non-spawned agents: resolve via Relaycast and send through Relaycast
         const relayAgents = await fetchAgents(config);
         const relayMatch = relayAgents.find((agent) => normalizeAgentName(agent.name) === normalizeAgentName(rawTarget));
         if (relayMatch) {
@@ -251,10 +201,13 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
         }
       }
 
+      const projectIdentity = config.agentName?.trim() || 'Dashboard';
+      const senderName = params.from?.trim() ? params.from.trim() : projectIdentity;
+
       const result = await sendMessage(config, {
         to: resolvedTarget,
         message: params.message.trim(),
-        from: params.from?.trim() ? params.from.trim() : 'Dashboard',
+        from: senderName,
         dataDir,
       });
       return {
@@ -315,6 +268,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
 
     registerAgentRoutes(app, ctx);
     registerDataRoutes(app, ctx);
+    registerRelayConfigRoutes(app, ctx);
     registerChannelRoutes(app, ctx);
     registerReactionRoutes(app, ctx);
     registerBrokerProxyRoutes(app, ctx);

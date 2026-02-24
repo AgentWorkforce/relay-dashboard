@@ -44,6 +44,7 @@
   },
   "dependencies": {
     "@nangohq/frontend": "^0.69.20",
+    "@relaycast/react": "^0.3.2",
     "@relaycast/types": "^0.3.2",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",

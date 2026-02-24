@@ -336,6 +336,21 @@ describe('Dashboard Server', () => {
       expect(server.mode).toBe('standalone');
     });
 
+    it('returns 503 from /api/relay-config when relaycast credentials are missing', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/relay-config`);
+      const data = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(data.success).toBe(false);
+      expect(typeof data.error).toBe('string');
+    });
+
     it('should list local worker logs in standalone mode', async () => {
       const address = server.server.address();
       if (!address || typeof address === 'string') {

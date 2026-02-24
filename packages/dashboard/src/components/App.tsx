@@ -50,6 +50,7 @@ import {
   useSettings,
   CloudWorkspaceProvider,
   useCloudWorkspace,
+  RelayConfigProvider,
   AgentProvider,
   useAgentContext,
   MessageProvider,
@@ -114,20 +115,22 @@ export function App({ wsUrl, orchestratorUrl, enableReactions = false }: AppProp
     <SettingsProvider>
       <WorkspaceProvider wsUrl={wsUrl}>
         <CloudWorkspaceProvider orchestratorUrl={orchestratorUrl}>
-          <AgentProvider data={data} isConnected={isConnected}>
-            <MessageProvider data={data} rawData={rawData} enableReactions={enableReactions}>
-              <AppShell
-                wsUrl={wsUrl}
-                data={data}
-                rawData={rawData}
-                isConnected={isConnected}
-                wsError={wsError}
-                restFallbackFailed={restFallbackFailed}
-                enableReactions={enableReactions}
-                wsEventHandlerRef={wsEventHandlerRef}
-              />
-            </MessageProvider>
-          </AgentProvider>
+          <RelayConfigProvider>
+            <AgentProvider data={data} isConnected={isConnected}>
+              <MessageProvider data={data} rawData={rawData} enableReactions={enableReactions}>
+                <AppShell
+                  wsUrl={wsUrl}
+                  data={data}
+                  rawData={rawData}
+                  isConnected={isConnected}
+                  wsError={wsError}
+                  restFallbackFailed={restFallbackFailed}
+                  enableReactions={enableReactions}
+                  wsEventHandlerRef={wsEventHandlerRef}
+                />
+              </MessageProvider>
+            </AgentProvider>
+          </RelayConfigProvider>
         </CloudWorkspaceProvider>
       </WorkspaceProvider>
     </SettingsProvider>

@@ -43,6 +43,7 @@ import {
   normalizeIdentity,
   normalizeTarget,
   parseTimestamp,
+  setProjectIdentity,
 } from './relaycast-provider-helpers.js';
 
 export type {
@@ -68,15 +69,25 @@ export type {
  */
 export function loadRelaycastConfig(dataDir: string): RelaycastConfig | null {
   const credPath = path.join(dataDir, 'relaycast.json');
-  if (!fs.existsSync(credPath)) return null;
+  if (!fs.existsSync(credPath)) {
+    setProjectIdentity(undefined);
+    return null;
+  }
 
   try {
     const raw = JSON.parse(fs.readFileSync(credPath, 'utf-8'));
     const apiKey = raw.api_key as string | undefined;
-    if (!apiKey) return null;
+    if (!apiKey) {
+      setProjectIdentity(undefined);
+      return null;
+    }
+    const agentName = raw.agent_name as string | undefined;
+    const agentToken = raw.agent_token as string | undefined;
     const baseUrl = process.env.RELAYCAST_API_URL || DEFAULT_RELAYCAST_BASE_URL;
-    return { apiKey, baseUrl };
+    setProjectIdentity(agentName);
+    return { apiKey, baseUrl, agentName, agentToken };
   } catch {
+    setProjectIdentity(undefined);
     return null;
   }
 }

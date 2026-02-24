@@ -33,6 +33,8 @@ export type RelaycastMessage = MessageWithMeta & {
 export interface RelaycastConfig {
   apiKey: string;
   baseUrl: string;
+  agentName?: string;
+  agentToken?: string;
 }
 
 export interface AgentStatus {

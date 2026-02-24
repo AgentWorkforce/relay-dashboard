@@ -7,15 +7,24 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import type { Agent, Message, Reaction } from '../types';
+import type { Agent, Message } from '../types';
 import type { HumanUser } from '../components/MentionAutocomplete';
 import type { CurrentUser } from '../components/MessageList';
+import type { Channel as RelaycastChannel, MessageWithMeta as RelaycastMessageWithMeta } from '@relaycast/types';
+import {
+  useChannels as useRelayChannels,
+  useMessages as useRelayMessages,
+  useSendMessage as useRelaySendMessage,
+  useReaction as useRelayReaction,
+  useDMs as useRelayDMs,
+} from '@relaycast/react';
 import { useMessages as useMessagesHook } from '../components/hooks/useMessages';
 import { useThread } from '../components/hooks/useThread';
 import { usePresence, type UserPresence } from '../components/hooks/usePresence';
 import { useDirectMessage } from '../components/hooks/useDirectMessage';
 import { useCloudWorkspace } from './CloudWorkspaceProvider';
 import { useAgentContext } from './AgentProvider';
+import { useRelayConfigStatus } from './RelayConfigProvider';
 import { api, getCsrfToken } from '../lib/api';
 import { playNotificationSound } from './SettingsProvider';
 import { useSettings } from './SettingsProvider';
@@ -42,7 +51,43 @@ import type { DashboardData } from '../components/hooks/useWebSocket';
 /** Special ID for the Activity feed (broadcasts) */
 export const ACTIVITY_FEED_ID = '__activity__';
 
-const REACTION_OVERRIDE_TTL = 5000;
+function mapRelayChannelToDashboard(channel: RelaycastChannel): Channel {
+  const channelName = channel.name;
+  return {
+    id: `#${channelName}`,
+    name: channelName,
+    description: channel.topic ?? undefined,
+    topic: channel.topic ?? undefined,
+    visibility: 'public',
+    status: channel.is_archived ? 'archived' : 'active',
+    createdAt: channel.created_at ?? new Date().toISOString(),
+    createdBy: 'relay',
+    memberCount: channel.member_count ?? 0,
+    unreadCount: 0,
+    hasMentions: false,
+    isDm: false,
+  };
+}
+
+function mapRelayMessageToChannelMessage(
+  channelId: string,
+  message: RelaycastMessageWithMeta,
+  currentUserName?: string,
+): ChannelApiMessage {
+  return {
+    id: message.id,
+    channelId,
+    from: message.agent_name,
+    fromEntityType: message.agent_name === currentUserName ? 'user' : 'agent',
+    content: message.text,
+    timestamp: message.created_at,
+    threadId: (message as { thread_id?: string | null }).thread_id ?? undefined,
+    reactions: message.reactions
+      ? Object.fromEntries(message.reactions.map((reaction) => [reaction.emoji, reaction.agents]))
+      : undefined,
+    isRead: true,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -180,30 +225,11 @@ export interface MessageProviderProps {
   enableReactions?: boolean;
 }
 
-export function MessageProvider({ children, data, rawData, enableReactions = false }: MessageProviderProps) {
+export function MessageProvider({ children, data, rawData: _rawData, enableReactions = false }: MessageProviderProps) {
   const { currentUser, effectiveActiveWorkspaceId, isWorkspaceFeaturesEnabled } = useCloudWorkspace();
   const { agents, combinedAgents, addActivityEvent } = useAgentContext();
+  const { configured: relayConfigured } = useRelayConfigStatus();
   const { settings } = useSettings();
-
-  // Local reaction overrides for optimistic UI updates
-  const [reactionOverrides, setReactionOverrides] = useState<Map<string, { reactions: Reaction[]; timestamp: number }>>(new Map());
-  const rawDataRef = useRef(rawData);
-  rawDataRef.current = rawData;
-
-  // Expire stale reaction overrides
-  useEffect(() => {
-    if (rawData && reactionOverrides.size > 0) {
-      const now = Date.now();
-      setReactionOverrides((prev) => {
-        const next = new Map<string, { reactions: Reaction[]; timestamp: number }>();
-        for (const [id, entry] of prev) {
-          if (now - entry.timestamp < REACTION_OVERRIDE_TTL) next.set(id, entry);
-        }
-        return next.size === prev.size ? prev : next;
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawData]);
 
   // View mode
   const [viewMode, setViewMode] = useState<'local' | 'fleet' | 'channels'>(
@@ -245,6 +271,7 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const lastSeenMessageCountRef = useRef<number>(0);
   const lastNotifiedMessageIdRef = useRef<string | null>(null);
+  const relayRealtimeEnabledRef = useRef(false);
 
   // Default channels
   const DEFAULT_CHANNEL_IDS = ['#general', '#engineering'];
@@ -408,6 +435,7 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
         return [...prev, channel];
       });
     } else if (event?.type === 'channel_message') {
+      if (relayRealtimeEnabledRef.current) return;
       const channelId = event.channel as string | undefined;
       if (!channelId) return;
       const sender = event.from || 'unknown';
@@ -425,6 +453,7 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
       };
       appendChannelMessage(channelId, msg, { incrementUnread: selectedChannelId !== channelId });
     } else if (event?.type === 'direct_message') {
+      if (relayRealtimeEnabledRef.current) return;
       const sender = event.from || 'unknown';
       const recipient = currentUser?.displayName || event.targetUser || 'Dashboard';
 
@@ -481,20 +510,10 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
     senderName: currentUser?.displayName,
   });
 
-  // Merge optimistic reaction overrides into messages for local/DM view
-  const mergedMessages = useMemo(() => {
-    if (reactionOverrides.size === 0) return messages;
-    return messages.map(m => {
-      const override = reactionOverrides.get(m.id);
-      if (!override) return m;
-      return { ...m, reactions: override.reactions };
-    });
-  }, [messages, reactionOverrides]);
-
   // Thread data
   const thread = useThread({
     threadId: viewMode === 'channels' ? null : currentThread,
-    fallbackMessages: mergedMessages,
+    fallbackMessages: messages,
   });
 
   // DM state
@@ -517,7 +536,7 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
   const { visibleMessages: dedupedVisibleMessages, participantAgents: dmParticipantAgents } = useDirectMessage({
     currentHuman,
     currentUserName: currentUser?.displayName ?? null,
-    messages: mergedMessages,
+    messages,
     agents,
     selectedDmAgents,
     removedDmAgents,
@@ -547,11 +566,38 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
     }));
   }, [messages, selectedChannelId, effectiveActiveWorkspaceId, currentUser?.displayName]);
 
-  const effectiveChannelMessages = channelMessages.length > 0 ? channelMessages : localChannelMessages;
+  const relayChannelsState = useRelayChannels();
+  const relaySelectedChannelName = selectedChannelId?.startsWith('#') ? selectedChannelId.slice(1) : 'general';
+  const relayMessagesState = useRelayMessages(relaySelectedChannelName);
+  const relaySendMessageState = useRelaySendMessage();
+  const relayReactionState = useRelayReaction();
+  const relayDMsState = useRelayDMs();
+  const relayMappedChannels = useMemo(
+    () => relayChannelsState.channels.map(mapRelayChannelToDashboard),
+    [relayChannelsState.channels],
+  );
+  const relayMappedChannelMessages = useMemo(() => {
+    if (!relayConfigured || !selectedChannelId?.startsWith('#')) return [];
+    return relayMessagesState.messages.map((message) =>
+      mapRelayMessageToChannelMessage(
+        selectedChannelId,
+        message,
+        currentUser?.displayName,
+      ),
+    );
+  }, [selectedChannelId, relayMessagesState.messages, currentUser?.displayName, relayConfigured]);
+  const usingRelayChannelMessages = Boolean(relayConfigured && selectedChannelId?.startsWith('#'));
+  const effectiveChannelMessages = usingRelayChannelMessages
+    ? relayMappedChannelMessages
+    : (channelMessages.length > 0 ? channelMessages : localChannelMessages);
+
+  useEffect(() => {
+    relayRealtimeEnabledRef.current = relayConfigured;
+  }, [relayConfigured]);
 
   // Human users extraction
   const humanUsers = useMemo((): HumanUser[] => {
-    const agentNames = new Set(agents.map((a) => a.name.toLowerCase()));
+    const agentNames = new Set(agents.filter((a) => !a.isHuman).map((a) => a.name.toLowerCase()));
     const seenUsers = new Map<string, HumanUser>();
 
     if (currentUser) {
@@ -559,6 +605,20 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
         username: currentUser.displayName,
         avatarUrl: currentUser.avatarUrl,
       });
+    }
+
+    if (relayConfigured && relayDMsState.conversations.length > 0) {
+      const currentUserName = currentUser?.displayName.toLowerCase();
+      for (const conversation of relayDMsState.conversations) {
+        for (const participant of conversation.participants) {
+          const lowered = participant.toLowerCase();
+          if (currentUserName && lowered === currentUserName) continue;
+          if (agentNames.has(lowered)) continue;
+          if (!seenUsers.has(lowered)) {
+            seenUsers.set(lowered, { username: participant });
+          }
+        }
+      }
     }
 
     for (const msg of data?.messages ?? []) {
@@ -569,11 +629,32 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
     }
 
     return Array.from(seenUsers.values());
-  }, [data?.messages, agents, currentUser]);
+  }, [data?.messages, agents, currentUser, relayDMsState.conversations, relayConfigured]);
 
   // Human unread counts
   const humanUnreadCounts = useMemo(() => {
     if (!currentUser) return {};
+
+    if (relayConfigured && relayDMsState.conversations.length > 0) {
+      const counts: Record<string, number> = {};
+      const currentUserName = currentUser.displayName.toLowerCase();
+      const agentNames = new Set(agents.filter((a) => !a.isHuman).map((a) => a.name.toLowerCase()));
+
+      for (const conversation of relayDMsState.conversations) {
+        if (!conversation.unread_count) continue;
+
+        const participant = conversation.participants.find((name) => {
+          const lowered = name.toLowerCase();
+          return lowered !== currentUserName && !agentNames.has(lowered);
+        });
+
+        if (participant) {
+          counts[participant] = (counts[participant] || 0) + conversation.unread_count;
+        }
+      }
+
+      return counts;
+    }
 
     const counts: Record<string, number> = {};
     const humanNameSet = new Set(
@@ -597,7 +678,7 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
     }
 
     return counts;
-  }, [combinedAgents, currentUser, data?.messages, dmSeenAt]);
+  }, [combinedAgents, currentUser, data?.messages, dmSeenAt, relayDMsState.conversations, agents, relayConfigured]);
 
   const markDmSeen = useCallback((username: string) => {
     setDmSeenAt((prev) => {
@@ -647,6 +728,14 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
 
   // Load channels on mount
   useEffect(() => {
+    if (relayConfigured) {
+      const activeChannels = relayMappedChannels.filter((channel) => channel.status !== 'archived');
+      const archivedChannels = relayMappedChannels.filter((channel) => channel.status === 'archived');
+      setChannelListsFromResponse({ channels: activeChannels, archivedChannels });
+      setIsChannelsLoading(relayChannelsState.loading);
+      return;
+    }
+
     if (!isWorkspaceFeaturesEnabled || !effectiveActiveWorkspaceId) {
       setChannelsList(defaultChannels);
       setArchivedChannelsList([]);
@@ -669,13 +758,33 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
     };
 
     fetchChannels();
-  }, [effectiveActiveWorkspaceId, isWorkspaceFeaturesEnabled, defaultChannels, setChannelListsFromResponse]);
+  }, [
+    relayConfigured,
+    relayChannelsState,
+    relayMappedChannels,
+    effectiveActiveWorkspaceId,
+    isWorkspaceFeaturesEnabled,
+    defaultChannels,
+    setChannelListsFromResponse,
+  ]);
 
   // Load messages when a channel is selected
   useEffect(() => {
     if (!selectedChannelId || viewMode !== 'channels') return;
     if (selectedChannelId === ACTIVITY_FEED_ID) return;
     if (isWorkspaceFeaturesEnabled && !effectiveActiveWorkspaceId) return;
+
+    if (relayConfigured && selectedChannelId.startsWith('#')) {
+      setChannelMessages(relayMappedChannelMessages);
+      setHasMoreMessages(false);
+      setChannelUnreadState(undefined);
+      setChannelsList(prev =>
+        prev.map(c =>
+          c.id === selectedChannelId ? { ...c, unreadCount: 0, hasMentions: false } : c
+        )
+      );
+      return;
+    }
 
     const existing = channelMessageMap[selectedChannelId] ?? [];
     if (existing.length > 0) {
@@ -708,7 +817,16 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
         c.id === selectedChannelId ? { ...c, unreadCount: 0, hasMentions: false } : c
       )
     );
-  }, [selectedChannelId, viewMode, effectiveActiveWorkspaceId]);
+  }, [
+    selectedChannelId,
+    viewMode,
+    effectiveActiveWorkspaceId,
+    relayConfigured,
+    relayMessagesState,
+    relayMappedChannelMessages,
+    channelMessageMap,
+    isWorkspaceFeaturesEnabled,
+  ]);
 
   // Channel handlers
   const handleSelectChannel = useCallback(async (channel: Channel) => {
@@ -908,19 +1026,35 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
     appendChannelMessage(selectedChannelId, optimisticMessage, { incrementUnread: false });
 
     try {
-      await sendChannelApiMessage(
-        effectiveActiveWorkspaceId || 'local',
-        selectedChannelId,
-        { content, threadId }
-      );
+      const relayEligible = relayConfigured && selectedChannelId.startsWith('#') && !threadId;
+      if (relayEligible) {
+        await relaySendMessageState.send(selectedChannelId.slice(1), content);
+      } else {
+        await sendChannelApiMessage(
+          effectiveActiveWorkspaceId || 'local',
+          selectedChannelId,
+          { content, threadId }
+        );
+      }
     } catch (err) {
       console.error('Failed to send channel message:', err);
     }
-  }, [effectiveActiveWorkspaceId, selectedChannelId, currentUser?.displayName, appendChannelMessage]);
+  }, [
+    effectiveActiveWorkspaceId,
+    selectedChannelId,
+    currentUser?.displayName,
+    appendChannelMessage,
+    relayConfigured,
+    relaySendMessageState.send,
+  ]);
 
   const handleLoadMoreMessages = useCallback(async () => {
+    if (relayConfigured && selectedChannelId?.startsWith('#')) {
+      await relayMessagesState.fetchMore();
+      return;
+    }
     return;
-  }, []);
+  }, [relayConfigured, relayMessagesState.fetchMore, selectedChannelId]);
 
   // Mark channel as read (debounced)
   const markReadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -1010,67 +1144,25 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
 
   // Reactions
   const handleReaction = useCallback(async (messageId: string, emoji: string, hasReacted: boolean) => {
-    const userName = currentUser?.displayName || 'user';
-    setReactionOverrides((prev) => {
-      const next = new Map(prev);
-      const msg = rawDataRef.current?.messages.find((m: Message) => m.id === messageId);
-      const prevEntry = prev.get(messageId);
-      const current = prevEntry?.reactions || msg?.reactions || [];
-      let updated: Reaction[];
-
-      if (hasReacted) {
-        updated = current
-          .map((r: Reaction) =>
-            r.emoji === emoji
-              ? { ...r, count: r.count - 1, agents: r.agents.filter((a: string) => a !== userName) }
-              : r
-          )
-          .filter((r: Reaction) => r.count > 0);
-      } else {
-        const existing = current.find((r: Reaction) => r.emoji === emoji);
-        if (existing) {
-          updated = current.map((r: Reaction) =>
-            r.emoji === emoji
-              ? { ...r, count: r.count + 1, agents: [...r.agents, userName] }
-              : r
-          );
+    try {
+      if (relayConfigured) {
+        if (hasReacted) {
+          await relayReactionState.unreact(messageId, emoji);
         } else {
-          updated = [...current, { emoji, count: 1, agents: [userName] }];
+          await relayReactionState.react(messageId, emoji);
         }
+        return;
       }
 
-      next.set(messageId, { reactions: updated, timestamp: Date.now() });
-      return next;
-    });
-
-    // Optimistic update for channel messages (Record<string, string[]> format)
-    const updateChannelReactions = (msgs: ChannelApiMessage[]): ChannelApiMessage[] => {
-      return msgs.map(m => {
-        if (m.id !== messageId) return m;
-        const reactions = { ...(m.reactions || {}) };
-        const agents = reactions[emoji] ? [...reactions[emoji]] : [];
-        if (hasReacted) {
-          reactions[emoji] = agents.filter(a => a !== userName);
-          if (reactions[emoji].length === 0) delete reactions[emoji];
-        } else {
-          if (!agents.includes(userName)) agents.push(userName);
-          reactions[emoji] = agents;
-        }
-        return { ...m, reactions };
-      });
-    };
-    setChannelMessages(prev => updateChannelReactions(prev));
-    setChannelMessageMap(prev => {
-      if (!selectedChannelId || !prev[selectedChannelId]) return prev;
-      return { ...prev, [selectedChannelId]: updateChannelReactions(prev[selectedChannelId]) };
-    });
-
-    if (hasReacted) {
-      api.removeReaction(messageId, emoji).catch(() => undefined);
-    } else {
-      api.addReaction(messageId, emoji).catch(() => undefined);
+      if (hasReacted) {
+        await api.removeReaction(messageId, emoji);
+      } else {
+        await api.addReaction(messageId, emoji);
+      }
+    } catch (err) {
+      console.error('Failed to update reaction:', err);
     }
-  }, [currentUser?.displayName, selectedChannelId]);
+  }, [relayConfigured, relayReactionState]);
 
   // Browser notifications and sounds
   useEffect(() => {
@@ -1159,7 +1251,7 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
   }, []);
 
   const value = useMemo<MessageContextValue>(() => ({
-    messages: mergedMessages, threadMessages, currentChannel, setCurrentChannel,
+    messages, threadMessages, currentChannel, setCurrentChannel,
     currentThread, setCurrentThread, activeThreads, totalUnreadThreadCount,
     sendMessage, isSending, sendError, thread,
     viewMode, setViewMode,
@@ -1189,7 +1281,7 @@ export function MessageProvider({ children, data, rawData, enableReactions = fal
     hasUnreadMessages, handlePresenceEvent,
     setChannelsList, appendChannelMessage,
   }), [
-    mergedMessages, threadMessages, currentChannel, setCurrentChannel,
+    messages, threadMessages, currentChannel, setCurrentChannel,
     currentThread, setCurrentThread, activeThreads, totalUnreadThreadCount,
     sendMessage, isSending, sendError, thread,
     viewMode,
