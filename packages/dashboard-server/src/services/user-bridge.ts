@@ -45,7 +45,6 @@ export interface IRelayClient {
  * Factory function type for creating relay clients
  */
 export type RelayClientFactory = (options: {
-  socketPath: string;
   agentName: string;
   entityType: 'user';
   displayName?: string;
@@ -75,7 +74,6 @@ export interface UserInfo {
  * Options for creating a UserBridge
  */
 export interface UserBridgeOptions {
-  socketPath: string;
   createRelayClient: RelayClientFactory;
   loadPersistedChannels?: (username: string) => Promise<string[]>;
   /** Optional callback to look up user info (avatar URL) by username */
@@ -96,14 +94,12 @@ export interface SendMessageOptions {
  * and the relay daemon.
  */
 export class UserBridge {
-  private readonly socketPath: string;
   private readonly createRelayClient: RelayClientFactory;
   private readonly loadPersistedChannels?: (username: string) => Promise<string[]>;
   private readonly lookupUserInfo?: (username: string) => UserInfo | undefined;
   private readonly users = new Map<string, UserSession>();
 
   constructor(options: UserBridgeOptions) {
-    this.socketPath = options.socketPath;
     this.createRelayClient = options.createRelayClient;
     this.loadPersistedChannels = options.loadPersistedChannels;
     this.lookupUserInfo = options.lookupUserInfo;
@@ -136,7 +132,6 @@ export class UserBridge {
 
     // Create relay client for this user
     const relayClient = await this.createRelayClient({
-      socketPath: this.socketPath,
       agentName: username,
       entityType: 'user',
       displayName: options?.displayName,
@@ -465,7 +460,6 @@ export class UserBridge {
     try {
       console.log(`[user-bridge] Admin join: ${member} -> ${channel} (creating temp client)`);
       const tempClient = await this.createRelayClient({
-        socketPath: this.socketPath,
         agentName: '__system__',
         entityType: 'user',
       });
@@ -513,7 +507,6 @@ export class UserBridge {
     try {
       console.log(`[user-bridge] Admin remove: ${member} <- ${channel} (creating temp client)`);
       const tempClient = await this.createRelayClient({
-        socketPath: this.socketPath,
         agentName: '__system__',
         entityType: 'user',
       });

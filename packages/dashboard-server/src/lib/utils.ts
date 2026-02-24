@@ -5,6 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { Response } from 'express';
+import { loadTeamsConfig } from '@agent-relay/config';
 import type { DashboardChannel } from './types.js';
 
 export const PHANTOM_OFFLINE_MAX_AGE_MS = 5 * 60 * 1000;
@@ -245,4 +246,165 @@ export function toIsoTimestamp(epochSeconds: unknown): string {
     return new Date(0).toISOString();
   }
   return new Date(epochSeconds * 1000).toISOString();
+}
+
+export interface TeamWorkerLike {
+  name: string;
+  team?: string;
+}
+
+export interface TeamSpawnReaderLike {
+  getActiveWorkers(): TeamWorkerLike[];
+}
+
+export interface UserBridgeLike {
+  isUserRegistered(username: string): boolean;
+}
+
+/**
+ * Check if an agent has heartbeated recently in agents.json.
+ */
+export function isAgentOnline(teamDir: string, agentName: string): boolean {
+  if (agentName === '*') return true;
+
+  const agentsPath = path.join(teamDir, 'agents.json');
+  if (!fs.existsSync(agentsPath)) return false;
+
+  try {
+    const data = JSON.parse(fs.readFileSync(agentsPath, 'utf-8'));
+    const agent = data.agents?.find((a: { name: string }) => a.name === agentName);
+    if (!agent || !agent.lastSeen) return false;
+
+    const thirtySecondsAgo = Date.now() - 30 * 1000;
+    return new Date(agent.lastSeen).getTime() > thirtySecondsAgo;
+  } catch {
+    return false;
+  }
+}
+
+export function isRemoteAgent(teamDir: string, agentName: string): boolean {
+  const remoteAgentsPath = path.join(teamDir, 'remote-agents.json');
+  if (!fs.existsSync(remoteAgentsPath)) return false;
+
+  try {
+    const data = JSON.parse(fs.readFileSync(remoteAgentsPath, 'utf-8'));
+    if (data.updatedAt && Date.now() - data.updatedAt > 60 * 1000) {
+      return false;
+    }
+    return data.agents?.some((a: { name: string }) => a.name === agentName) ?? false;
+  } catch {
+    return false;
+  }
+}
+
+export function isRemoteUser(teamDir: string, username: string): boolean {
+  const remoteUsersPath = path.join(teamDir, 'remote-users.json');
+  if (!fs.existsSync(remoteUsersPath)) return false;
+
+  try {
+    const data = JSON.parse(fs.readFileSync(remoteUsersPath, 'utf-8'));
+    if (data.updatedAt && Date.now() - data.updatedAt > 60 * 1000) {
+      return false;
+    }
+    return data.users?.some((u: { name: string }) => u.name === username) ?? false;
+  } catch {
+    return false;
+  }
+}
+
+export function isUserOnline(
+  teamDir: string,
+  username: string,
+  onlineUsers: Map<string, unknown>,
+  userBridge?: UserBridgeLike,
+): boolean {
+  if (username === '*') return true;
+  return onlineUsers.has(username) || userBridge?.isUserRegistered(username) === true || isRemoteUser(teamDir, username);
+}
+
+export function isRecipientOnline(
+  teamDir: string,
+  name: string,
+  onlineUsers: Map<string, unknown>,
+  userBridge?: UserBridgeLike,
+): boolean {
+  return (
+    isAgentOnline(teamDir, name) ||
+    isRemoteAgent(teamDir, name) ||
+    isUserOnline(teamDir, name, onlineUsers, userBridge)
+  );
+}
+
+/**
+ * Resolve team members from teams config, active workers, and agents.json.
+ */
+export function getTeamMembers(
+  teamName: string,
+  projectRoot: string | undefined,
+  dataDir: string,
+  teamDir: string,
+  spawnReader?: TeamSpawnReaderLike,
+): string[] {
+  const members = new Set<string>();
+
+  const teamsConfig = loadTeamsConfig(projectRoot || dataDir);
+  if (teamsConfig && teamsConfig.team === teamName) {
+    for (const agent of teamsConfig.agents) {
+      members.add(agent.name);
+    }
+  }
+
+  if (spawnReader) {
+    const activeWorkers = spawnReader.getActiveWorkers();
+    for (const worker of activeWorkers) {
+      if (worker.team === teamName) {
+        members.add(worker.name);
+      }
+    }
+  }
+
+  const agentsPath = path.join(teamDir, 'agents.json');
+  if (fs.existsSync(agentsPath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(agentsPath, 'utf-8'));
+      for (const agent of (data.agents || [])) {
+        if (agent.team === teamName) {
+          members.add(agent.name);
+        }
+      }
+    } catch {
+      // Ignore parse errors.
+    }
+  }
+
+  return Array.from(members);
+}
+
+export function isValidUsername(username: unknown): username is string {
+  if (typeof username !== 'string') return false;
+  if (username.length === 0 || username.length > 50) return false;
+  if (!/^[a-zA-Z0-9]/.test(username) || !/[a-zA-Z0-9]$/.test(username)) return false;
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9 _.-]*[a-zA-Z0-9]$/.test(username) && username.length > 1) return false;
+  if (username.length === 1 && !/^[a-zA-Z0-9]$/.test(username)) return false;
+  if (/  /.test(username)) return false;
+  return true;
+}
+
+export function isValidAvatarUrl(url: unknown): url is string | undefined {
+  if (url === undefined || url === null) return true;
+  if (typeof url !== 'string') return false;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return false;
+    if (parsed.hostname === 'avatars.githubusercontent.com' ||
+        parsed.hostname === 'github.com' ||
+        parsed.hostname.endsWith('.githubusercontent.com')) return true;
+    if (parsed.hostname === 'www.gravatar.com' ||
+        parsed.hostname === 'gravatar.com' ||
+        parsed.hostname === 'secure.gravatar.com') return true;
+    if (parsed.hostname === 'ui-avatars.com') return true;
+    return false;
+  } catch {
+    return false;
+  }
 }

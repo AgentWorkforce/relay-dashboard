@@ -62,11 +62,6 @@ export interface DashboardOptions {
    */
   onClearSpawning?: (agentName: string) => void;
   /**
-   * External SpawnManager for read operations (logs, worker listing).
-   * Spawn/release continue to route through relay client APIs.
-   */
-  spawnManager?: SpawnManagerLike;
-  /**
    * RelayAdapter instance for broker mode.
    * Provides spawn/release/list/messaging via the broker binary.
    */
