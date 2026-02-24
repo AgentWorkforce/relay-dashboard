@@ -31,6 +31,8 @@ interface BrokerEvent {
   restart_count?: number;
   delivery_id?: string;
   error?: unknown;
+  stream?: string;
+  chunk?: string;
 }
 
 export interface DashboardData {
@@ -121,6 +123,12 @@ export function applyBrokerEvent(prev: DashboardData | null, event: BrokerEvent)
       return {
         ...prev,
         messages: [...prev.messages, newMessage],
+        // Clear thinking/processing state when the agent sends a response
+        agents: prev.agents.map((a) =>
+          a.name === event.from
+            ? { ...a, isProcessing: false, processingStartedAt: undefined, lastLogLine: undefined }
+            : a,
+        ),
       };
     }
 
@@ -155,9 +163,7 @@ export function applyBrokerEvent(prev: DashboardData | null, event: BrokerEvent)
       if (!event.name) return prev;
       return {
         ...prev,
-        agents: prev.agents.map((a) =>
-          a.name === event.name ? { ...a, status: 'offline' as const } : a,
-        ),
+        agents: prev.agents.filter((a) => a.name !== event.name),
       };
     }
 
@@ -165,9 +171,7 @@ export function applyBrokerEvent(prev: DashboardData | null, event: BrokerEvent)
       if (!event.name) return prev;
       return {
         ...prev,
-        agents: prev.agents.map((a) =>
-          a.name === event.name ? { ...a, status: 'offline' as const } : a,
-        ),
+        agents: prev.agents.filter((a) => a.name !== event.name),
       };
     }
 
@@ -188,7 +192,9 @@ export function applyBrokerEvent(prev: DashboardData | null, event: BrokerEvent)
       return {
         ...prev,
         agents: prev.agents.map((a) =>
-          a.name === event.name ? { ...a, isProcessing: false } : a,
+          a.name === event.name
+            ? { ...a, isProcessing: false, processingStartedAt: undefined, lastLogLine: undefined }
+            : a,
         ),
       };
     }
@@ -224,13 +230,46 @@ export function applyBrokerEvent(prev: DashboardData | null, event: BrokerEvent)
     }
 
     case 'delivery_verified': {
-      // Message was successfully delivered — could update message status in UI
-      return prev;
+      if (!event.event_id) return prev;
+      return {
+        ...prev,
+        messages: prev.messages.map((m) =>
+          m.id === event.event_id ? { ...m, status: 'acked' as const } : m,
+        ),
+      };
     }
 
     case 'delivery_failed': {
-      // Delivery failed — could show warning in UI
-      return prev;
+      if (!event.event_id) return prev;
+      return {
+        ...prev,
+        messages: prev.messages.map((m) =>
+          m.id === event.event_id ? { ...m, status: 'failed' as const } : m,
+        ),
+      };
+    }
+
+    case 'delivery_ack':
+    case 'delivery_active': {
+      if (!event.name) return prev;
+      return {
+        ...prev,
+        agents: prev.agents.map((a) =>
+          a.name === event.name
+            ? { ...a, isProcessing: true, processingStartedAt: Date.now() }
+            : a,
+        ),
+      };
+    }
+
+    case 'worker_stream': {
+      if (!event.name) return prev;
+      return {
+        ...prev,
+        agents: prev.agents.map((a) =>
+          a.name === event.name ? { ...a, lastLogLine: event.chunk } : a,
+        ),
+      };
     }
 
     case 'worker_error': {

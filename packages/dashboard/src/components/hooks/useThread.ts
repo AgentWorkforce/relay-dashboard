@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useAgent as useRelayAgent } from '@relaycast/react';
-import type { MessageWithMeta as RelaycastMessageWithMeta } from '@relaycast/types';
+import {
+  useThread as useRelayThread,
+  useReply as useRelayReply,
+} from '@relaycast/react';
+import type { MessageWithMeta } from '@relaycast/sdk';
 import type { Message } from '../../types';
 import { api } from '../../lib/api';
 import { useRelayConfigStatus } from '../../providers/RelayConfigProvider';
@@ -22,122 +25,111 @@ interface UseThreadReturn {
   addReply: (reply: Message) => void;
 }
 
-function mapRelayThreadMessage(message: RelaycastMessageWithMeta): Message {
+function toMessage(msg: MessageWithMeta): Message {
   return {
-    id: message.id,
-    from: message.agent_name,
+    id: msg.id,
+    from: msg.agentName ?? '',
     to: '*',
-    content: message.text,
-    timestamp: message.created_at,
-    thread: (message as { thread_id?: string | null }).thread_id ?? undefined,
-    replyCount: message.reply_count ?? 0,
-    reactions: message.reactions ?? [],
+    content: msg.text,
+    timestamp: msg.createdAt ?? new Date().toISOString(),
+    replyCount: msg.replyCount ?? 0,
+    reactions: msg.reactions ?? [],
     isRead: true,
   };
 }
 
 export function useThread({ threadId, fallbackMessages }: UseThreadOptions): UseThreadReturn {
-  const relayAgent = useRelayAgent();
   const { configured: relayConfigured } = useRelayConfigStatus();
-  const [parentMessage, setParentMessage] = useState<Message | null>(null);
-  const [replies, setReplies] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+
+  // SDK hooks — always called (hooks can't be conditional)
+  const relayThread = useRelayThread(threadId ?? '');
+  const { reply: relayReply } = useRelayReply();
+
+  // REST / client-side fallback state
+  const [restParent, setRestParent] = useState<Message | null>(null);
+  const [restReplies, setRestReplies] = useState<Message[]>([]);
+  const [restLoading, setRestLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [cursor, setCursor] = useState<string | undefined>();
   const [useFallback, setUseFallback] = useState(false);
-
-  // Use a ref to track the active threadId for cancellation of loadMore
   const activeThreadIdRef = useRef<string | null>(null);
 
-  // Fetch thread from API when threadId changes
+  // REST / fallback fetch when Relaycast is not configured
   useEffect(() => {
     activeThreadIdRef.current = threadId;
-
-    if (!threadId) {
-      setParentMessage(null);
-      setReplies([]);
+    if (!threadId || relayConfigured) {
+      setRestParent(null);
+      setRestReplies([]);
       setHasMore(false);
       setCursor(undefined);
       setUseFallback(false);
-      setIsLoading(false);
+      setRestLoading(false);
       return;
     }
 
-    // Reset state immediately when switching threads to avoid stale data flash
-    setParentMessage(null);
-    setReplies([]);
+    setRestParent(null);
+    setRestReplies([]);
     setHasMore(false);
     setCursor(undefined);
     setUseFallback(false);
 
     let cancelled = false;
-    setIsLoading(true);
+    setRestLoading(true);
 
     const loadThread = async () => {
-      if (relayConfigured) {
-        try {
-          const relayThread = await relayAgent.thread(threadId);
-          if (cancelled) return;
-          setIsLoading(false);
-          setUseFallback(false);
-          setParentMessage(mapRelayThreadMessage(relayThread.parent));
-          setReplies(relayThread.replies.map(mapRelayThreadMessage));
-          setHasMore(false);
-          setCursor(undefined);
-          return;
-        } catch {
-          // Fall through to REST and then client-side fallback.
-        }
-      }
-
       const result = await api.getThread(threadId, { limit: 50 });
       if (cancelled) return;
-      setIsLoading(false);
+      setRestLoading(false);
 
       if (result.success && result.data) {
         setUseFallback(false);
         const { parent, replies: fetchedReplies, nextCursor } = result.data;
-        setParentMessage(parent as Message);
-        setReplies(fetchedReplies);
+        setRestParent(parent as Message);
+        setRestReplies(fetchedReplies);
         setHasMore(!!nextCursor);
         setCursor(nextCursor);
       } else {
-        // API not available — fall back to client-side messages.
         setUseFallback(true);
       }
     };
 
     void loadThread();
+    return () => { cancelled = true; };
+  }, [threadId, relayConfigured]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [threadId, relayConfigured, relayAgent]);
+  // --- Derive final values based on mode ---
 
-  // Use fallback messages when API is unavailable
-  // For topic threads, the threadId is not the id of any message — it's the `thread` field on replies.
-  // So we also check for the first reply whose thread matches.
-  const effectiveParent = useFallback
+  const isRelayMode = relayConfigured && !!threadId;
+
+  // Relay path: map SDK MessageWithMeta → dashboard Message
+  const relayParent = isRelayMode && relayThread.parent ? toMessage(relayThread.parent) : null;
+  const relayReplies = isRelayMode ? relayThread.replies.map(toMessage) : [];
+
+  // Fallback path: use client-side messages
+  const fallbackParent = useFallback
     ? (fallbackMessages?.find((m) => m.id === threadId)
       ?? fallbackMessages?.filter((m) => m.thread === threadId)
           .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())[0]
       ?? null)
-    : parentMessage;
+    : null;
+  const fallbackReplies = useFallback
+    ? (fallbackMessages?.filter((m) => m.thread === threadId && m.id !== fallbackParent?.id) ?? [])
+    : [];
 
-  const effectiveReplies = useFallback
-    ? (fallbackMessages?.filter((m) => m.thread === threadId && m.id !== effectiveParent?.id) ?? [])
-    : replies;
+  // Pick the active source
+  const parentMessage = isRelayMode ? relayParent : (useFallback ? fallbackParent : restParent);
+  const replies = isRelayMode ? relayReplies : (useFallback ? fallbackReplies : restReplies);
+  const isLoading = isRelayMode ? relayThread.loading : restLoading;
 
   const loadMore = useCallback(async () => {
     if (relayConfigured || !threadId || !hasMore || !cursor || useFallback) return;
     const loadingThreadId = threadId;
-    setIsLoading(true);
+    setRestLoading(true);
     const result = await api.getThread(threadId, { cursor, limit: 50 });
-    // If thread changed while loading, discard the stale response
     if (activeThreadIdRef.current !== loadingThreadId) return;
-    setIsLoading(false);
+    setRestLoading(false);
     if (result.success && result.data) {
-      setReplies((prev) => [...result.data!.replies, ...prev]);
+      setRestReplies((prev) => [...result.data!.replies, ...prev]);
       setHasMore(!!result.data.nextCursor);
       setCursor(result.data.nextCursor);
     }
@@ -148,40 +140,34 @@ export function useThread({ threadId, fallbackMessages }: UseThreadOptions): Use
       if (!threadId) return false;
       if (relayConfigured) {
         try {
-          const reply = await relayAgent.reply(threadId, text);
-          setReplies((prev) => {
-            if (prev.some((message) => message.id === reply.id)) return prev;
-            return [...prev, mapRelayThreadMessage(reply)];
-          });
+          await relayReply(threadId, text);
           return true;
         } catch {
           // Fall through to REST fallback.
         }
       }
-
       const result = await api.postReply(threadId, text);
       if (result.success && result.data) {
-        setReplies((prev) => [...prev, result.data!]);
+        setRestReplies((prev) => [...prev, result.data!]);
         return true;
       }
       return false;
     },
-    [threadId, relayConfigured, relayAgent],
+    [threadId, relayConfigured, relayReply],
   );
 
   const addReply = useCallback((reply: Message) => {
-    setReplies((prev) => {
-      // Deduplicate
+    setRestReplies((prev) => {
       if (prev.some((m) => m.id === reply.id)) return prev;
       return [...prev, reply];
     });
   }, []);
 
   return {
-    parentMessage: effectiveParent,
-    replies: effectiveReplies,
+    parentMessage,
+    replies,
     isLoading,
-    hasMore: useFallback ? false : hasMore,
+    hasMore: useFallback || isRelayMode ? false : hasMore,
     loadMore,
     sendReply,
     addReply,

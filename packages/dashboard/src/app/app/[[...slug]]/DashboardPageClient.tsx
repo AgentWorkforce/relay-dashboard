@@ -90,6 +90,16 @@ export default function DashboardPageClient() {
           if (FORCE_CLOUD_MODE) {
             throw new Error('Cloud mode enforced but session endpoint returned 404. Is the cloud server running?');
           }
+          // Always sync username from the health endpoint so it reflects the current project
+          try {
+            const healthRes = await fetch('/api/health');
+            if (healthRes.ok) {
+              const health = await healthRes.json();
+              if (health.projectName) {
+                localStorage.setItem('relay_username', health.projectName);
+              }
+            }
+          } catch { /* ignore */ }
           setIsCloudMode(false);
           setState('local');
           return;

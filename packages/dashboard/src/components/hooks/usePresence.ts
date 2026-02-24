@@ -104,8 +104,8 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceReturn
       .filter((agent) => agent.status === 'online' && agent.type === 'human')
       .map((agent) => ({
         username: agent.name,
-        connectedAt: agent.created_at,
-        lastSeen: agent.last_seen,
+        connectedAt: agent.createdAt,
+        lastSeen: agent.lastSeen,
       }));
   }, [relayPresenceState]);
 

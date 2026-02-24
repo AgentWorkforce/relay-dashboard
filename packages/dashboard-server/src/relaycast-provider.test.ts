@@ -261,7 +261,7 @@ describe('relaycast-provider loadRelaycastConfig', () => {
     );
 
     const { loadRelaycastConfig } = await import('./relaycast-provider.js');
-    const { normalizeIdentity } = await import('./relaycast-provider-helpers.js');
+    const { resolveIdentity } = await import('./lib/identity.js');
     const loaded = loadRelaycastConfig(dataDir);
 
     expect(loaded).toMatchObject({
@@ -269,8 +269,9 @@ describe('relaycast-provider loadRelaycastConfig', () => {
       agentName: 'my-project',
       agentToken: 'agt_test_token',
     });
-    expect(normalizeIdentity('my-project')).toBe('my-project');
-    expect(normalizeIdentity('worker-1')).toBe('worker-1');
+    const identityConfig = { projectIdentity: loaded?.projectIdentity ?? '' };
+    expect(resolveIdentity('my-project', identityConfig)).toBe('my-project');
+    expect(resolveIdentity('worker-1', identityConfig)).toBe('worker-1');
 
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -363,6 +364,7 @@ describe('relaycast-provider writer registration type', () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.doUnmock('@agent-relay/sdk');
+    vi.doUnmock('@relaycast/sdk');
   });
 
   it('registers Dashboard sender as human', async () => {
@@ -419,5 +421,142 @@ describe('relaycast-provider writer registration type', () => {
       agentType: 'agent',
     }));
     expect(dm).toHaveBeenCalledWith('Lead', 'hello');
+  });
+
+  it('reuses project token when sender matches configured project identity', async () => {
+    const dm = vi.fn(async () => undefined);
+    const send = vi.fn(async () => undefined);
+    const createRelaycastClient = vi.fn(async () => ({
+      dm,
+      send,
+    }));
+    const tokenDm = vi.fn(async () => undefined);
+    const tokenSend = vi.fn(async () => undefined);
+    const relayAs = vi.fn(() => ({
+      dm: tokenDm,
+      send: tokenSend,
+    }));
+    const relayCastCtor = vi.fn(() => ({ as: relayAs }));
+
+    vi.doMock('@agent-relay/sdk', () => ({
+      createRelaycastClient,
+    }));
+    vi.doMock('@relaycast/sdk', () => ({
+      RelayCast: relayCastCtor,
+    }));
+
+    const { sendMessage } = await import('./relaycast-provider.js');
+
+    await sendMessage({
+      apiKey: 'rk_test',
+      baseUrl: 'https://api.relaycast.dev',
+      agentName: 'my-project',
+      agentToken: 'agt_test',
+    }, {
+      to: 'Lead',
+      message: 'hello',
+      from: 'my-project',
+      dataDir: '/tmp/dashboard-test',
+    });
+
+    expect(relayCastCtor).toHaveBeenCalledWith({
+      apiKey: 'rk_test',
+      baseUrl: 'https://api.relaycast.dev',
+    });
+    expect(relayAs).toHaveBeenCalledWith('agt_test');
+    expect(createRelaycastClient).not.toHaveBeenCalled();
+    expect(tokenDm).toHaveBeenCalledWith('Lead', 'hello');
+  });
+
+  it('keeps Dashboard sender on human client even when project token is present', async () => {
+    const dm = vi.fn(async () => undefined);
+    const send = vi.fn(async () => undefined);
+    const createRelaycastClient = vi.fn(async () => ({
+      dm,
+      send,
+    }));
+    const relayAs = vi.fn(() => ({
+      dm: vi.fn(async () => undefined),
+      send: vi.fn(async () => undefined),
+    }));
+    const relayCastCtor = vi.fn(() => ({ as: relayAs }));
+
+    vi.doMock('@agent-relay/sdk', () => ({
+      createRelaycastClient,
+    }));
+    vi.doMock('@relaycast/sdk', () => ({
+      RelayCast: relayCastCtor,
+    }));
+
+    const { sendMessage } = await import('./relaycast-provider.js');
+
+    await sendMessage({
+      apiKey: 'rk_test',
+      baseUrl: 'https://api.relaycast.dev',
+      agentName: 'my-project',
+      agentToken: 'agt_test',
+    }, {
+      to: 'Lead',
+      message: 'hello',
+      from: 'Dashboard',
+      dataDir: '/tmp/dashboard-test',
+    });
+
+    expect(createRelaycastClient).toHaveBeenCalledWith(expect.objectContaining({
+      agentName: 'Dashboard',
+      agentType: 'human',
+    }));
+    expect(relayCastCtor).not.toHaveBeenCalled();
+    expect(relayAs).not.toHaveBeenCalled();
+    expect(dm).toHaveBeenCalledWith('Lead', 'hello');
+  });
+
+  it('returns SDK-provided event_id as messageId when available', async () => {
+    const dm = vi.fn(async () => ({ event_id: 'evt_sdk_dm_1' }));
+    const send = vi.fn(async () => ({ event_id: 'evt_sdk_channel_1' }));
+    const createRelaycastClient = vi.fn(async () => ({
+      dm,
+      send,
+    }));
+
+    vi.doMock('@agent-relay/sdk', () => ({
+      createRelaycastClient,
+    }));
+
+    const { sendMessage } = await import('./relaycast-provider.js');
+
+    const result = await sendMessage(CONFIG, {
+      to: 'Lead',
+      message: 'hello',
+      from: 'Dashboard',
+      dataDir: '/tmp/dashboard-test',
+    });
+
+    expect(result.messageId).toBe('evt_sdk_dm_1');
+    expect(dm).toHaveBeenCalledWith('Lead', 'hello');
+  });
+
+  it('falls back to synthetic messageId when SDK response has no id fields', async () => {
+    const dm = vi.fn(async () => undefined);
+    const send = vi.fn(async () => undefined);
+    const createRelaycastClient = vi.fn(async () => ({
+      dm,
+      send,
+    }));
+
+    vi.doMock('@agent-relay/sdk', () => ({
+      createRelaycastClient,
+    }));
+
+    const { sendMessage } = await import('./relaycast-provider.js');
+
+    const result = await sendMessage(CONFIG, {
+      to: 'Lead',
+      message: 'hello',
+      from: 'Dashboard',
+      dataDir: '/tmp/dashboard-test',
+    });
+
+    expect(result.messageId).toMatch(/^relaycast-\d+$/);
   });
 });

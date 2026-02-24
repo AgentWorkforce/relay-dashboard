@@ -62,9 +62,7 @@ export function countOnlineAgents(agents: Array<{ status?: string }>): number {
   }, 0);
 }
 
-export function normalizeAgentName(value: string | undefined): string {
-  return (value ?? '').trim().toLowerCase();
-}
+export { normalizeName } from './identity.js';
 
 export function isDirectRecipient(target: string): boolean {
   const trimmed = target.trim();

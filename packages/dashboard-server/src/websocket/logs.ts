@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { WebSocket, type WebSocketServer } from 'ws';
 import type { MessageBuffer } from '../messageBuffer.js';
-import { normalizeAgentName } from '../lib/utils.js';
+import { normalizeName } from '../lib/utils.js';
 import {
   getWorkerLogsDir,
   sanitizeLogAgentName,
@@ -39,7 +39,7 @@ export function handleStandaloneLogWebSocket(
   const logsDir = getWorkerLogsDir(dataDir);
   const logFile = path.join(logsDir, `${agentName}.log`);
   const availableAgents = (): string[] => listStandaloneLogAgents(dataDir);
-  const normalizedName = normalizeAgentName(agentName);
+  const normalizedName = normalizeName(agentName);
 
   const knownLocalAgents = getLocalAgentNames();
   const isKnownLocalAgent = knownLocalAgents !== null && knownLocalAgents.has(normalizedName);

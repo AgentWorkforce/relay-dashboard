@@ -379,6 +379,18 @@
             "reasoning": ""
           },
           "significance": "high"
+        },
+        {
+          "ts": 1771941976453,
+          "type": "decision",
+          "content": "Chose dashboard postbuild out-sync over proxy static path change: Chose dashboard postbuild out-sync over proxy static path change",
+          "raw": {
+            "question": "Chose dashboard postbuild out-sync over proxy static path change",
+            "chosen": "Chose dashboard postbuild out-sync over proxy static path change",
+            "alternatives": [],
+            "reasoning": "Keeps server runtime/static path unchanged while ensuring dashboard-server/out stays current after dashboard builds"
+          },
+          "significance": "high"
         }
       ]
     }

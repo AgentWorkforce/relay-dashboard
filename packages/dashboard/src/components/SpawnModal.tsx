@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { ModelOptions as RegistryModelOptions } from '@agent-relay/config';
 import { useDashboardConfig } from '../adapters';
 import { getAgentColor, getAgentInitials } from '../lib/colors';
 
@@ -71,27 +72,12 @@ export interface ModelOption {
 
 const EMPTY_MODEL_OPTIONS: ModelOption[] = [];
 
-/** Built-in model options used when the host app doesn't supply its own */
+/** Built-in model options sourced from @agent-relay/config (cli-registry.yaml) */
 export const DEFAULT_MODEL_OPTIONS: Record<string, ModelOption[]> = {
-  claude: [
-    { value: 'sonnet', label: 'Claude Sonnet' },
-    { value: 'opus', label: 'Claude Opus' },
-    { value: 'haiku', label: 'Claude Haiku' },
-  ],
-  cursor: [
-    { value: 'claude-sonnet', label: 'Claude Sonnet' },
-    { value: 'claude-opus', label: 'Claude Opus' },
-    { value: 'gpt-4o', label: 'GPT-4o' },
-  ],
-  codex: [
-    { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
-    { value: 'o3', label: 'o3' },
-    { value: 'o4-mini', label: 'o4-mini' },
-  ],
-  gemini: [
-    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  ],
+  claude: RegistryModelOptions.Claude,
+  cursor: RegistryModelOptions.Cursor,
+  codex: RegistryModelOptions.Codex,
+  gemini: RegistryModelOptions.Gemini,
 };
 
 const AGENT_TEMPLATES = [

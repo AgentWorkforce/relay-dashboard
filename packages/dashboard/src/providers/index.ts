@@ -18,3 +18,9 @@ export type { AgentProviderProps } from './AgentProvider';
 
 export { MessageProvider, useMessageContext, ACTIVITY_FEED_ID } from './MessageProvider';
 export type { MessageProviderProps } from './MessageProvider';
+
+export { ChannelProvider, useChannelContext } from './ChannelProvider';
+export type { ChannelProviderProps, ChannelContextValue } from './ChannelProvider';
+
+export { SendProvider, useSendContext } from './SendProvider';
+export type { SendProviderProps, SendContextValue } from './SendProvider';

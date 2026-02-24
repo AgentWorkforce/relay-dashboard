@@ -86,7 +86,8 @@ export function RelayConfigProvider({ children }: RelayConfigProviderProps) {
         apiKey={providerConfig.apiKey}
         agentToken={providerConfig.agentToken}
       >
-        {children}
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+        {children as any}
       </RelayProvider>
     </RelayConfigStatusContext.Provider>
   );

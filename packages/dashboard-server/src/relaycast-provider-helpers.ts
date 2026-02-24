@@ -2,7 +2,6 @@ import path from 'path';
 import {
   createRelaycastClient,
 } from '@agent-relay/sdk';
-import { isBrokerIdentity } from '@agent-relay/contracts';
 import { RelayCast } from '@relaycast/sdk';
 import type {
   AgentStatus,
@@ -18,6 +17,12 @@ import {
   DEFAULT_MESSAGE_LIMIT,
   MAX_MESSAGE_LIMIT,
 } from './relaycast-provider-types.js';
+import {
+  resolveIdentity,
+  dashboardDisplayName as resolveDashboardDisplayName,
+  normalizeName,
+  type IdentityConfig,
+} from './lib/identity.js';
 
 export interface RelaycastClientLike {
   client: {
@@ -39,16 +44,6 @@ export interface RelaycastClientLike {
 
 const readerClientCache = new Map<string, Promise<RelaycastClientLike>>();
 const writerClientCache = new Map<string, Promise<RelaycastClientLike>>();
-let projectIdentity: string | null = null;
-
-export function setProjectIdentity(identity?: string): void {
-  const trimmed = identity?.trim();
-  projectIdentity = trimmed ? trimmed : null;
-}
-
-export function getProjectIdentity(): string | null {
-  return projectIdentity;
-}
 
 export function parseTimestamp(value: string | null | undefined): number | null {
   if (!value) return null;
@@ -76,39 +71,19 @@ export function getMessageLimit(limit: number | undefined): number {
   return Math.min(Math.floor(limit), MAX_MESSAGE_LIMIT);
 }
 
-export function normalizeIdentity(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) return '';
-  const lowered = trimmed.toLowerCase();
-  const projectIdentityKey = projectIdentity?.toLowerCase();
-
-  if (
-    lowered === DASHBOARD_DISPLAY_NAME.toLowerCase()
-    || lowered === DASHBOARD_READER_NAME
-    || (projectIdentityKey !== undefined && lowered === projectIdentityKey)
-    || isBrokerIdentity(trimmed)
-    // Match Dashboard-<hex> names (Relaycast conflict suffix)
-    || /^dashboard-[0-9a-f]{6,}$/i.test(trimmed)
-  ) {
-    return projectIdentity || DASHBOARD_DISPLAY_NAME;
-  }
-
-  return trimmed;
-}
-
-function resolveDmRecipient(participants: string[], sender: string): string {
+function resolveDmRecipient(participants: string[], sender: string, identityConfig: IdentityConfig): string {
   const senderKey = sender.toLowerCase();
 
   for (const participant of participants) {
-    const normalized = normalizeIdentity(participant);
+    const normalized = resolveIdentity(participant, identityConfig);
     if (!normalized) continue;
     if (normalized.toLowerCase() !== senderKey) {
       return normalized;
     }
   }
 
-  const fallback = normalizeIdentity(participants[0] ?? '');
-  return fallback || projectIdentity || DASHBOARD_DISPLAY_NAME;
+  const fallback = resolveIdentity(participants[0] ?? '', identityConfig);
+  return fallback || resolveDashboardDisplayName(identityConfig);
 }
 
 function getCachePath(dataDir?: string): string | undefined {
@@ -126,12 +101,13 @@ function getClientCacheKey(
   return `${config.baseUrl}|${config.apiKey}|${config.agentToken ?? ''}|${agentName}|${registrationType}|${cachePath}`;
 }
 
-function senderRegistrationType(agentName: string): RelaycastRegistrationType {
+function senderRegistrationType(agentName: string, identityConfig: IdentityConfig): RelaycastRegistrationType {
   const normalized = agentName.trim().toLowerCase();
+  const projectIdentityKey = normalizeName(identityConfig.projectIdentity);
   if (
     normalized === DASHBOARD_DISPLAY_NAME.toLowerCase()
     || normalized === DASHBOARD_READER_NAME
-    || (projectIdentity && normalized === projectIdentity.toLowerCase())
+    || (projectIdentityKey && normalized === projectIdentityKey)
   ) {
     return 'human';
   }
@@ -178,7 +154,8 @@ export function getWriterClient(
   const normalizedSender = senderName.trim().toLowerCase();
   const normalizedProjectIdentity = config.agentName?.trim().toLowerCase();
 
-  // Reuse the broker-issued project token so Dashboard writes as the same identity.
+  // Reuse the broker-issued project token when the sender matches the
+  // configured project identity.
   if (config.agentToken && normalizedProjectIdentity && normalizedSender === normalizedProjectIdentity) {
     const key = `token:${config.baseUrl}|${config.apiKey}|${config.agentName}|${config.agentToken}`;
     const existing = writerClientCache.get(key);
@@ -203,7 +180,9 @@ export function getWriterClient(
     writerClientCache,
     config,
     senderName,
-    senderRegistrationType(senderName),
+    senderRegistrationType(senderName, {
+      projectIdentity: config.projectIdentity ?? '',
+    }),
     dataDir,
   );
 }
@@ -240,9 +219,13 @@ export function mapAgentStatus(agent: RelaycastAgentRecord): AgentStatus {
   };
 }
 
-export function mapChannelMessage(channelName: string, msg: RelaycastMessage): Message {
+export function mapChannelMessage(
+  channelName: string,
+  msg: RelaycastMessage,
+  identityConfig: IdentityConfig,
+): Message {
   return {
-    from: normalizeIdentity(msg.agent_name) || 'unknown',
+    from: resolveIdentity(msg.agent_name, identityConfig) || 'unknown',
     to: `#${channelName}`,
     content: msg.text,
     timestamp: msg.created_at,
@@ -257,9 +240,10 @@ export function mapDmMessage(
   conversationId: string,
   participants: string[],
   msg: RelaycastMessage,
+  identityConfig: IdentityConfig,
 ): Message {
-  const from = normalizeIdentity(msg.agent_name) || 'unknown';
-  const to = resolveDmRecipient(participants, from);
+  const from = resolveIdentity(msg.agent_name, identityConfig) || 'unknown';
+  const to = resolveDmRecipient(participants, from, identityConfig);
   const id = msg.id?.trim() || `dm_${conversationId}_${msg.created_at}`;
 
   return {

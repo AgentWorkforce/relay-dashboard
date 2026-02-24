@@ -889,8 +889,16 @@ function AppShell({
             let threadIsLoading = false;
             let threadHasMore = false;
             let threadLoadMore: (() => void) | undefined;
+            const preferApiThreadDataInChannel = isChannelView && (thread.isLoading || Boolean(thread.parentMessage));
 
-            if (isChannelView) {
+            if (preferApiThreadDataInChannel) {
+              originalMessage = thread.parentMessage;
+              replies = thread.replies;
+              isTopicThread = !originalMessage;
+              threadIsLoading = thread.isLoading;
+              threadHasMore = thread.hasMore;
+              threadLoadMore = thread.loadMore;
+            } else if (isChannelView) {
               const channelMsg = effectiveChannelMessages.find((m) => m.id === currentThread);
               if (channelMsg) {
                 originalMessage = convertChannelMessage(channelMsg);

@@ -4,7 +4,7 @@ import {
   withWorkflowConventions,
   parseTimestamp,
   countOnlineAgents,
-  normalizeAgentName,
+  normalizeName,
   isDirectRecipient,
   parseCommandDescriptor,
   isRecord,
@@ -93,13 +93,13 @@ describe('countOnlineAgents', () => {
   });
 });
 
-describe('normalizeAgentName', () => {
+describe('normalizeName', () => {
   it('trims and lowercases', () => {
-    expect(normalizeAgentName('  WorkerA  ')).toBe('workera');
+    expect(normalizeName('  WorkerA  ')).toBe('workera');
   });
 
-  it('handles undefined', () => {
-    expect(normalizeAgentName(undefined)).toBe('');
+  it('handles undefined-like coercion', () => {
+    expect(normalizeName(undefined as unknown as string)).toBe('');
   });
 });
 

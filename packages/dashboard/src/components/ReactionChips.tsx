@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
+import { resolveEmoji } from '@relaycast/types';
 import type { Reaction } from '../types';
 import { ReactionPicker } from './ReactionPicker';
-import { resolveEmoji } from '@relaycast/types';
 
 interface ReactionChipsProps {
   reactions: Reaction[];

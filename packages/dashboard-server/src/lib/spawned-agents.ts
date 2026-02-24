@@ -8,7 +8,7 @@ import { buildDashboardProxyUrl, getDashboardProxyRoute } from './proxy-route-ta
 import type { AgentStatus } from '../relaycast-provider.js';
 import type { SpawnedAgentSummary, SpawnedAgentNamesResult, LocalStateAgentSummary } from './types.js';
 import {
-  normalizeAgentName,
+  normalizeName,
   parseCommandDescriptor,
   isRecord,
   parseTimestamp,
@@ -53,7 +53,7 @@ export function extractSpawnedAgentNames(payload: unknown): SpawnedAgentNamesRes
   }
 
   const upsertAgent = (candidate: SpawnedAgentSummary): void => {
-    const normalizedName = normalizeAgentName(candidate.name);
+    const normalizedName = normalizeName(candidate.name);
     if (!normalizedName) {
       return;
     }
@@ -141,12 +141,12 @@ export function filterPhantomAgents(
     }
 
     if (localAgentNames !== null) {
-      const normalizedName = normalizeAgentName(agent.name);
+      const normalizedName = normalizeName(agent.name);
       return normalizedName ? localAgentNames.has(normalizedName) : false;
     }
 
     if (spawnedAgentNames !== null) {
-      const normalizedName = normalizeAgentName(agent.name);
+      const normalizedName = normalizeName(agent.name);
       return normalizedName ? spawnedAgentNames.has(normalizedName) : false;
     }
 
@@ -165,14 +165,14 @@ export function mergeBrokerSpawnedAgents(
   const mergedAgents = [...agents];
   const agentIndexByName = new Map<string, number>();
   for (let index = 0; index < mergedAgents.length; index += 1) {
-    const normalized = normalizeAgentName(mergedAgents[index]?.name);
+    const normalized = normalizeName(mergedAgents[index]?.name ?? '');
     if (normalized) {
       agentIndexByName.set(normalized, index);
     }
   }
 
   for (const spawnedAgent of spawnedAgents) {
-    const normalizedName = normalizeAgentName(spawnedAgent.name);
+    const normalizedName = normalizeName(spawnedAgent.name);
     if (!normalizedName) {
       continue;
     }
@@ -345,7 +345,7 @@ export function createSpawnedAgentsCaches(opts: {
     const names = new Set<string>();
     const addName = (value: unknown): void => {
       if (typeof value !== 'string') return;
-      const normalized = normalizeAgentName(value);
+      const normalized = normalizeName(value);
       if (normalized) {
         names.add(normalized);
       }

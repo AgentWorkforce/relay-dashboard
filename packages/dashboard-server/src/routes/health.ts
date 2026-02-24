@@ -2,12 +2,15 @@
  * Health and keep-alive route handlers.
  */
 
+import path from 'node:path';
 import type { Express, Request, Response } from 'express';
 import type { RouteContext } from '../lib/types.js';
 import { countOnlineAgents } from '../lib/utils.js';
 import { mockAgents } from '../mocks/fixtures.js';
 
 export function registerHealthRoutes(app: Express, ctx: RouteContext): void {
+  const projectName = path.basename(path.resolve(ctx.dataDir, '..'));
+
   app.get('/health', (_req: Request, res: Response) => {
     res.json({
       status: 'ok',
@@ -15,6 +18,7 @@ export function registerHealthRoutes(app: Express, ctx: RouteContext): void {
       mode: ctx.mode,
       uptime: process.uptime(),
       brokerProxyEnabled: ctx.brokerProxyEnabled,
+      projectName,
     });
   });
 
@@ -25,6 +29,7 @@ export function registerHealthRoutes(app: Express, ctx: RouteContext): void {
       mode: ctx.mode,
       uptime: process.uptime(),
       brokerProxyEnabled: ctx.brokerProxyEnabled,
+      projectName,
     });
   });
 

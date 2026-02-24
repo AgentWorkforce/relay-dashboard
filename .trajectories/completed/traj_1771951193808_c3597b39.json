@@ -1,0 +1,91 @@
+{
+  "id": "traj_1771951193808_c3597b39",
+  "version": 1,
+  "task": {
+    "title": "default run #1da75c2e",
+    "source": {
+      "system": "workflow-runner",
+      "id": "1da75c2ee837c049420daf01"
+    }
+  },
+  "status": "abandoned",
+  "startedAt": "2026-02-24T16:39:53.808Z",
+  "agents": [
+    {
+      "name": "orchestrator",
+      "role": "workflow-runner",
+      "joinedAt": "2026-02-24T16:39:53.808Z"
+    },
+    {
+      "name": "agent-a",
+      "role": "agent-a",
+      "joinedAt": "2026-02-24T16:39:57.526Z"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "ch_433c575f",
+      "title": "Planning",
+      "agentName": "orchestrator",
+      "startedAt": "2026-02-24T16:39:53.808Z",
+      "events": [
+        {
+          "ts": 1771951193808,
+          "type": "note",
+          "content": "Workflow \"default\" started with 2 steps"
+        },
+        {
+          "ts": 1771951193808,
+          "type": "note",
+          "content": "Parsed 2 steps, 1 dependent steps, DAG validated, no cycles"
+        },
+        {
+          "ts": 1771951197526,
+          "type": "note",
+          "content": "Step \"step-1\" assigned to agent \"agent-a\""
+        },
+        {
+          "ts": 1771951197575,
+          "type": "error",
+          "content": "Step \"step-1\" failed (attempt 1/1): broker exited (code=1, signal=null)",
+          "significance": "high"
+        },
+        {
+          "ts": 1771951197580,
+          "type": "decision",
+          "content": "How to handle step-1 failure → exhausted: All 1 attempts failed: broker exited (code=1, signal=null)",
+          "significance": "medium",
+          "raw": {
+            "question": "How to handle step-1 failure",
+            "chosen": "exhausted",
+            "reasoning": "All 1 attempts failed: broker exited (code=1, signal=null)"
+          }
+        },
+        {
+          "ts": 1771951197584,
+          "type": "note",
+          "content": "Skipped step \"step-2\": Upstream dependency \"step-1\" failed"
+        },
+        {
+          "ts": 1771951197586,
+          "type": "decision",
+          "content": "Whether to skip step-2 → skip: Upstream dependency \"step-1\" failed",
+          "significance": "medium",
+          "raw": {
+            "question": "Whether to skip step-2",
+            "chosen": "skip",
+            "reasoning": "Upstream dependency \"step-1\" failed"
+          }
+        },
+        {
+          "ts": 1771951197588,
+          "type": "error",
+          "content": "Workflow abandoned: Step \"step-1\" failed: Step \"step-1\" failed after 0 retries: broker exited (code=1, signal=null)",
+          "significance": "high"
+        }
+      ],
+      "endedAt": "2026-02-24T16:39:57.588Z"
+    }
+  ],
+  "completedAt": "2026-02-24T16:39:57.588Z"
+}

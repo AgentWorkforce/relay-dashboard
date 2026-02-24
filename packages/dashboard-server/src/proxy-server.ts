@@ -17,9 +17,12 @@ import {
   fetchAgents,
   fetchAllMessages,
   fetchChannels,
-  sendMessage,
   loadRelaycastConfig,
 } from './relaycast-provider.js';
+import { createSendStrategy } from './lib/send-strategy.js';
+import type { SendStrategy } from './lib/send-strategy.js';
+import { DASHBOARD_DISPLAY_NAME } from './relaycast-provider-types.js';
+import { resolveIdentity } from './lib/identity.js';
 import type {
   DashboardMode,
   DashboardSnapshot,
@@ -31,7 +34,7 @@ import type {
 import { EMPTY_DASHBOARD_SNAPSHOT } from './lib/types.js';
 import {
   normalizeRelayUrl,
-  normalizeAgentName,
+  normalizeName,
   isDirectRecipient,
   sendHtmlFileOrFallback,
   getBindHost,
@@ -181,7 +184,37 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     params: { to: string; message: string; from?: string },
   ): Promise<{ success: true; messageId: string } | { success: false; status: number; error: string }> => {
     const config = resolveRelaycastConfig();
-    if (!config) {
+    const rawTarget = params.to.trim();
+    const message = params.message.trim();
+    let resolvedTarget = rawTarget;
+
+    if (isDirectRecipient(rawTarget) && config) {
+      const relayAgents = await fetchAgents(config);
+      const relayMatch = relayAgents.find((agent) => normalizeName(agent.name) === normalizeName(rawTarget));
+      if (relayMatch) {
+        resolvedTarget = relayMatch.name;
+      }
+    }
+
+    const projectIdentity = config?.agentName?.trim()
+      || path.basename(path.resolve(dataDir, '..'))
+      || DASHBOARD_DISPLAY_NAME;
+    const senderInput = params.from?.trim() ?? '';
+    const senderName = mode === 'proxy'
+      ? resolveIdentity(senderInput || projectIdentity, {
+          projectIdentity: projectIdentity.trim(),
+          relayAgentName: config?.agentName?.trim(),
+        })
+      : (senderInput || projectIdentity);
+
+    const strategy: SendStrategy | null = createSendStrategy({
+      brokerProxyEnabled,
+      brokerUrl: relayUrl,
+      relaycastConfig: config,
+      dataDir,
+    });
+
+    if (!strategy) {
       return {
         success: false,
         status: 503,
@@ -189,34 +222,11 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       };
     }
 
-    try {
-      const rawTarget = params.to.trim();
-      let resolvedTarget = rawTarget;
+    const outcome = await strategy.send({ to: resolvedTarget, message, from: senderName });
 
-      if (isDirectRecipient(rawTarget)) {
-        const relayAgents = await fetchAgents(config);
-        const relayMatch = relayAgents.find((agent) => normalizeAgentName(agent.name) === normalizeAgentName(rawTarget));
-        if (relayMatch) {
-          resolvedTarget = relayMatch.name;
-        }
-      }
-
-      const projectIdentity = config.agentName?.trim() || path.basename(path.resolve(dataDir, '..'));
-      const senderName = params.from?.trim() ? params.from.trim() : projectIdentity;
-
-      const result = await sendMessage(config, {
-        to: resolvedTarget,
-        message: params.message.trim(),
-        from: senderName,
-        dataDir,
-      });
-      return {
-        success: true,
-        messageId: result.messageId,
-      };
-    } catch (err) {
-      const message = (err as Error).message || 'Failed to send message';
-      if (isDirectRecipient(params.to) && /agent\s+\".+\"\s+not\s+found/i.test(message)) {
+    // Enrich "agent not found" errors with available agent names
+    if (!outcome.success && isDirectRecipient(params.to) && config) {
+      if (/agent\s+\".+\"\s+not\s+found/i.test(outcome.error)) {
         const relayAgents = await fetchAgents(config);
         const available = relayAgents.map((agent) => agent.name).sort();
         const suffix = available.length > 0
@@ -225,15 +235,12 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
         return {
           success: false,
           status: 404,
-          error: `${message}.${suffix}`,
+          error: `${outcome.error}.${suffix}`,
         };
       }
-      return {
-        success: false,
-        status: 502,
-        error: message,
-      };
     }
+
+    return outcome;
   };
 
   const ctx: RouteContext = {

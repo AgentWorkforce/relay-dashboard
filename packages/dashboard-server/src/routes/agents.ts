@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import type { Express, Request, Response } from 'express';
 import type { RouteContext } from '../lib/types.js';
-import { normalizeAgentName } from '../lib/utils.js';
+import { normalizeName } from '../lib/utils.js';
 import { readStandaloneStateAgents } from '../lib/spawned-agents.js';
 import {
   listStandaloneLogAgents,
@@ -123,12 +123,12 @@ export function registerAgentRoutes(app: Express, ctx: RouteContext): void {
   // Always serve agent-online and logs locally.
   app.get('/api/agents/:name/online', async (req: Request, res: Response) => {
     const name = typeof req.params.name === 'string' ? decodeURIComponent(req.params.name) : '';
-    const normalizedName = normalizeAgentName(name);
+    const normalizedName = normalizeName(name);
 
     try {
       const snapshot = await ctx.getRelaycastSnapshot();
       const relayAgent = snapshot.agents.find(
-        (a) => normalizeAgentName(a.name) === normalizedName,
+        (a) => normalizeName(a.name) === normalizedName,
       );
       if (relayAgent) {
         res.json({
@@ -144,7 +144,7 @@ export function registerAgentRoutes(app: Express, ctx: RouteContext): void {
     }
 
     const agent = readStandaloneStateAgents(ctx.dataDir).find(
-      (item) => normalizeAgentName(item.name) === normalizedName,
+      (item) => normalizeName(item.name) === normalizedName,
     );
     res.json({
       success: true,

@@ -14,6 +14,7 @@ import {
   createChannel,
 } from '../relaycast-provider.js';
 import { reactionGroupsToRecord } from '../relaycast-provider-helpers.js';
+import { resolveIdentity } from '../lib/identity.js';
 import type { RouteContext } from '../lib/types.js';
 import {
   normalizeChannelTarget,
@@ -22,6 +23,7 @@ import {
 } from '../lib/utils.js';
 
 export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
+  const projectName = path.basename(path.resolve(ctx.dataDir, '..')) || 'Dashboard';
   app.get('/api/channels', async (_req: Request, res: Response) => {
     try {
       const channels = await ctx.getRelaycastChannels();
@@ -122,6 +124,9 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
         limit: requestedLimit,
         before: beforeTs === null ? undefined : beforeTs,
       });
+      const identityConfig = {
+        projectIdentity: config.projectIdentity?.trim() || projectName,
+      };
 
       const trimmed = messages.slice(-limit);
       const hasMore = messages.length > limit;
@@ -130,7 +135,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
         messages: trimmed.map((message) => ({
           id: message.id,
           channelId: channelParam.startsWith('#') ? channelParam : `#${channelName}`,
-          from: message.agent_name,
+          from: resolveIdentity(message.agent_name, identityConfig),
           fromEntityType: 'agent' as const,
           content: message.text,
           timestamp: message.created_at,
@@ -191,7 +196,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     const { name, description, topic, isPrivate, visibility, invites } = req.body ?? {};
     const username = typeof req.body?.username === 'string' && req.body.username.trim()
       ? req.body.username.trim()
-      : 'Dashboard';
+      : projectName;
     const rawName = typeof name === 'string' ? name : '';
     const channelName = normalizeChannelName(rawName);
 
@@ -275,7 +280,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     const inviteResult = await inviteToChannel(config, {
       channel: channelName,
       members: inviteMembers,
-      invitedBy: typeof invitedBy === 'string' && invitedBy.trim() ? invitedBy.trim() : 'Dashboard',
+      invitedBy: typeof invitedBy === 'string' && invitedBy.trim() ? invitedBy.trim() : projectName,
       dataDir: ctx.dataDir,
     });
 
@@ -369,7 +374,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
       await inviteToChannel(config, {
         channel,
         members: [{ id: member, type: 'agent' }],
-        invitedBy: 'Dashboard',
+        invitedBy: projectName,
         dataDir: ctx.dataDir,
       });
       res.json({ success: true, channel: normalizeChannelTarget(channel), member });
@@ -438,7 +443,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
   app.post('/api/channels/message', async (req: Request, res: Response) => {
     const username = typeof req.body?.username === 'string' && req.body.username.trim()
       ? req.body.username.trim()
-      : 'Dashboard';
+      : projectName;
     const channel = typeof req.body?.channel === 'string' ? req.body.channel : '';
     const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
 
@@ -474,7 +479,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     const config = ctx.resolveRelaycastConfig();
     if (config) {
       try {
-        await setChannelArchived(config, { channel, archived: true, updatedBy: 'Dashboard' });
+        await setChannelArchived(config, { channel, archived: true, updatedBy: projectName });
       } catch (err) {
         if (ctx.verbose) {
           console.warn('[dashboard] Archive channel fallback failed:', (err as Error).message);
@@ -495,7 +500,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     const config = ctx.resolveRelaycastConfig();
     if (config) {
       try {
-        await setChannelArchived(config, { channel, archived: false, updatedBy: 'Dashboard' });
+        await setChannelArchived(config, { channel, archived: false, updatedBy: projectName });
       } catch (err) {
         if (ctx.verbose) {
           console.warn('[dashboard] Unarchive channel fallback failed:', (err as Error).message);

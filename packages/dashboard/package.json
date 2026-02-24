@@ -29,6 +29,7 @@
   "scripts": {
     "dev": "next dev -p 3888",
     "build": "npm run build:ui && npm run build:server",
+    "postbuild": "rm -rf ../dashboard-server/out && cp -r out ../dashboard-server/out",
     "build:ui": "next build",
     "build:server": "tsc -p tsconfig.server.json",
     "watch": "concurrently \"npm:watch:*\"",

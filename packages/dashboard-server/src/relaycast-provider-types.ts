@@ -35,6 +35,7 @@ export interface RelaycastConfig {
   baseUrl: string;
   agentName?: string;
   agentToken?: string;
+  projectIdentity?: string;
 }
 
 export interface AgentStatus {

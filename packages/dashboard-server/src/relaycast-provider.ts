@@ -6,6 +6,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { extractMessageId } from './lib/message-id.js';
 import type {
   AgentStatus,
   CreateChannelInput,
@@ -26,7 +27,6 @@ import type {
   SetChannelArchivedInput,
 } from './relaycast-provider-types.js';
 import {
-  DASHBOARD_DISPLAY_NAME,
   DASHBOARD_READER_NAME,
   DEFAULT_MESSAGE_LIMIT,
   DEFAULT_RELAYCAST_BASE_URL,
@@ -40,15 +40,23 @@ import {
   mapChannelMessage,
   mapDmMessage,
   normalizeChannelName,
-  normalizeIdentity,
   normalizeTarget,
   parseTimestamp,
-  getProjectIdentity,
-  setProjectIdentity,
 } from './relaycast-provider-helpers.js';
+import {
+  dashboardDisplayName as resolveDashboardDisplayName,
+  resolveIdentity,
+  type IdentityConfig,
+} from './lib/identity.js';
 
-function dashboardDisplayName(): string {
-  return getProjectIdentity() || DASHBOARD_DISPLAY_NAME;
+function resolveProviderIdentityConfig(config: RelaycastConfig): IdentityConfig {
+  return {
+    projectIdentity: config.projectIdentity?.trim() || '',
+  };
+}
+
+function dashboardDisplayName(config: RelaycastConfig): string {
+  return resolveDashboardDisplayName(resolveProviderIdentityConfig(config));
 }
 
 export type {
@@ -75,7 +83,6 @@ export type {
 export function loadRelaycastConfig(dataDir: string): RelaycastConfig | null {
   const credPath = path.join(dataDir, 'relaycast.json');
   if (!fs.existsSync(credPath)) {
-    setProjectIdentity(undefined);
     return null;
   }
 
@@ -83,16 +90,15 @@ export function loadRelaycastConfig(dataDir: string): RelaycastConfig | null {
     const raw = JSON.parse(fs.readFileSync(credPath, 'utf-8'));
     const apiKey = raw.api_key as string | undefined;
     if (!apiKey) {
-      setProjectIdentity(undefined);
       return null;
     }
     const agentName = raw.agent_name as string | undefined;
     const agentToken = raw.agent_token as string | undefined;
     const baseUrl = process.env.RELAYCAST_API_URL || DEFAULT_RELAYCAST_BASE_URL;
-    setProjectIdentity(agentName);
-    return { apiKey, baseUrl, agentName, agentToken };
+    const projectDir = path.basename(path.resolve(dataDir, '..'));
+    const projectIdentity = (projectDir || agentName || '').trim();
+    return { apiKey, baseUrl, agentName, agentToken, projectIdentity };
   } catch {
-    setProjectIdentity(undefined);
     return null;
   }
 }
@@ -215,6 +221,7 @@ async function fetchDmConversationMessages(
 async function fetchAllDirectMessages(config: RelaycastConfig): Promise<Message[]> {
   const conversations = await fetchDmConversations(config);
   if (conversations.length === 0) return [];
+  const identityConfig = resolveProviderIdentityConfig(config);
 
   const grouped = await Promise.all(
     conversations.map(async (conversation) => {
@@ -223,12 +230,12 @@ async function fetchAllDirectMessages(config: RelaycastConfig): Promise<Message[
 
       const participants = Array.isArray(conversation.participants)
         ? conversation.participants
-          .map((participant) => normalizeIdentity(participant))
+          .map((participant) => resolveIdentity(participant, identityConfig))
           .filter((participant): participant is string => Boolean(participant))
         : [];
 
       const messages = await fetchDmConversationMessages(config, conversationId);
-      return messages.map((message) => mapDmMessage(conversationId, participants, message));
+      return messages.map((message) => mapDmMessage(conversationId, participants, message, identityConfig));
     }),
   );
 
@@ -240,6 +247,7 @@ async function fetchAllDirectMessages(config: RelaycastConfig): Promise<Message[
  */
 export async function fetchAllMessages(config: RelaycastConfig): Promise<Message[]> {
   try {
+    const identityConfig = resolveProviderIdentityConfig(config);
     const [channels, directMessages] = await Promise.all([
       fetchChannels(config),
       fetchAllDirectMessages(config),
@@ -253,7 +261,7 @@ export async function fetchAllMessages(config: RelaycastConfig): Promise<Message
 
     const channelMessages = channelResults.flatMap((messages, index) => {
       const channelName = channels[index]?.name ?? 'general';
-      return messages.map((msg) => mapChannelMessage(channelName, msg));
+      return messages.map((msg) => mapChannelMessage(channelName, msg, identityConfig));
     });
 
     const mapped = dedupeMessages([...channelMessages, ...directMessages]);
@@ -274,6 +282,7 @@ export async function fetchDashboardSnapshot(config: RelaycastConfig): Promise<D
   return { agents, messages };
 }
 
+
 export async function sendMessage(config: RelaycastConfig, input: SendMessageInput): Promise<SendMessageResult> {
   const target = normalizeTarget(input.to);
   const message = input.message.trim();
@@ -281,16 +290,22 @@ export async function sendMessage(config: RelaycastConfig, input: SendMessageInp
     throw new Error('Missing required fields: to, message');
   }
 
-  const senderName = input.from?.trim() ? input.from.trim() : dashboardDisplayName();
+  const senderName = input.from?.trim() ? input.from.trim() : dashboardDisplayName(config);
   const relaycast = await getWriterClient(config, senderName, input.dataDir);
 
+  let sendResult: unknown;
   if (target.startsWith('#')) {
-    await relaycast.send(target.slice(1), message);
+    sendResult = await relaycast.send(target.slice(1), message);
   } else {
-    await relaycast.dm(target, message);
+    sendResult = await relaycast.dm(target, message);
   }
 
-  return { messageId: `relaycast-${Date.now()}` };
+  const sendPayload = (sendResult && typeof sendResult === 'object' && !Array.isArray(sendResult))
+    ? sendResult as Record<string, unknown>
+    : null;
+  const messageId = sendPayload ? extractMessageId(sendPayload) : null;
+  const resolvedMessageId = messageId ?? `relaycast-${Date.now()}`;
+  return { messageId: resolvedMessageId };
 }
 
 export async function createChannel(config: RelaycastConfig, input: CreateChannelInput): Promise<void> {
@@ -302,7 +317,7 @@ export async function createChannel(config: RelaycastConfig, input: CreateChanne
   // Relaycast channel creation currently ignores visibility.
   void input.visibility;
 
-  const relaycast = await getWriterClient(config, input.creator?.trim() || dashboardDisplayName(), input.dataDir);
+  const relaycast = await getWriterClient(config, input.creator?.trim() || dashboardDisplayName(config), input.dataDir);
   await relaycast.channels.create({
     name: channelName,
     ...(input.description?.trim() ? { topic: input.description.trim() } : {}),
@@ -318,7 +333,7 @@ export async function inviteToChannel(
     throw new Error('channel is required');
   }
 
-  const relaycast = await getWriterClient(config, input.invitedBy?.trim() || dashboardDisplayName(), input.dataDir);
+  const relaycast = await getWriterClient(config, input.invitedBy?.trim() || dashboardDisplayName(config), input.dataDir);
   const invited: Array<{ id: string; type: 'user' | 'agent'; success: boolean; reason?: string }> = [];
 
   for (const member of input.members) {
@@ -345,7 +360,7 @@ export async function joinChannel(config: RelaycastConfig, input: JoinChannelInp
   const channelName = normalizeChannelName(input.channel);
   if (!channelName || channelName.startsWith('dm:')) return;
 
-  const relaycast = await getWriterClient(config, input.username.trim() || dashboardDisplayName(), input.dataDir);
+  const relaycast = await getWriterClient(config, input.username.trim() || dashboardDisplayName(config), input.dataDir);
   await relaycast.channels.join(channelName);
 }
 
@@ -353,7 +368,7 @@ export async function leaveChannel(config: RelaycastConfig, input: LeaveChannelI
   const channelName = normalizeChannelName(input.channel);
   if (!channelName || channelName.startsWith('dm:')) return;
 
-  const relaycast = await getWriterClient(config, input.username.trim() || dashboardDisplayName());
+  const relaycast = await getWriterClient(config, input.username.trim() || dashboardDisplayName(config));
   await relaycast.channels.leave(channelName);
 }
 
