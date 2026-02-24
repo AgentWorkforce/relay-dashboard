@@ -108,8 +108,19 @@ export function registerAgentRoutes(app: Express, ctx: RouteContext): void {
       const name = typeof req.params.name === 'string' ? decodeURIComponent(req.params.name) : '';
       unsupportedBrokerOperation(res, 'Agent interrupt', { name });
     });
+  } else {
+    // Proxy mode: broker does not support interrupt yet. Return 501 so this
+    // doesn't silently 404, but register it only when the integrated server
+    // (which has registerSpawnRoutes with the real handler) is NOT in use.
+    app.post('/api/agents/by-name/:name/interrupt', (req: Request, res: Response) => {
+      const name = typeof req.params.name === 'string' ? decodeURIComponent(req.params.name) : '';
+      res.status(501).json({
+        success: false,
+        error: 'Agent interrupt is not yet supported by the broker HTTP API.',
+        name,
+      });
+    });
   }
-
 
   // Always serve agent-online and logs locally.
   app.get('/api/agents/:name/online', async (req: Request, res: Response) => {
