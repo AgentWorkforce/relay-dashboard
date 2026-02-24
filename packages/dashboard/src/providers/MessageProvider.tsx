@@ -148,7 +148,7 @@ interface MessageContextValue {
   handleAddMember: (memberId: string, memberType: 'user' | 'agent', role: 'admin' | 'member' | 'read_only') => Promise<void>;
   handleArchiveChannel: (channel: Channel) => Promise<void>;
   handleUnarchiveChannel: (channel: Channel) => Promise<void>;
-  handleSendChannelMessage: (content: string, threadId?: string) => Promise<void>;
+  handleSendChannelMessage: (content: string, threadId?: string, attachmentIds?: string[]) => Promise<boolean>;
   handleLoadMoreMessages: () => Promise<void>;
   handleMarkChannelRead: (channelId: string) => void;
 
@@ -1010,8 +1010,8 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
     }
   }, [effectiveActiveWorkspaceId, setChannelListsFromResponse]);
 
-  const handleSendChannelMessage = useCallback(async (content: string, threadId?: string) => {
-    if (!selectedChannelId) return;
+  const handleSendChannelMessage = useCallback(async (content: string, threadId?: string, attachmentIds?: string[]) => {
+    if (!selectedChannelId) return false;
 
     const senderName = currentUser?.displayName || 'Dashboard';
     const optimisticMessage: ChannelApiMessage = {
@@ -1029,11 +1029,12 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
 
     try {
       const relayEligible = relayConfigured && selectedChannelId.startsWith('#');
+      const hasAttachments = Boolean(attachmentIds && attachmentIds.length > 0);
       const relayThreadReplyEligible = threadId
         ? relayMappedChannelMessages.some((message) => message.id === threadId)
         : false;
 
-      if (relayEligible) {
+      if (relayEligible && !hasAttachments) {
         if (threadId && relayThreadReplyEligible) {
           await relayAgent.reply(threadId, content);
         } else if (!threadId) {
@@ -1043,18 +1044,20 @@ export function MessageProvider({ children, data, rawData: _rawData, enableReact
           await sendChannelApiMessage(
             effectiveActiveWorkspaceId || 'local',
             selectedChannelId,
-            { content, threadId }
+            { content, threadId, attachmentIds }
           );
         }
       } else {
         await sendChannelApiMessage(
           effectiveActiveWorkspaceId || 'local',
           selectedChannelId,
-          { content, threadId }
+          { content, threadId, attachmentIds }
         );
       }
+      return true;
     } catch (err) {
       console.error('Failed to send channel message:', err);
+      return false;
     }
   }, [
     effectiveActiveWorkspaceId,

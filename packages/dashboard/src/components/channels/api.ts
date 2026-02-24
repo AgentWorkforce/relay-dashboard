@@ -249,6 +249,7 @@ export async function sendMessage(
         channel: channelId,
         body: request.content,
         thread: request.threadId,
+        attachmentIds: request.attachmentIds,
         workspaceId,
       }),
     });

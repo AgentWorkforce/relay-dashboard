@@ -831,11 +831,14 @@ function AppShell({
                 channel={selectedChannel}
                 messages={effectiveChannelMessages}
                 currentUser={currentUser?.displayName || 'Anonymous'}
+                currentUserInfo={currentUser ? { displayName: currentUser.displayName, avatarUrl: currentUser.avatarUrl } : undefined}
+                onlineUsers={onlineUsers}
+                agents={agents}
+                humanUsers={humanUsers}
                 isLoadingMore={false}
                 hasMoreMessages={hasMoreMessages && !!effectiveActiveWorkspaceId}
-                mentionSuggestions={agents.map(a => a.name)}
                 unreadState={channelUnreadState}
-                onSendMessage={handleSendChannelMessage}
+                onSendMessage={(content, attachmentIds) => handleSendChannelMessage(content, undefined, attachmentIds)}
                 onLoadMore={handleLoadMoreMessages}
                 onThreadClick={(messageId) => setCurrentThread(messageId)}
                 onShowMembers={handleShowMembers}
@@ -922,8 +925,7 @@ function AppShell({
                   onLoadMore={threadLoadMore}
                   onReply={async (content) => {
                     if (isChannelView && selectedChannel) {
-                      await handleSendChannelMessage(content, currentThread);
-                      return true;
+                      return handleSendChannelMessage(content, currentThread);
                     }
                     let recipient = '*';
                     if (!isTopicThread && originalMessage) {

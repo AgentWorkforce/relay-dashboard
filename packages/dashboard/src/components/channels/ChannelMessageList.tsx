@@ -28,6 +28,10 @@ export function ChannelMessageList({
   messages,
   unreadState,
   currentUser,
+  currentUserInfo,
+  onlineUsers = [],
+  agents = [],
+  humanUsers = [],
   isLoadingMore = false,
   hasMore = false,
   onLoadMore,
@@ -161,6 +165,10 @@ export function ChannelMessageList({
                     onMemberClick={onMemberClick}
                     onReaction={onReaction}
                     currentUser={currentUser}
+                    currentUserInfo={currentUserInfo}
+                    onlineUsers={onlineUsers}
+                    agents={agents}
+                    humanUsers={humanUsers}
                     showAvatar={shouldShowAvatar(dateMessages, index)}
                   />
                 </React.Fragment>
@@ -198,6 +206,22 @@ interface MessageItemProps {
   onMemberClick?: (memberId: string, entityType: 'user' | 'agent') => void;
   onReaction?: (messageId: string, emoji: string, hasReacted: boolean) => void;
   currentUser?: string;
+  currentUserInfo?: {
+    displayName: string;
+    avatarUrl?: string;
+  };
+  onlineUsers?: Array<{
+    username: string;
+    avatarUrl?: string;
+  }>;
+  agents?: Array<{
+    name: string;
+    avatarUrl?: string;
+  }>;
+  humanUsers?: Array<{
+    username: string;
+    avatarUrl?: string;
+  }>;
   showAvatar: boolean;
 }
 
@@ -208,9 +232,20 @@ function MessageItem({
   onMemberClick,
   onReaction,
   currentUser,
+  currentUserInfo,
+  onlineUsers = [],
+  agents = [],
+  humanUsers = [],
   showAvatar,
 }: MessageItemProps) {
   const hasThread = message.threadSummary && message.threadSummary.replyCount > 0;
+  const normalizedSender = message.from.toLowerCase();
+
+  const avatarUrl = message.fromAvatarUrl
+    || (isOwn ? currentUserInfo?.avatarUrl : undefined)
+    || onlineUsers.find((user) => user.username.toLowerCase() === normalizedSender)?.avatarUrl
+    || humanUsers.find((user) => user.username.toLowerCase() === normalizedSender)?.avatarUrl
+    || agents.find((agent) => agent.name.toLowerCase() === normalizedSender)?.avatarUrl;
 
   return (
     <div className={`group relative py-1 ${showAvatar ? 'mt-3' : ''}`}>
@@ -220,8 +255,8 @@ function MessageItem({
           {showAvatar && (
             <Avatar
               name={message.from}
-              avatarUrl={message.fromAvatarUrl}
-              entityType={message.fromEntityType}
+              avatarUrl={avatarUrl}
+              entityType={message.fromEntityType || 'agent'}
             />
           )}
         </div>

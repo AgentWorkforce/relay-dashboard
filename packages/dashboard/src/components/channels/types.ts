@@ -6,6 +6,9 @@
  */
 
 import type { ThreadMetadata } from '../../types/threading';
+import type { Agent } from '../../types';
+import type { HumanUser } from '../MentionAutocomplete';
+import type { UserPresence } from '../hooks/usePresence';
 
 /**
  * Channel visibility types.
@@ -296,6 +299,17 @@ export interface ChannelMessageListProps {
   unreadState?: UnreadState;
   /** Current user name */
   currentUser: string;
+  /** Current user info (for avatar fallback) */
+  currentUserInfo?: {
+    displayName: string;
+    avatarUrl?: string;
+  };
+  /** Online users for avatar fallback */
+  onlineUsers?: UserPresence[];
+  /** Agents for avatar fallback */
+  agents?: Agent[];
+  /** Known human users for avatar fallback */
+  humanUsers?: HumanUser[];
   /** Whether loading more messages */
   isLoadingMore?: boolean;
   /** Whether there are more messages to load */
