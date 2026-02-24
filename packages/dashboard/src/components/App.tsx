@@ -935,13 +935,8 @@ function AppShell({
                     if (isChannelView && selectedChannel) {
                       return handleSendChannelMessage(content, currentThread);
                     }
-                    let recipient = '*';
-                    if (!isTopicThread && originalMessage) {
-                      const isFromCurrentUser = originalMessage.from === 'Dashboard' ||
-                        (currentUser && originalMessage.from === currentUser.displayName);
-                      recipient = isFromCurrentUser ? originalMessage.to : originalMessage.from;
-                    }
-                    return sendMessage(recipient, content, currentThread);
+                    // Use thread.sendReply (Relaycast SDK) when available
+                    return thread.sendReply(content);
                   }}
                   isSending={isSending}
                   currentUser={currentUser}

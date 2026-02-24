@@ -120,15 +120,20 @@ export function applyBrokerEvent(prev: DashboardData | null, event: BrokerEvent)
         thread: event.thread_id ?? undefined,
         isBroadcast: event.target === '*',
       };
+      // Clear thinking/processing state only when a known processing agent sends a response
+      const senderIsProcessingAgent = prev.agents.some(
+        (a) => a.name === event.from && a.isProcessing,
+      );
       return {
         ...prev,
         messages: [...prev.messages, newMessage],
-        // Clear thinking/processing state when the agent sends a response
-        agents: prev.agents.map((a) =>
-          a.name === event.from
-            ? { ...a, isProcessing: false, processingStartedAt: undefined, lastLogLine: undefined }
-            : a,
-        ),
+        agents: senderIsProcessingAgent
+          ? prev.agents.map((a) =>
+              a.name === event.from
+                ? { ...a, isProcessing: false, processingStartedAt: undefined, lastLogLine: undefined }
+                : a,
+            )
+          : prev.agents,
       };
     }
 
