@@ -119,4 +119,16 @@ export function registerUiRoutes(app: Application): void {
   app.get('/', (_req, res) => {
     res.type('html').send(fallbackHtml);
   });
+
+  app.get('/metrics', (_req, res) => {
+    res.type('html').send(fallbackHtml);
+  });
+
+  app.get('/app', (_req, res) => {
+    res.type('html').send(fallbackHtml);
+  });
+
+  app.get('/app/{*path}', (_req, res) => {
+    res.type('html').send(fallbackHtml);
+  });
 }

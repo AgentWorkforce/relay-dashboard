@@ -53,6 +53,7 @@ import { registerDataRoutes } from './routes/data.js';
 import { registerAgentRoutes } from './routes/agents.js';
 import { registerChannelRoutes } from './routes/channels.js';
 import { registerBrokerProxyRoutes } from './routes/broker-proxy.js';
+import { registerMetricsRoutes } from './routes/metrics.js';
 import { registerReactionRoutes } from './routes/reactions.js';
 import { registerRelayConfigRoutes } from './routes/relay-config.js';
 import { registerRelaycastHistoryRoutes } from './routes/history-relaycast.js';
@@ -79,6 +80,28 @@ function resolveMetricsPagePath(staticDir: string): string {
   return candidates[0];
 }
 
+const asString = (value: unknown): string | undefined => {
+  if (typeof value === 'string' && value.length > 0) return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item === 'string' && item.length > 0) return item;
+    }
+  }
+  return undefined;
+};
+
+const getWorkspaceHeader = (headers: Record<string, unknown> | undefined): string | undefined => {
+  if (!headers) return undefined;
+  const direct = headers['x-workspace-id'];
+  if (typeof direct === 'string' && direct.length > 0) return direct;
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === 'x-workspace-id' && typeof value === 'string' && value.length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+};
+
 /**
  * Create the dashboard server without starting it
  */
@@ -101,6 +124,18 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
   const relayUrl = normalizeRelayUrl(relayUrlOption ?? process.env.RELAY_URL);
   const mode: DashboardMode = mock ? 'mock' : (relayUrl ? 'proxy' : 'standalone');
   const brokerProxyEnabled = mode === 'proxy' && Boolean(relayUrl);
+  const defaultWorkspaceId = process.env.RELAY_WORKSPACE_ID ?? process.env.AGENT_RELAY_WORKSPACE_ID;
+
+  const resolveWorkspaceId = (req: {
+    query?: Record<string, unknown>;
+    body?: Record<string, unknown>;
+    headers?: Record<string, unknown>;
+  }): string | undefined => {
+    const fromQuery = asString(req.query?.workspaceId);
+    const fromBody = asString(req.body?.workspaceId);
+    const fromHeader = getWorkspaceHeader(req.headers);
+    return fromQuery || fromBody || fromHeader || defaultWorkspaceId;
+  };
 
   const app = express();
   const server = createHttpServer(app);
@@ -325,6 +360,10 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     registerRelayConfigRoutes(app, ctx);
     registerChannelRoutes(app, ctx);
     registerReactionRoutes(app, ctx);
+    registerMetricsRoutes(app, {
+      teamDir: path.join(dataDir, 'team'),
+      resolveWorkspaceId,
+    });
     registerRelaycastHistoryRoutes(app, ctx);
     registerBrokerProxyRoutes(app, ctx);
   }
