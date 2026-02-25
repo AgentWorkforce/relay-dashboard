@@ -10,12 +10,12 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { createServer as createHttpServer, type Server } from 'http';
 import { WebSocketServer } from 'ws';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { registerMockRoutes } from './mocks/routes.js';
 import {
   fetchAgents,
-  fetchAllMessages,
   fetchChannels,
   loadRelaycastConfig,
 } from './relaycast-provider.js';
@@ -62,6 +62,23 @@ export type { DashboardServerOptions, DashboardServer } from './lib/types.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function resolveMetricsPagePath(staticDir: string): string {
+  const candidates = [
+    path.join(staticDir, 'metrics.html'),
+    path.join(staticDir, 'metrics', 'index.html'),
+    path.join(staticDir, 'app.html'),
+    path.join(staticDir, 'index.html'),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return candidates[0];
+}
+
 /**
  * Create the dashboard server without starting it
  */
@@ -73,8 +90,13 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     verbose = process.env.VERBOSE === 'true',
     mock = process.env.MOCK === 'true',
     corsOrigins = process.env.CORS_ORIGINS || '',
-    requestTimeout = parseInt(process.env.REQUEST_TIMEOUT || '30000', 10),
+    requestTimeout = parseInt(process.env.REQUEST_TIMEOUT || '60000', 10),
   } = options;
+
+  const resolvedDataDir = path.resolve(dataDir);
+  if (!process.env.AGENT_RELAY_PROJECT) {
+    process.env.AGENT_RELAY_PROJECT = path.dirname(resolvedDataDir);
+  }
 
   const relayUrl = normalizeRelayUrl(relayUrlOption ?? process.env.RELAY_URL);
   const mode: DashboardMode = mock ? 'mock' : (relayUrl ? 'proxy' : 'standalone');
@@ -136,9 +158,8 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       return { ...EMPTY_DASHBOARD_SNAPSHOT };
     }
 
-    const [agents, messages, spawnedAgents, localAgentNames] = await Promise.all([
+    const [agents, spawnedAgents, localAgentNames] = await Promise.all([
       fetchAgents(config),
-      fetchAllMessages(config),
       brokerProxyEnabled ? getSpawnedAgents() : Promise.resolve({ names: null, agents: null }),
       brokerProxyEnabled ? Promise.resolve(null) : Promise.resolve(getLocalAgentNames()),
     ]);
@@ -148,8 +169,8 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     return {
       agents: mergedAgents,
       users: [],
-      messages,
-      activity: messages,
+      messages: [],
+      activity: [],
       sessions: [],
       summaries: [],
     };
@@ -167,7 +188,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     const archivedChannels: DashboardChannel[] = [];
 
     for (const channel of channels) {
-      const mapped = mapChannelForDashboard(channel);
+      const mapped = mapChannelForDashboard({ ...channel, is_archived: channel.is_archived ?? false });
       if (mapped.status === 'archived') {
         archivedChannels.push(mapped);
       } else {
@@ -184,64 +205,89 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
   const sendRelaycastMessage = async (
     params: { to: string; message: string; from?: string },
   ): Promise<{ success: true; messageId: string } | { success: false; status: number; error: string }> => {
-    const config = resolveRelaycastConfig();
-    const rawTarget = params.to.trim();
-    const message = params.message.trim();
-    let resolvedTarget = rawTarget;
+    const sendTimeout = Math.max(requestTimeout - 5000, 10000);
+    const sendStart = Date.now();
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Send timed out')), sendTimeout),
+    );
 
-    if (isDirectRecipient(rawTarget) && config) {
-      const relayAgents = await fetchAgents(config);
-      const relayMatch = relayAgents.find((agent) => normalizeName(agent.name) === normalizeName(rawTarget));
-      if (relayMatch) {
-        resolvedTarget = relayMatch.name;
-      }
-    }
+    try {
+      return await Promise.race([
+        (async () => {
+          const config = resolveRelaycastConfig();
+          const rawTarget = params.to.trim();
+          const message = params.message.trim();
+          let resolvedTarget = rawTarget;
 
-    const projectIdentity = config?.agentName?.trim()
-      || path.basename(path.resolve(dataDir, '..'))
-      || DASHBOARD_DISPLAY_NAME;
-    const senderInput = params.from?.trim() ?? '';
-    const senderName = mode === 'proxy'
-      ? resolveIdentity(senderInput || projectIdentity, {
-          projectIdentity: projectIdentity.trim(),
-          relayAgentName: config?.agentName?.trim(),
-        })
-      : (senderInput || projectIdentity);
+          if (isDirectRecipient(rawTarget) && config) {
+            const relayAgents = await fetchAgents(config);
+            const relayMatch = relayAgents.find((agent) => normalizeName(agent.name) === normalizeName(rawTarget));
+            if (relayMatch) {
+              resolvedTarget = relayMatch.name;
+            }
+          }
 
-    const strategy: SendStrategy | null = createSendStrategy({
-      brokerProxyEnabled,
-      brokerUrl: relayUrl,
-      relaycastConfig: config,
-      dataDir,
-    });
+          const projectIdentity = config?.agentName?.trim()
+            || path.basename(path.resolve(dataDir, '..'))
+            || DASHBOARD_DISPLAY_NAME;
+          const senderInput = params.from?.trim() ?? '';
+          const senderName = mode === 'proxy'
+            ? resolveIdentity(senderInput || projectIdentity, {
+                projectIdentity: projectIdentity.trim(),
+                relayAgentName: config?.agentName?.trim(),
+              })
+            : (senderInput || projectIdentity);
 
-    if (!strategy) {
+          const strategy: SendStrategy | null = createSendStrategy({
+            brokerProxyEnabled,
+            brokerUrl: relayUrl,
+            relaycastConfig: config,
+            dataDir,
+          });
+
+          if (!strategy) {
+            return {
+              success: false as const,
+              status: 503,
+              error: `Relaycast credentials not found in ${path.join(dataDir, 'relaycast.json')}`,
+            };
+          }
+
+          console.log(
+            `[dashboard] /api/send request: to=${resolvedTarget}, from=${senderName}, relayUrl=${relayUrl}, timeoutMs=${sendTimeout}`,
+          );
+
+          const outcome = await strategy.send({ to: resolvedTarget, message, from: senderName });
+          console.log(`[dashboard] /api/send completed in ${Date.now() - sendStart}ms with status=${outcome.success ? 200 : outcome.status}`);
+
+          // Enrich "agent not found" errors with available agent names
+          if (!outcome.success && isDirectRecipient(params.to) && config) {
+            if (/agent\s+\".+\"\s+not\s+found/i.test(outcome.error)) {
+              const relayAgents = await fetchAgents(config);
+              const available = relayAgents.map((agent) => agent.name).sort();
+              const suffix = available.length > 0
+                ? ` Available relay agents: ${available.join(', ')}.`
+                : ' No relay agents are currently online.';
+              return {
+                success: false as const,
+                status: 404,
+                error: `${outcome.error}.${suffix}`,
+              };
+            }
+          }
+
+          return outcome;
+        })(),
+        timeoutPromise,
+      ]);
+    } catch (err) {
+      console.error(`[dashboard] /api/send failed after ${Date.now() - sendStart}ms: ${(err as Error).message}`);
       return {
         success: false,
-        status: 503,
-        error: `Relaycast credentials not found in ${path.join(dataDir, 'relaycast.json')}`,
+        status: 504,
+        error: (err as Error).message || 'Send request timed out',
       };
     }
-
-    const outcome = await strategy.send({ to: resolvedTarget, message, from: senderName });
-
-    // Enrich "agent not found" errors with available agent names
-    if (!outcome.success && isDirectRecipient(params.to) && config) {
-      if (/agent\s+\".+\"\s+not\s+found/i.test(outcome.error)) {
-        const relayAgents = await fetchAgents(config);
-        const available = relayAgents.map((agent) => agent.name).sort();
-        const suffix = available.length > 0
-          ? ` Available relay agents: ${available.join(', ')}.`
-          : ' No relay agents are currently online.';
-        return {
-          success: false,
-          status: 404,
-          error: `${outcome.error}.${suffix}`,
-        };
-      }
-    }
-
-    return outcome;
   };
 
   const ctx: RouteContext = {
@@ -299,8 +345,8 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
 </html>`;
 
   app.get('/metrics', (_req: Request, res: Response) => {
-    const metricsPath = path.join(staticDir, 'metrics.html');
-    sendHtmlFileOrFallback(res, metricsPath, undefined, 404);
+    const metricsPath = resolveMetricsPagePath(staticDir);
+    sendHtmlFileOrFallback(res, metricsPath, fallbackHtml, 200);
   });
 
   app.get('/app', (_req: Request, res: Response) => {

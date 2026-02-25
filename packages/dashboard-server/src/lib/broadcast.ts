@@ -24,23 +24,6 @@ export function createBroadcasters(
   let lastBroadcastPayload = '';
   let lastBridgeBroadcastPayload = '';
 
-  // Deduplication for log output - prevent same content from being broadcast multiple times.
-  // Key: agentName -> Set of recent content hashes (rolling window).
-  const recentLogHashes = new Map<string, Set<string>>();
-  const MAX_LOG_HASH_WINDOW = 50; // Keep last 50 hashes per agent.
-
-  // Simple hash function for log dedup.
-  const hashLogContent = (content: string): string => {
-    const normalized = content.replace(/\s+/g, ' ').trim().slice(0, 200);
-    let hash = 0;
-    for (let i = 0; i < normalized.length; i++) {
-      const char = normalized.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return hash.toString(36);
-  };
-
   const broadcastData = async (): Promise<void> => {
     try {
       const data = await deps.getAllData();
@@ -126,39 +109,25 @@ export function createBroadcasters(
 
   const broadcastLogOutput = (agentName: string, output: string): void => {
     const clients = state.logSubscriptions.get(agentName);
-    if (!clients || clients.size === 0) return;
+    if (output.length === 0) return;
 
-    const trimmed = output.trim();
-    if (!trimmed) return;
-
-    const hash = hashLogContent(output);
-    let agentHashes = recentLogHashes.get(agentName);
-    if (!agentHashes) {
-      agentHashes = new Set();
-      recentLogHashes.set(agentName, agentHashes);
-    }
-
-    if (agentHashes.has(hash)) {
-      return;
-    }
-
-    agentHashes.add(hash);
-    if (agentHashes.size > MAX_LOG_HASH_WINDOW) {
-      const oldest = agentHashes.values().next().value;
-      if (oldest !== undefined) {
-        agentHashes.delete(oldest);
-      }
-    }
-
-    const logPayload = {
+    const basePayload = {
       type: 'output',
       agent: agentName,
       data: output,
+      content: output,
       timestamp: new Date().toISOString(),
     };
-    const payload = JSON.stringify(logPayload);
+    const serializedBase = JSON.stringify(basePayload);
+    const seq = state.getAgentLogBuffer(agentName).push('output', serializedBase);
+    const payload = JSON.stringify({
+      ...basePayload,
+      seq,
+    });
 
-    state.getAgentLogBuffer(agentName).push('output', payload);
+    if (!clients || clients.size === 0) {
+      return;
+    }
 
     for (const client of clients) {
       if (client.readyState === WebSocket.OPEN) {

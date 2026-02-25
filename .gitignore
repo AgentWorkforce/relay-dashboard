@@ -47,3 +47,4 @@ fly.toml.local
 # Local data
 *.db
 *.sqlite
+.aider*

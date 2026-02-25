@@ -162,8 +162,13 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     const { to, from } = req.body ?? {};
     const messageValue = req.body?.message ?? req.body?.text ?? req.body?.body ?? req.body?.content;
     const message = typeof messageValue === 'string' ? messageValue.trim() : '';
+    const requestStartedAt = Date.now();
 
     if (typeof to !== 'string' || !to.trim() || !message) {
+      console.warn('[dashboard] /api/send missing required fields', {
+        hasTo: typeof to === 'string',
+        hasMessage: typeof messageValue === 'string',
+      });
       res.status(400).json({ success: false, error: 'Missing required fields: to, message' });
       return;
     }
@@ -175,12 +180,19 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     });
 
     if (!result.success) {
+      console.warn(
+        `[dashboard] /api/send failed: to=${to.trim()} status=${result.status} relayUrl=${ctx.relayUrl} durationMs=${Date.now() - requestStartedAt}`,
+      );
       res.status(result.status).json({
         success: false,
         error: result.error,
       });
       return;
     }
+
+    console.log(
+      `[dashboard] /api/send completed: to=${to.trim()} messageId=${result.messageId} durationMs=${Date.now() - requestStartedAt}`,
+    );
 
     res.json({
       success: true,

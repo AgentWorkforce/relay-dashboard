@@ -470,12 +470,13 @@ function MessageProviderInner({ children, data, rawData: _rawData, enableReactio
       const currentUserName = currentUser?.displayName.toLowerCase();
       for (const conversation of relayDMsState.conversations) {
         for (const participant of conversation.participants) {
-          if (typeof participant !== 'string') continue;
-          const lowered = participant.toLowerCase();
+          const name = typeof participant === 'string' ? participant : participant.agentName;
+          if (!name) continue;
+          const lowered = name.toLowerCase();
           if (currentUserName && lowered === currentUserName) continue;
           if (agentNames.has(lowered)) continue;
           if (!seenUsers.has(lowered)) {
-            seenUsers.set(lowered, { username: participant });
+            seenUsers.set(lowered, { username: name });
           }
         }
       }
@@ -506,14 +507,16 @@ function MessageProviderInner({ children, data, rawData: _rawData, enableReactio
       for (const conversation of relayDMsState.conversations) {
         if (!conversation.unreadCount) continue;
 
-        const participant = conversation.participants.find((name: unknown) => {
-          if (typeof name !== 'string') return false;
+        const match = conversation.participants.find((p) => {
+          const name = typeof p === 'string' ? p : p.agentName;
+          if (!name) return false;
           const lowered = name.toLowerCase();
           return lowered !== currentUserName && !agentNames.has(lowered);
         });
+        const participantName = match ? (typeof match === 'string' ? match : match.agentName) : null;
 
-        if (participant) {
-          counts[participant] = (counts[participant] || 0) + conversation.unreadCount;
+        if (participantName) {
+          counts[participantName] = (counts[participantName] || 0) + conversation.unreadCount;
         }
       }
 

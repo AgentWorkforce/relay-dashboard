@@ -10,6 +10,8 @@ interface ActiveWorkerLike {
   name: string;
   pid?: number;
   spawnedAt: number;
+  task?: string;
+  cli?: string;
 }
 
 interface SpawnReaderLike {
@@ -33,6 +35,70 @@ export function registerMetricsRoutes(app: Application, deps: MetricsRouteDeps):
   const { teamDir, spawnReader, resolveWorkspaceId } = deps;
   const { getProcTreeUsage } = createProcessMetrics();
 
+  function buildLocalMetrics() {
+    const now = new Date().toISOString();
+    const workers = spawnReader?.getActiveWorkers() || [];
+    const totalAgents = workers.length;
+    const onlineAgents = workers.filter((worker) => worker.pid).length;
+
+    const agents = workers.map((worker) => {
+      const rssBytes = worker.pid ? getProcTreeUsage(worker.pid).rssBytes : undefined;
+      const firstSeen = worker.spawnedAt ? new Date(worker.spawnedAt).toISOString() : now;
+
+      return {
+        name: worker.name,
+        messagesSent: 0,
+        messagesReceived: 0,
+        firstSeen,
+        lastSeen: now,
+        uptimeSeconds: worker.spawnedAt ? Math.max(0, Math.floor((Date.now() - worker.spawnedAt) / 1000)) : 0,
+        isOnline: Boolean(worker.pid),
+        task: worker.task ?? 'idle',
+        cli: worker.cli ?? 'unknown',
+        rssBytes,
+      };
+    });
+
+    return {
+      timestamp: now,
+      totalAgents,
+      onlineAgents,
+      offlineAgents: Math.max(0, totalAgents - onlineAgents),
+      totalMessages: 0,
+      throughput: {
+        messagesLastMinute: 0,
+        messagesLastHour: 0,
+        messagesLast24Hours: 0,
+        avgMessagesPerMinute: 0,
+      },
+      agents: agents.map((agent) => ({
+        name: agent.name,
+        messagesSent: agent.messagesSent,
+        messagesReceived: agent.messagesReceived,
+        firstSeen: agent.firstSeen,
+        lastSeen: agent.lastSeen,
+        uptimeSeconds: agent.uptimeSeconds,
+        isOnline: agent.isOnline,
+      })),
+      sessions: {
+        totalSessions: 0,
+        activeSessions: 0,
+        closedByAgent: 0,
+        closedByDisconnect: 0,
+        closedByError: 0,
+        errorRate: 0,
+        recentSessions: [],
+      },
+      system: {
+        totalAgents,
+        onlineAgents,
+        totalMessages: 0,
+        totalSessions: 0,
+        activeSessions: 0,
+      },
+    };
+  }
+
   // GET /api/agents/needs-attention - Pass-through to cloud needs-attention endpoint.
   app.get('/api/agents/needs-attention', async (req, res) => {
     try {
@@ -47,9 +113,10 @@ export function registerMetricsRoutes(app: Application, deps: MetricsRouteDeps):
       const contentType = response.headers.get('content-type') ?? 'application/json; charset=utf-8';
       return res.status(response.status).setHeader('content-type', contentType).send(body);
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : `${err}`;
       return res.status(502).json({
         error: 'Cloud needs-attention proxy failed',
-        message: (err as Error).message,
+        message: errorMessage,
       });
     }
   });
@@ -68,9 +135,13 @@ export function registerMetricsRoutes(app: Application, deps: MetricsRouteDeps):
       const contentType = response.headers.get('content-type') ?? 'application/json; charset=utf-8';
       return res.status(response.status).setHeader('content-type', contentType).send(body);
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : `${err}`;
+      if (errorMessage.includes('Cloud upstream URL is not configured')) {
+        return res.json(buildLocalMetrics());
+      }
       return res.status(502).json({
         error: 'Cloud metrics proxy failed',
-        message: (err as Error).message,
+        message: errorMessage,
       });
     }
   });

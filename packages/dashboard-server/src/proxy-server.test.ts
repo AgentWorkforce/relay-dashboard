@@ -12,6 +12,45 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer, type DashboardServer } from './proxy-server.js';
 
 describe('Dashboard Server', () => {
+  describe('Static Route Fallbacks', () => {
+    let server: DashboardServer;
+    let staticDir: string;
+
+    beforeAll(async () => {
+      staticDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dashboard-static-fallback-'));
+      fs.writeFileSync(path.join(staticDir, 'app.html'), '<!doctype html><h1>app-fallback</h1>', 'utf-8');
+
+      server = createServer({
+        port: 0,
+        mock: false,
+        staticDir,
+        verbose: false,
+      });
+      await new Promise<void>((resolve) => {
+        server.server.listen(0, () => resolve());
+      });
+    });
+
+    afterAll(async () => {
+      await server.close();
+      fs.rmSync(staticDir, { recursive: true, force: true });
+    });
+
+    it('should serve /metrics from app.html when metrics.html is missing', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/metrics`);
+      const html = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(html).toContain('app-fallback');
+    });
+  });
+
   describe('Mock Mode', () => {
     let server: DashboardServer;
 

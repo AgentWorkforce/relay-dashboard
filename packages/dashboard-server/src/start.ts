@@ -24,9 +24,11 @@ interface CliOptions {
 }
 
 const DEFAULT_PORT = 3888;
-const DEFAULT_RELAY_URL = 'http://localhost:3889';
+const DEFAULT_RELAY_URL = 'http://127.0.0.1:3889';
 const DEFAULT_DATA_DIR = '.agent-relay';
-const DEFAULT_STATIC_DIR = './out';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const DEFAULT_STATIC_DIR = join(__dirname, '..', 'out');
 
 // Read version - prefer build-time define for compiled binaries, fall back to package.json
 function getVersion(): string {
@@ -38,9 +40,6 @@ function getVersion(): string {
 
   // Fall back to reading from package.json (for development/npm installs)
   try {
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = dirname(__filename);
-
     // Walk up to find package.json
     let dir = __dirname;
     for (let i = 0; i < 5; i++) {
@@ -87,7 +86,7 @@ Options:
 Examples:
   relay-dashboard-server
   relay-dashboard-server --mock
-  relay-dashboard-server --port 4000 --relay-url http://localhost:3889
+  relay-dashboard-server --port 4000 --relay-url http://127.0.0.1:3889
   relay-dashboard-server --data-dir /path/to/.agent-relay --verbose
 `);
 }

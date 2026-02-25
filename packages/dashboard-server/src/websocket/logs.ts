@@ -7,10 +7,45 @@ import {
   getWorkerLogsDir,
   sanitizeLogAgentName,
   listStandaloneLogAgents,
-  readRecentLogLines,
   readLogDelta,
   STANDALONE_LOG_POLL_MS,
 } from '../lib/log-reader.js';
+
+const LOG_HISTORY_MAX_BYTES = 64 * 1024;
+
+function takeTail(content: string, maxChars = LOG_HISTORY_MAX_BYTES): string {
+  if (content.length <= maxChars) {
+    return content;
+  }
+  return content.slice(content.length - maxChars);
+}
+
+function readLogTailContent(filePath: string, maxBytes = LOG_HISTORY_MAX_BYTES): string {
+  if (!fs.existsSync(filePath)) return '';
+
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const stats = fs.fstatSync(fd);
+    const start = Math.max(0, stats.size - maxBytes);
+    const length = Math.max(0, stats.size - start);
+    if (length === 0) return '';
+
+    const buffer = Buffer.alloc(length);
+    fs.readSync(fd, buffer, 0, length, start);
+    return buffer.toString('utf-8');
+  } catch {
+    return '';
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // Best-effort close.
+      }
+    }
+  }
+}
 
 /**
  * Standalone log WebSocket handler — tails local worker log files.
@@ -50,6 +85,7 @@ export function handleStandaloneLogWebSocket(
 
   const knownLocalAgents = getLocalAgentNames();
   const isKnownLocalAgent = knownLocalAgents !== null && knownLocalAgents.has(normalizedName);
+  let sequenceId = 0;
 
   let offset = 0;
   const syncOffsetToEnd = (): void => {
@@ -62,9 +98,14 @@ export function handleStandaloneLogWebSocket(
   };
 
   const sendHistory = (): void => {
-    const lines = readRecentLogLines(logFile);
+    const content = readLogTailContent(logFile);
     ws.send(JSON.stringify({ type: 'subscribed', agent: agentName }));
-    ws.send(JSON.stringify({ type: 'history', agent: agentName, lines }));
+    ws.send(JSON.stringify({ type: 'sync', serverTimestamp: Date.now(), sequenceId }));
+    ws.send(JSON.stringify({
+      type: 'history',
+      agent: agentName,
+      lines: content ? [content] : [],
+    }));
     syncOffsetToEnd();
   };
 
@@ -83,6 +124,7 @@ export function handleStandaloneLogWebSocket(
     sendHistory();
   } else {
     ws.send(JSON.stringify({ type: 'subscribed', agent: agentName }));
+    ws.send(JSON.stringify({ type: 'sync', serverTimestamp: Date.now(), sequenceId }));
     ws.send(JSON.stringify({ type: 'history', agent: agentName, lines: [] }));
   }
 
@@ -98,10 +140,14 @@ export function handleStandaloneLogWebSocket(
     const delta = readLogDelta(logFile, offset);
     offset = delta.nextOffset;
     if (delta.content) {
+      sequenceId += 1;
       ws.send(JSON.stringify({
         type: 'log',
         agent: agentName,
         content: delta.content,
+        data: delta.content,
+        timestamp: new Date().toISOString(),
+        seq: sequenceId,
       }));
     }
   }, STANDALONE_LOG_POLL_MS);
@@ -111,8 +157,28 @@ export function handleStandaloneLogWebSocket(
       const message = JSON.parse(data.toString()) as { type?: string };
       if (message.type === 'ping') {
         ws.send(JSON.stringify({ type: 'pong' }));
-      } else if (message.type === 'subscribe' || message.type === 'replay' || message.type === 'refresh') {
+      } else if (message.type === 'subscribe' || message.type === 'refresh') {
         sendHistory();
+      } else if (message.type === 'replay') {
+        // Standalone file-tail mode doesn't maintain a replay ring buffer yet.
+        // Return a single replay message with the current tail as a fallback.
+        const content = readLogTailContent(logFile);
+        ws.send(JSON.stringify({
+          type: 'replay',
+          agent: agentName,
+          messages: content ? [{
+            type: 'log',
+            agent: agentName,
+            content,
+            data: content,
+            timestamp: new Date().toISOString(),
+            seq: sequenceId,
+          }] : [],
+          entries: content ? [{
+            content,
+            timestamp: Date.now(),
+          }] : [],
+        }));
       }
     } catch {
       // Ignore parse errors.
@@ -146,6 +212,7 @@ interface WorkerMeta {
 interface SpawnReaderLike {
   hasWorker: (name: string) => boolean;
   getWorkerOutput: (name: string, maxLines?: number) => string[] | undefined;
+  getWorkerRawOutput?: (name: string) => string | undefined;
   sendWorkerInput: (name: string, input: string) => Promise<boolean>;
 }
 
@@ -217,7 +284,7 @@ export function setupLogsWebSocket(deps: LogsWebSocketDeps): void {
 
     // Send sync message with current server timestamp so client can track its position.
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'sync', serverTimestamp: Date.now() }));
+      ws.send(JSON.stringify({ type: 'sync', serverTimestamp: Date.now(), sequenceId: 0 }));
     }
 
     // Helper to check if agent is daemon-connected (from agents.json).
@@ -245,17 +312,26 @@ export function setupLogsWebSocket(deps: LogsWebSocketDeps): void {
       }
     };
 
-    // Helper to read logs from a log file (for externally-spawned workers).
-    const readLogsFromFile = (logFile: string, limit = 5000): string[] => {
-      if (!fs.existsSync(logFile)) return [];
-      try {
-        const content = fs.readFileSync(logFile, 'utf-8');
-        const lines = content.split('\n');
-        // Return last `limit` lines.
-        return lines.slice(-limit);
-      } catch {
-        return [];
-      }
+    // Helper to read raw log tail for externally-spawned workers.
+    const readLogFileTail = (logFile: string, maxBytes = LOG_HISTORY_MAX_BYTES): string => {
+      return readLogTailContent(logFile, maxBytes);
+    };
+
+    const buildLogPayload = (
+      agentName: string,
+      content: string,
+      messageType: 'output' | 'log' = 'output',
+    ): string => {
+      const base = {
+        type: messageType,
+        agent: agentName,
+        data: content,
+        content,
+        timestamp: new Date().toISOString(),
+      };
+      const serializedBase = JSON.stringify(base);
+      const seq = getAgentLogBuffer(agentName).push(messageType, serializedBase);
+      return JSON.stringify({ ...base, seq });
     };
 
     // Helper to start watching a log file for live updates.
@@ -294,16 +370,11 @@ export function setupLogsWebSocket(deps: LogsWebSocketDeps): void {
               const newContent = buffer.toString('utf-8');
               fileLastSize.set(agentName, newStats.size);
 
-              // Broadcast to subscribed clients.
-              const payload = JSON.stringify({
-                type: 'output',
-                agent: agentName,
-                data: newContent,
-                timestamp: new Date().toISOString(),
-              });
+              if (!newContent) {
+                return;
+              }
 
-              // Push into per-agent log buffer for replay on reconnect.
-              getAgentLogBuffer(agentName).push('output', payload);
+              const payload = buildLogPayload(agentName, newContent, 'output');
 
               for (const client of clients) {
                 if (client.readyState === WebSocket.OPEN) {
@@ -382,12 +453,14 @@ export function setupLogsWebSocket(deps: LogsWebSocketDeps): void {
       debug(`[dashboard] Client subscribed to logs for: ${agentName} (spawned: ${isSpawned}, daemon: ${isDaemon})`);
 
       if (isSpawned && spawnReader) {
-        // Send initial log history for spawned agents (5000 lines to match xterm scrollback capacity).
-        const lines = spawnReader.getWorkerOutput(agentName, 5000);
+        const rawHistory =
+          spawnReader.getWorkerRawOutput?.(agentName)
+          ?? (spawnReader.getWorkerOutput(agentName, 5000) || []).join('\n');
+        const historyTail = takeTail(rawHistory, LOG_HISTORY_MAX_BYTES);
         ws.send(JSON.stringify({
           type: 'history',
           agent: agentName,
-          lines: lines || [],
+          lines: historyTail ? [historyTail] : [],
         }));
       } else {
         // Check if this is an externally-spawned worker with a log file.
@@ -404,11 +477,11 @@ export function setupLogsWebSocket(deps: LogsWebSocketDeps): void {
 
         if (logFile && fs.existsSync(logFile)) {
           // Read logs from the external worker's log file.
-          const lines = readLogsFromFile(logFile, 5000);
+          const historyContent = readLogFileTail(logFile, LOG_HISTORY_MAX_BYTES);
           ws.send(JSON.stringify({
             type: 'history',
             agent: agentName,
-            lines,
+            lines: historyContent ? [historyContent] : [],
           }));
           // Start watching the log file for live updates.
           watchLogFile(agentName, logFile);
@@ -421,6 +494,12 @@ export function setupLogsWebSocket(deps: LogsWebSocketDeps): void {
           }));
         }
       }
+
+      ws.send(JSON.stringify({
+        type: 'sync',
+        serverTimestamp: Date.now(),
+        sequenceId: getAgentLogBuffer(agentName).currentId(),
+      }));
 
       ws.send(JSON.stringify({
         type: 'subscribed',
@@ -505,27 +584,66 @@ export function setupLogsWebSocket(deps: LogsWebSocketDeps): void {
           }
         }
 
-        // Handle replay request: { type: "replay", agent: "name", lastTimestamp: N }.
-        if (msg.type === 'replay' && typeof msg.agent === 'string' && typeof msg.lastTimestamp === 'number') {
+        // Handle replay request:
+        // { type: "replay", agent: "name", lastSequenceId: N } (preferred)
+        // { type: "replay", agent: "name", lastTimestamp: N } (legacy fallback)
+        if (msg.type === 'replay' && typeof msg.agent === 'string') {
           const logBuffer = agentLogBuffers.get(msg.agent);
-          if (logBuffer) {
-            const missed = logBuffer.getAfterTimestamp(msg.lastTimestamp);
-            const gapMs = missed.length > 0 ? Date.now() - missed[0].timestamp : 0;
+          if (!logBuffer || ws.readyState !== WebSocket.OPEN) {
+            return;
+          }
 
-            console.log(`[dashboard] Client replaying ${missed.length} missed log messages for ${msg.agent} (gap: ${gapMs}ms)`);
+          try {
+            const missed = typeof msg.lastSequenceId === 'number'
+              ? logBuffer.getAfter(msg.lastSequenceId)
+              : typeof msg.lastTimestamp === 'number'
+                ? logBuffer.getAfterTimestamp(msg.lastTimestamp)
+                : [];
 
-            // Send replay as a structured response the client expects.
-            if (ws.readyState === WebSocket.OPEN) {
+            const messages = missed.map((m) => {
               try {
-                const entries = missed.map((m) => ({
-                  content: m.payload,
-                  timestamp: m.timestamp,
-                }));
-                ws.send(JSON.stringify({ type: 'replay', entries }));
-              } catch (err) {
-                console.error('[dashboard] Failed to replay log messages:', err);
+                const parsed = JSON.parse(m.payload);
+                if (parsed && typeof parsed === 'object') {
+                  return { ...(parsed as Record<string, unknown>), seq: m.id };
+                }
+              } catch {
+                // Fallback to raw payload.
               }
-            }
+
+              return {
+                type: 'output',
+                agent: msg.agent,
+                data: m.payload,
+                content: m.payload,
+                timestamp: new Date(m.timestamp).toISOString(),
+                seq: m.id,
+              };
+            });
+
+            const entries = messages.map((message) => {
+              const typed = message as { content?: unknown; data?: unknown; timestamp?: unknown };
+              const content = typeof typed.content === 'string'
+                ? typed.content
+                : typeof typed.data === 'string'
+                  ? typed.data
+                  : '';
+              const timestamp = typeof typed.timestamp === 'string'
+                ? Date.parse(typed.timestamp)
+                : NaN;
+              return {
+                content,
+                timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
+              };
+            });
+
+            ws.send(JSON.stringify({
+              type: 'replay',
+              agent: msg.agent,
+              messages,
+              entries,
+            }));
+          } catch (err) {
+            console.error('[dashboard] Failed to replay log messages:', err);
           }
         }
       } catch (err) {

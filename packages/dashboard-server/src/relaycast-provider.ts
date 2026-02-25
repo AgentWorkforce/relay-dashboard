@@ -230,7 +230,10 @@ async function fetchAllDirectMessages(config: RelaycastConfig): Promise<Message[
 
       const participants = Array.isArray(conversation.participants)
         ? conversation.participants
-          .map((participant) => resolveIdentity(participant, identityConfig))
+          .map((participant) => {
+            const name = typeof participant === 'string' ? participant : participant.agent_name;
+            return resolveIdentity(name, identityConfig);
+          })
           .filter((participant): participant is string => Boolean(participant))
         : [];
 

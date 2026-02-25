@@ -89,8 +89,9 @@ export class BrokerSpawnReader implements SpawnManagerLike {
             this.outputBuffers.set(event.name, [event.chunk]);
           }
 
-          // Append to raw buffer (capped at MAX_RAW_BYTES)
-          let raw = (this.rawOutputBuffers.get(event.name) ?? '') + event.chunk + '\n';
+          // Append raw chunk as-is (no newline synthesis) so TUI repaint
+          // control sequences remain faithful for xterm rendering.
+          let raw = (this.rawOutputBuffers.get(event.name) ?? '') + event.chunk;
           if (raw.length > MAX_RAW_BYTES) {
             // Trim from the front, keeping from the first newline after the cut point
             const trimPoint = raw.length - MAX_RAW_BYTES;

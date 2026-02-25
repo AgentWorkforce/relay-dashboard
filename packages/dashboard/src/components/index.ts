@@ -42,6 +42,7 @@ export {
 // Terminal Components
 export { XTermLogViewer, type XTermLogViewerProps } from './XTermLogViewer';
 export { XTermInteractive, type XTermInteractiveProps } from './XTermInteractive';
+export { CliToolHarness, type CliToolHarnessConfig, type CliToolHarnessProps } from './CliToolHarness';
 
 // Layout Components
 export { Sidebar, type SidebarProps } from './layout/Sidebar';

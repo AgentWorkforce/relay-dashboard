@@ -23,6 +23,19 @@ export interface XTermLogViewerProps {
   onClose?: () => void;
   /** Custom class name */
   className?: string;
+  /**
+   * Mock mode: provide lines directly instead of connecting to WebSocket.
+   * Each entry has `content` (raw PTY text) and an optional `delay` (ms)
+   * for streaming simulation.
+   */
+  mockData?: { content: string; delay?: number }[];
+  /** When true, feed mockData lines one at a time with their delays */
+  mockStreaming?: boolean;
+  /** Legacy flag kept for compatibility; real streams are now rendered losslessly. */
+  suppressNoisyOutput?: boolean;
+  // Accept legacy/extra props for isolated test harnesses while preserving
+  // compatibility across in-progress refactors.
+  [key: string]: unknown;
 }
 
 // Theme matching the dashboard dark theme
@@ -59,7 +72,11 @@ export function XTermLogViewer({
   showHeader = true,
   onClose,
   className = '',
+  mockData,
+  mockStreaming = false,
+  suppressNoisyOutput = false,
 }: XTermLogViewerProps) {
+  const isMockMode = !!mockData;
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -67,6 +84,10 @@ export function XTermLogViewer({
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
+  const lastSeqRef = useRef<number | null>(null);
+  const hasConnectedBeforeRef = useRef(false);
+  const serverSupportsReplayRef = useRef(false);
+  const skipHistoryOnceRef = useRef(false);
 
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -78,9 +99,46 @@ export function XTermLogViewer({
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const colors = getAgentColor(agentName);
+  const shouldFilterMockOutput = Boolean(suppressNoisyOutput && isMockMode);
 
   // Get WebSocket URL from workspace context (handles cloud vs local mode)
   const logStreamUrl = useWorkspaceWsUrl(`/ws/logs/${encodeURIComponent(agentName)}`);
+
+  const fitTerminal = useCallback(() => {
+    const terminal = terminalRef.current;
+    const fitAddon = fitAddonRef.current;
+    if (!terminal || !fitAddon) {
+      return;
+    }
+
+    try {
+      fitAddon.fit();
+      if (terminal.cols < 80) {
+        terminal.resize(80, terminal.rows);
+      }
+    } catch {
+      // Ignore transient layout timing issues.
+    }
+  }, []);
+
+  const enqueueLine = useCallback((line: string, appendNewline = false) => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+
+    const content = appendNewline && !line.endsWith('\n') ? `${line}\n` : line;
+
+    // Filtering is intentionally disabled for real streams to keep xterm lossless.
+    // Preserve prop plumbing so dev/mock harnesses can keep passing the flag.
+    if (shouldFilterMockOutput) {
+      // no-op: raw stream is rendered directly.
+    }
+    terminal.write(content);
+
+    const newlineCount = (content.match(/\n/g) || []).length;
+    if (newlineCount > 0) {
+      setLineCount((count) => count + newlineCount);
+    }
+  }, [shouldFilterMockOutput]);
 
   // Initialize terminal
   useEffect(() => {
@@ -106,7 +164,13 @@ export function XTermLogViewer({
     terminal.loadAddon(searchAddon);
 
     terminal.open(containerRef.current);
-    fitAddon.fit();
+    fitTerminal();
+    requestAnimationFrame(() => {
+      fitTerminal();
+      requestAnimationFrame(() => {
+        fitTerminal();
+      });
+    });
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
@@ -114,20 +178,28 @@ export function XTermLogViewer({
     setIsTerminalReady(true);
 
     // Handle resize
+    const scheduleFit = () => {
+      requestAnimationFrame(() => {
+        fitTerminal();
+      });
+    };
+
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
+      scheduleFit();
     });
     resizeObserver.observe(containerRef.current);
+    window.addEventListener('resize', scheduleFit);
 
     return () => {
       resizeObserver.disconnect();
+      window.removeEventListener('resize', scheduleFit);
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
       searchAddonRef.current = null;
       setIsTerminalReady(false);
     };
-  }, []);
+  }, [fitTerminal]);
 
   // Mobile touch scrolling - attach handlers to container, not viewport
   // xterm.js renders to a canvas which intercepts events; we need to handle
@@ -211,6 +283,8 @@ export function XTermLogViewer({
 
   // Connect to WebSocket
   const connect = useCallback(() => {
+    if (isMockMode) return;
+
     if (wsRef.current?.readyState === WebSocket.OPEN ||
         wsRef.current?.readyState === WebSocket.CONNECTING) {
       return;
@@ -228,13 +302,29 @@ export function XTermLogViewer({
       setError(null);
       reconnectAttemptsRef.current = 0;
 
-      terminalRef.current?.writeln(`\x1b[90m[Connected to ${agentName} log stream]\x1b[0m`);
+      enqueueLine(`\x1b[90m[Connected to ${agentName} log stream]\x1b[0m`, true);
+
+      if (
+        hasConnectedBeforeRef.current &&
+        serverSupportsReplayRef.current &&
+        lastSeqRef.current !== null
+      ) {
+        skipHistoryOnceRef.current = true;
+        ws.send(JSON.stringify({
+          type: 'replay',
+          agent: agentName,
+          lastSequenceId: lastSeqRef.current,
+        }));
+      }
+
+      hasConnectedBeforeRef.current = true;
     };
 
     ws.onclose = (event) => {
       setIsConnected(false);
       setIsConnecting(false);
       wsRef.current = null;
+      skipHistoryOnceRef.current = false;
 
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
@@ -243,7 +333,7 @@ export function XTermLogViewer({
 
       // Don't reconnect for agent not found
       if (event.code === 4404) {
-        terminalRef.current?.writeln(`\x1b[31m[Agent not found]\x1b[0m`);
+        enqueueLine(`\x1b[31m[Agent not found]\x1b[0m`);
         return;
       }
 
@@ -251,7 +341,7 @@ export function XTermLogViewer({
       const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
       reconnectAttemptsRef.current++;
 
-      terminalRef.current?.writeln(`\x1b[90m[Disconnected. Reconnecting in ${delay / 1000}s...]\x1b[0m`);
+      enqueueLine(`\x1b[90m[Disconnected. Reconnecting in ${delay / 1000}s...]\x1b[0m`, true);
 
       reconnectTimeoutRef.current = setTimeout(() => {
         connect();
@@ -261,15 +351,28 @@ export function XTermLogViewer({
     ws.onerror = () => {
       setError(new Error('WebSocket connection error'));
       setIsConnecting(false);
+      skipHistoryOnceRef.current = false;
     };
 
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
 
+        if (data.type === 'sync') {
+          if (typeof data.sequenceId === 'number') {
+            serverSupportsReplayRef.current = true;
+            if (lastSeqRef.current === null) {
+              lastSeqRef.current = data.sequenceId;
+            } else {
+              lastSeqRef.current = Math.max(lastSeqRef.current, data.sequenceId);
+            }
+          }
+          return;
+        }
+
         // Handle different message types
         if (data.type === 'error') {
-          terminalRef.current?.writeln(`\x1b[31mError: ${data.error}\x1b[0m`);
+          enqueueLine(`\x1b[31mError: ${data.error}\x1b[0m`);
           return;
         }
 
@@ -279,24 +382,46 @@ export function XTermLogViewer({
 
         // Handle history (initial log dump)
         if (data.type === 'history' && Array.isArray(data.lines)) {
+          if (skipHistoryOnceRef.current) {
+            skipHistoryOnceRef.current = false;
+            return;
+          }
           data.lines.forEach((line: string) => {
-            terminalRef.current?.writeln(line);
-            setLineCount((c) => c + 1);
+            enqueueLine(line, true);
           });
+          return;
+        }
+
+        if (data.type === 'replay') {
+          skipHistoryOnceRef.current = false;
+          if (Array.isArray(data.messages)) {
+            data.messages.forEach((entry: { seq?: number; content?: string; data?: string; message?: string }) => {
+              if (typeof entry.seq === 'number') {
+                lastSeqRef.current = Math.max(lastSeqRef.current ?? 0, entry.seq);
+              }
+              const content = entry.content || entry.data || entry.message || '';
+              if (content) {
+                enqueueLine(content, false);
+              }
+            });
+          } else if (Array.isArray(data.entries)) {
+            data.entries.forEach((entry: { content?: string }) => {
+              if (entry.content) {
+                enqueueLine(entry.content, false);
+              }
+            });
+          }
           return;
         }
 
         // Handle live output
         if (data.type === 'log' || data.type === 'output') {
+          if (typeof data.seq === 'number') {
+            lastSeqRef.current = Math.max(lastSeqRef.current ?? 0, data.seq);
+          }
           const content = data.content || data.data || data.message || '';
           if (content) {
-            // Write raw content - xterm.js handles ANSI codes natively
-            terminalRef.current?.write(content);
-            // Count newlines for line count
-            const newlines = (content.match(/\n/g) || []).length;
-            if (newlines > 0) {
-              setLineCount((c) => c + newlines);
-            }
+            enqueueLine(content, false);
           }
           return;
         }
@@ -305,22 +430,17 @@ export function XTermLogViewer({
         if (data.lines && Array.isArray(data.lines)) {
           data.lines.forEach((line: string | { content: string }) => {
             const content = typeof line === 'string' ? line : line.content;
-            terminalRef.current?.writeln(content);
-            setLineCount((c) => c + 1);
+            enqueueLine(content, true);
           });
         }
       } catch {
         // Plain text message
         if (typeof event.data === 'string') {
-          terminalRef.current?.write(event.data);
-          const newlines = (event.data.match(/\n/g) || []).length;
-          if (newlines > 0) {
-            setLineCount((c) => c + newlines);
-          }
+          enqueueLine(event.data, false);
         }
       }
     };
-  }, [logStreamUrl, agentName]);
+  }, [logStreamUrl, agentName, isMockMode, enqueueLine]);
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
@@ -366,11 +486,50 @@ export function XTermLogViewer({
 
   // Auto-connect on mount
   useEffect(() => {
+    if (isMockMode) return;
+
     connect();
     return () => {
       disconnect();
     };
-  }, [connect, disconnect]);
+  }, [connect, disconnect, isMockMode]);
+
+  // Mock mode: write fixture data directly to terminal
+  useEffect(() => {
+    if (!isMockMode || !isTerminalReady || !terminalRef.current || !mockData) return;
+
+    const terminal = terminalRef.current;
+    terminal.clear();
+    setLineCount(0);
+    let cancelled = false;
+
+    (async () => {
+      if (!mockStreaming) {
+        for (const line of mockData) {
+          if (line.content) {
+            enqueueLine(line.content, true);
+          }
+        }
+        return;
+      }
+
+      for (const line of mockData) {
+        if (cancelled) break;
+
+        if (line.delay) {
+          await new Promise((resolve) => setTimeout(resolve, line.delay));
+        }
+        if (cancelled) break;
+        if (line.content) {
+          enqueueLine(line.content, true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isMockMode, isTerminalReady, mockData, mockStreaming, enqueueLine]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -416,10 +575,13 @@ export function XTermLogViewer({
       <style>{`
         .xterm-log-viewer .xterm {
           height: 100%;
+          width: 100%;
         }
         .xterm-log-viewer .xterm-viewport {
           height: 100%;
           max-height: 100%;
+          width: 100%;
+          max-width: 100%;
           overscroll-behavior: contain;
         }
         /* On touch devices, disable browser touch handling so our JS handler works */
@@ -427,7 +589,8 @@ export function XTermLogViewer({
           .xterm-log-viewer .xterm,
           .xterm-log-viewer .xterm-viewport,
           .xterm-log-viewer .xterm-screen,
-          .xterm-log-viewer .xterm-screen canvas {
+          .xterm-log-viewer .xterm-screen canvas,
+          .xterm-log-viewer .xterm-rows {
             touch-action: none;
           }
         }
@@ -560,7 +723,7 @@ export function XTermLogViewer({
 
       {/* Terminal container - touch handlers attached via useEffect */}
       <div
-        className="flex-1 min-h-0 overflow-hidden"
+        className="flex-1 min-h-0 min-w-0 overflow-hidden"
         style={{ height: maxHeight, maxHeight, minHeight: '200px' }}
       >
         <div

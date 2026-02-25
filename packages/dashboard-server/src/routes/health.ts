@@ -33,6 +33,11 @@ export function registerHealthRoutes(app: Express, ctx: RouteContext): void {
     });
   });
 
+  // Return 404 quickly for auth session — local/proxy mode has no auth
+  app.get('/api/auth/session', (_req: Request, res: Response) => {
+    res.status(404).json({ authenticated: false });
+  });
+
   app.get('/keep-alive', async (_req: Request, res: Response) => {
     let activeAgentCount = 0;
 

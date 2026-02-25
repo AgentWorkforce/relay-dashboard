@@ -9,6 +9,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAgentLogs, type LogLine } from './hooks/useAgentLogs';
 import { getAgentColor } from '../lib/colors';
+import { sanitizeLogContent, isSpinnerFragment } from '../lib/sanitize-logs';
 import { XTermLogViewer } from './XTermLogViewer';
 
 export type LogViewerMode = 'inline' | 'panel';
@@ -59,13 +60,8 @@ export function LogViewer({
     return logs.filter((log) => {
       const stripped = sanitizeLogContent(log.content).trim();
 
-      // Filter out empty lines
       if (stripped.length === 0) return false;
-
-      // Filter out likely spinner fragments (single char or very short non-word content)
-      // Common spinner chars: ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ | - \ / * . etc.
-      const spinnerPattern = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷◐◓◑◒●○◉◎|\\\/\-*.\u2800-\u28FF]+$/;
-      if (stripped.length <= 2 && spinnerPattern.test(stripped)) return false;
+      if (isSpinnerFragment(stripped)) return false;
 
       return true;
     });
@@ -231,42 +227,6 @@ function ConnectionBadge({
       offline
     </span>
   );
-}
-
-/**
- * Strip ANSI escape codes (including degraded sequences like "[38;5;216m")
- * and control characters so logs render as clean text.
- */
-function sanitizeLogContent(text: string): string {
-  if (!text) return '';
-
-  let result = text;
-
-  // Remove OSC sequences (like window title): \x1b]...(\x07|\x1b\\)
-  result = result.replace(/\x1b\].*?(?:\x07|\x1b\\)/gs, '');
-
-  // Remove DCS (Device Control String) sequences: \x1bP...\x1b\\
-  result = result.replace(/\x1bP.*?\x1b\\/gs, '');
-
-  // Remove standard ANSI escape sequences (CSI, SGR, etc.)
-  result = result.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '');
-
-  // Remove single-character escapes
-  result = result.replace(/\x1b[@-Z\\-_]/g, '');
-
-  // Remove orphaned CSI sequences that lost their escape byte
-  result = result.replace(/^\[\??\d+[hlKJHfABCDGPXsu]/gm, '');
-
-  // Remove literal SGR sequences that show up without ESC (e.g. "[38;5;216m")
-  result = result.replace(/\[\d+(?:;\d+)*m/g, '');
-
-  // Remove carriage returns/backspaces and other control chars (except newline/tab)
-  result = result.replace(/\r/g, '');
-  result = result.replace(/.\x08/g, '');
-  result = result.replace(/\x08+/g, '');
-  result = result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
-
-  return result;
 }
 
 // Icon components

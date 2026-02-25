@@ -58,12 +58,6 @@ export function registerUiRoutes(app: Application): void {
       });
     };
 
-    const sendFileOrText404 = (res: Response, filePath: string, message: string) => {
-      sendFileOr(res, filePath, () => {
-        res.status(404).send(message);
-      });
-    };
-
     const sendFileOrRedirectRoot = (res: Response, filePath: string) => {
       sendFileOr(res, filePath, () => {
         if (fs.existsSync(path.join(dashboardDir, 'index.html'))) {
@@ -74,8 +68,19 @@ export function registerUiRoutes(app: Application): void {
       });
     };
 
+    const resolveMetricsFilePath = () => {
+      const candidates = [
+        path.join(dashboardDir, 'metrics.html'),
+        path.join(dashboardDir, 'metrics', 'index.html'),
+        path.join(dashboardDir, 'app.html'),
+        path.join(dashboardDir, 'index.html'),
+      ];
+
+      return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
+    };
+
     app.get('/metrics', (_req, res) => {
-      sendFileOrText404(res, path.join(dashboardDir, 'metrics.html'), uiMissingMessage);
+      sendFileOrRedirectRoot(res, resolveMetricsFilePath());
     });
     app.get('/app', (_req, res) => {
       sendFileOrRedirectRoot(res, path.join(dashboardDir, 'app.html'));

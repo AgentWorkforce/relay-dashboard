@@ -84,7 +84,7 @@ export function registerDataRoutes(app: Express, ctx: RouteContext): void {
   app.get('/api/trajectory', async (_req: Request, res: Response) => {
     try {
       const status = await getTrajectoryStatus();
-      res.json(status);
+      res.json({ success: true, ...status });
     } catch (err) {
       console.error('[dashboard] Failed to fetch trajectory status:', err);
       res.status(500).json({ success: false, active: false, error: 'Failed to fetch trajectory status' });
