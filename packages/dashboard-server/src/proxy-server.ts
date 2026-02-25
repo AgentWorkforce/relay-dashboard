@@ -55,6 +55,7 @@ import { registerChannelRoutes } from './routes/channels.js';
 import { registerBrokerProxyRoutes } from './routes/broker-proxy.js';
 import { registerReactionRoutes } from './routes/reactions.js';
 import { registerRelayConfigRoutes } from './routes/relay-config.js';
+import { registerRelaycastHistoryRoutes } from './routes/history-relaycast.js';
 
 export type { DashboardServerOptions, DashboardServer } from './lib/types.js';
 
@@ -278,6 +279,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     registerRelayConfigRoutes(app, ctx);
     registerChannelRoutes(app, ctx);
     registerReactionRoutes(app, ctx);
+    registerRelaycastHistoryRoutes(app, ctx);
     registerBrokerProxyRoutes(app, ctx);
   }
 
