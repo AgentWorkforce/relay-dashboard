@@ -36,6 +36,7 @@ interface RelayAdapterLike {
     shadowOf?: string;
     spawnerName?: string;
     userId?: string;
+    continueFrom?: string;
     includeWorkflowConventions?: boolean;
   }) => Promise<{ success: boolean; name?: string; error?: string }>;
   release: (name: string) => Promise<{ success: boolean; name?: string; error?: string }>;
@@ -179,6 +180,7 @@ export function registerSpawnRoutes(app: Application, deps: SpawnRouteDeps): voi
       shadowTriggers,
       shadowSpeakOn,
       userId,
+      continueFrom,
     } = req.body;
 
     void shadowAgent;
@@ -206,6 +208,7 @@ export function registerSpawnRoutes(app: Application, deps: SpawnRouteDeps): voi
         shadowOf,
         spawnerName: spawnerName || undefined,
         userId: typeof userId === 'string' ? userId : undefined,
+        continueFrom: typeof continueFrom === 'string' ? continueFrom : undefined,
         includeWorkflowConventions: true,
       });
 
@@ -557,6 +560,26 @@ Start by greeting the project leads and asking for status updates.`;
         success: false,
         error: message,
       });
+    }
+  });
+
+  // POST /api/agents/by-name/:name/inject - Send text input to inject into agent PTY.
+  app.post('/api/agents/by-name/:name/inject', async (req, res) => {
+    const { name } = req.params;
+    const { text } = req.body || {};
+
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'text is required' });
+    }
+
+    try {
+      if (spawnReader && typeof (spawnReader as any).sendWorkerInput === 'function') {
+        await (spawnReader as any).sendWorkerInput(name, text);
+      }
+      return res.json({ success: true, name, injected: text });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : `${err}`;
+      return res.status(500).json({ error: `Failed to inject into ${name}: ${errorMessage}` });
     }
   });
 
