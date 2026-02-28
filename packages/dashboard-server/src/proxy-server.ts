@@ -368,60 +368,139 @@ function handleMockWebSocket(ws: WebSocket, verbose: boolean): void {
 
 /**
  * Handle proxy WebSocket connections
- * Forwards messages bidirectionally to relay daemon
+ *
+ * Connects to the broker's WebSocket to receive real-time events (messages,
+ * agent status, presence) and translates them into DashboardData JSON that
+ * the frontend can consume. Also polls /api/spawned for the agent list.
+ *
+ * The broker sends JSON events with a `kind` field (e.g. relay_inbound,
+ * agent_spawned), but the frontend expects `{ agents, messages, sessions }`.
+ * A simple bidirectional forward doesn't work because the frontend's
+ * useWebSocket hook routes messages by checking for a `type` field — broker
+ * events use `kind`, so they get misinterpreted as malformed DashboardData.
  */
 function handleProxyWebSocket(ws: WebSocket, relayUrl: string, verbose: boolean): void {
+  if (verbose) {
+    console.log('[dashboard] Proxy WebSocket client connected');
+  }
+
+  // In-memory message buffer (most recent N messages)
+  const MAX_MESSAGES = 500;
+  const messages: Array<Record<string, unknown>> = [];
+  // Track online agents from WS events
+  const onlineAgents = new Set<string>();
+
   const relayUrlObj = new URL(relayUrl);
   const wsRelayUrl = `ws://${relayUrlObj.host}`;
+  const brokerWs = new WebSocket(`${wsRelayUrl}/ws`);
 
-  // Create connection to relay daemon
-  const relayWs = new WebSocket(`${wsRelayUrl}/ws`);
-
-  relayWs.on('open', () => {
+  brokerWs.on('open', () => {
     if (verbose) {
-      console.log('[dashboard] WebSocket connected to relay daemon');
+      console.log('[dashboard] Connected to broker WebSocket for event stream');
     }
   });
 
-  // Forward messages from client to relay
-  ws.on('message', (data) => {
-    if (relayWs.readyState === WebSocket.OPEN) {
-      relayWs.send(data);
+  // Parse broker events and collect messages + agent status
+  brokerWs.on('message', (data) => {
+    try {
+      const event = JSON.parse(data.toString()) as Record<string, unknown>;
+      const kind = event.kind as string;
+
+      if (kind === 'relay_inbound') {
+        const body = event.body as string;
+        const eventId = event.event_id as string || '';
+
+        // Track presence
+        if (eventId.startsWith('presence-agent.online-')) {
+          onlineAgents.add(event.from as string);
+        } else if (eventId.startsWith('presence-agent.offline-')) {
+          onlineAgents.delete(event.from as string);
+        }
+
+        // Collect real messages (non-empty body, not presence events)
+        if (body && !eventId.startsWith('presence-')) {
+          const target = event.target as string || '';
+          const msg = {
+            id: eventId,
+            from: event.from as string,
+            to: target,
+            content: body,
+            timestamp: new Date().toISOString(),
+            thread: event.thread_id as string || undefined,
+            channel: target.startsWith('#') ? target.substring(1) : undefined,
+            isBroadcast: target.startsWith('#'),
+            status: 'delivered',
+          };
+          messages.push(msg);
+          // Trim to max size
+          if (messages.length > MAX_MESSAGES) {
+            messages.splice(0, messages.length - MAX_MESSAGES);
+          }
+          // Push update immediately on new message
+          sendData();
+        }
+      } else if (kind === 'agent_spawned' || kind === 'worker_ready') {
+        onlineAgents.add(event.name as string);
+      }
+    } catch {
+      // Ignore unparseable events
     }
   });
 
-  // Forward messages from relay to client
-  relayWs.on('message', (data) => {
+  brokerWs.on('error', (err) => {
+    console.error('[dashboard] Broker WebSocket error:', err.message);
+  });
+
+  brokerWs.on('close', () => {
+    if (verbose) {
+      console.log('[dashboard] Broker WebSocket closed');
+    }
+  });
+
+  const fetchAgents = () => fetchSpawnedAgents(relayUrl, { onlineAgents, messages });
+
+  const sendData = async () => {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(data);
+      const agents = await fetchAgents();
+      ws.send(JSON.stringify({ agents, messages, sessions: [] }));
+    }
+  };
+
+  // Send initial data after broker replays events
+  setTimeout(sendData, 1000);
+
+  // Also poll periodically for agent list updates
+  const interval = setInterval(sendData, 5000);
+
+  // Handle messages from client
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+      if (verbose) {
+        console.log('[dashboard] Proxy WS received:', msg);
+      }
+      if (msg.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }));
+      } else if (msg.type === 'subscribe') {
+        sendData();
+      }
+    } catch {
+      // Ignore parse errors
     }
   });
 
-  // Handle client disconnect
   ws.on('close', () => {
     if (verbose) {
-      console.log('[dashboard] Client WebSocket closed');
+      console.log('[dashboard] Proxy WebSocket client disconnected');
     }
-    relayWs.close();
+    clearInterval(interval);
+    brokerWs.close();
   });
 
-  // Handle relay disconnect
-  relayWs.on('close', () => {
-    if (verbose) {
-      console.log('[dashboard] Relay WebSocket closed');
-    }
-    ws.close();
-  });
-
-  // Handle errors
   ws.on('error', (err) => {
-    console.error('[dashboard] Client WebSocket error:', err.message);
-    relayWs.close();
-  });
-
-  relayWs.on('error', (err) => {
-    console.error('[dashboard] Relay WebSocket error:', err.message);
-    ws.close();
+    console.error('[dashboard] Proxy WebSocket error:', err.message);
+    clearInterval(interval);
+    brokerWs.close();
   });
 }
 
