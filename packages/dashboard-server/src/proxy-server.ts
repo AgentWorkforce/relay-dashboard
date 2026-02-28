@@ -10,7 +10,7 @@
 
 import express, { type Express, type Request, type Response, type NextFunction } from 'express';
 import { createServer as createHttpServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
-import { createProxyMiddleware, type Options as ProxyOptions } from 'http-proxy-middleware';
+import { createProxyMiddleware, fixRequestBody, type Options as ProxyOptions } from 'http-proxy-middleware';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -163,6 +163,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       ws: false, // WebSocket handled separately
       logger: verbose ? console : undefined,
       on: {
+        proxyReq: fixRequestBody,
         error: (err, _req, res) => {
           console.error('[dashboard] API proxy error:', (err as Error).message);
           if (res && 'writeHead' in res && typeof res.writeHead === 'function') {
@@ -176,9 +177,23 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       },
     };
 
-    app.use('/api', createProxyMiddleware(apiProxyOptions));
-    app.use('/auth', createProxyMiddleware(apiProxyOptions));
-    app.use('/metrics', createProxyMiddleware(apiProxyOptions));
+    // Mount proxy at the app root with a pathFilter instead of using Express
+    // mount paths (e.g. app.use('/api', proxy)). Express mount paths strip the
+    // prefix before forwarding, so /api/spawn would arrive at the broker as
+    // /spawn — causing 404s. A root-level mount with pathFilter preserves the
+    // full request path.
+    //
+    // fixRequestBody (in the `on.proxyReq` handler above) is required because
+    // express.json() middleware has already consumed the raw request body by
+    // the time the proxy forwards it. fixRequestBody re-serializes req.body
+    // onto the proxy request so POST/PUT/PATCH payloads reach the broker.
+    const fullPathProxy = createProxyMiddleware({
+      ...apiProxyOptions,
+      pathFilter: (pathname: string) => {
+        return pathname.startsWith('/api') || pathname.startsWith('/auth') || pathname.startsWith('/metrics') || pathname === '/ws' || pathname === '/health';
+      },
+    });
+    app.use(fullPathProxy);
   }
 
   // Serve static files
