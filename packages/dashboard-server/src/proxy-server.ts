@@ -157,6 +157,48 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     // Proxy all API requests to the relay daemon
     console.log(`[dashboard] Running in PROXY mode - forwarding to ${relayUrl}`);
 
+    // Helper to fetch spawned agents from the broker and transform them
+    // into the Agent shape the dashboard frontend expects.
+    const fetchBrokerAgents = async (): Promise<Array<Record<string, unknown>>> => {
+      try {
+        const resp = await fetch(`${relayUrl}/api/spawned`);
+        if (!resp.ok) return [];
+        const body = await resp.json() as { agents?: Array<Record<string, unknown>> };
+        return (body.agents || []).map((a) => ({
+          name: a.name,
+          cli: a.cli,
+          model: a.model || undefined,
+          status: 'online',
+          isSpawned: true,
+          team: a.team || undefined,
+          lastSeen: new Date().toISOString(),
+          messageCount: 0,
+        }));
+      } catch {
+        return [];
+      }
+    };
+
+    // Shim: /api/data — the frontend polls this for the main agent/message list.
+    // The broker doesn't implement it, so we synthesize it from /api/spawned.
+    app.get('/api/data', async (_req: Request, res: Response) => {
+      const agents = await fetchBrokerAgents();
+      res.json({ agents, messages: [], sessions: [] });
+    });
+
+    // Shim: /api/bridge — the frontend polls this to determine connection status
+    // and to get the multi-project view. We return connected: true with the
+    // agent list so the "Connecting to dashboard..." spinner goes away.
+    app.get('/api/bridge', async (_req: Request, res: Response) => {
+      const agents = await fetchBrokerAgents();
+      res.json({
+        projects: [],
+        bridgeAgents: agents,
+        messages: [],
+        connected: true,
+      });
+    });
+
     const apiProxyOptions: ProxyOptions = {
       target: relayUrl,
       changeOrigin: true,
