@@ -6,8 +6,56 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { ModelOptions as RegistryModelOptions } from '@agent-relay/config';
 import { useDashboardConfig } from '../adapters';
+
+/**
+ * Model options inlined from @agent-relay/config (cli-registry.yaml).
+ * Inlined to avoid importing Node.js dependencies into the browser bundle.
+ */
+const RegistryModelOptions = {
+  Claude: [
+    { value: 'sonnet', label: 'Sonnet' },
+    { value: 'opus', label: 'Opus' },
+    { value: 'haiku', label: 'Haiku' },
+  ],
+  Codex: [
+    { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex — Frontier agentic coding model' },
+    { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex — Latest frontier agentic coding model' },
+    { value: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark — Ultra-fast coding model' },
+    { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max — Deep and fast reasoning' },
+    { value: 'gpt-5.2', label: 'GPT-5.2 — Frontier model, knowledge & reasoning' },
+    { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini — Cheaper, faster' },
+  ],
+  Gemini: [
+    { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
+  ],
+  Cursor: [
+    { value: 'opus-4.5-thinking', label: 'Claude 4.5 Opus (Thinking)' },
+    { value: 'opus-4.5', label: 'Claude 4.5 Opus' },
+    { value: 'sonnet-4.5', label: 'Claude 4.5 Sonnet' },
+    { value: 'sonnet-4.5-thinking', label: 'Claude 4.5 Sonnet (Thinking)' },
+    { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
+    { value: 'gpt-5.2-codex-high', label: 'GPT-5.2 Codex High' },
+    { value: 'gpt-5.2-codex-low', label: 'GPT-5.2 Codex Low' },
+    { value: 'gpt-5.2-codex-xhigh', label: 'GPT-5.2 Codex Extra High' },
+    { value: 'gpt-5.2-codex-fast', label: 'GPT-5.2 Codex Fast' },
+    { value: 'gpt-5.2-codex-high-fast', label: 'GPT-5.2 Codex High Fast' },
+    { value: 'gpt-5.2-codex-low-fast', label: 'GPT-5.2 Codex Low Fast' },
+    { value: 'gpt-5.2-codex-xhigh-fast', label: 'GPT-5.2 Codex Extra High Fast' },
+    { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
+    { value: 'gpt-5.1-codex-max-high', label: 'GPT-5.1 Codex Max High' },
+    { value: 'gpt-5.2', label: 'GPT-5.2' },
+    { value: 'gpt-5.2-high', label: 'GPT-5.2 High' },
+    { value: 'gpt-5.1-high', label: 'GPT-5.1 High' },
+    { value: 'gemini-3-pro', label: 'Gemini 3 Pro' },
+    { value: 'gemini-3-flash', label: 'Gemini 3 Flash' },
+    { value: 'composer-1', label: 'Composer 1' },
+    { value: 'grok', label: 'Grok' },
+  ],
+};
 import { getAgentColor, getAgentInitials } from '../lib/colors';
 
 export type SpeakOnTrigger = 'SESSION_END' | 'CODE_WRITTEN' | 'REVIEW_REQUEST' | 'EXPLICIT_ASK' | 'ALL_MESSAGES';

@@ -8,8 +8,6 @@ const nextConfig = {
   // Static export - generates HTML/JS/CSS that can be served by any server
   output: 'export',
 
-  // Only include browser-safe exports from @agent-relay/config (cli-registry, not Node.js modules)
-  transpilePackages: ['@agent-relay/config'],
   // Export output goes to 'out/' by default with output: 'export'
 
   // Disable strict mode for now during development

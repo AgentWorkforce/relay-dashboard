@@ -27,8 +27,7 @@
       "@/components/*": ["./src/components/*"],
       "@/lib/*": ["./src/lib/*"],
       "@/types/*": ["./src/types/*"],
-      "@/hooks/*": ["./src/components/hooks/*"],
-      "@agent-relay/config": ["../../../relay-cli-uses-broker/packages/config/src/cli-registry.generated.ts"]
+      "@/hooks/*": ["./src/components/hooks/*"]
     }
   },
   "include": [
