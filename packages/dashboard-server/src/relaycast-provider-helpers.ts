@@ -1,8 +1,5 @@
 import path from 'path';
-import {
-  createRelaycastClient,
-} from '@agent-relay/sdk';
-import { RelayCast } from '@relaycast/sdk';
+import { RelayCast, type AgentClient } from '@relaycast/sdk';
 import type {
   AgentStatus,
   Message,
@@ -26,10 +23,11 @@ import {
 
 export interface RelaycastClientLike {
   client: {
-    get<T>(path: string, query?: Record<string, string>): Promise<T>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    get<T>(path: string, query?: Record<string, string>): Promise<any>;
   };
   channels: {
-    list(opts?: { include_archived?: boolean }): Promise<unknown>;
+    list(opts?: { include_archived?: boolean; includeArchived?: boolean }): Promise<unknown>;
     create(data: { name: string; topic?: string }): Promise<unknown>;
     join(name: string): Promise<unknown>;
     leave(name: string): Promise<unknown>;
@@ -101,6 +99,32 @@ function getClientCacheKey(
   return `${config.baseUrl}|${config.apiKey}|${config.agentToken ?? ''}|${agentName}|${registrationType}|${cachePath}`;
 }
 
+/**
+ * Create a Relaycast client by registering an agent and returning an AgentClient.
+ * Replaces the removed @agent-relay/sdk createRelaycastClient function.
+ */
+async function createRelaycastClient(options: {
+  apiKey: string;
+  baseUrl?: string;
+  cachePath?: string;
+  agentName: string;
+  agentType: RelaycastRegistrationType;
+}): Promise<AgentClient> {
+  const relay = new RelayCast({
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+  });
+
+  // Register or get the agent identity
+  const response = await relay.registerOrRotate({
+    name: options.agentName,
+    type: options.agentType,
+  });
+
+  // Return an AgentClient using the agent token
+  return relay.as(response.token);
+}
+
 function senderRegistrationType(agentName: string, identityConfig: IdentityConfig): RelaycastRegistrationType {
   const normalized = agentName.trim().toLowerCase();
   const projectIdentityKey = normalizeName(identityConfig.projectIdentity);
@@ -133,10 +157,11 @@ async function getCachedClient(
     cachePath: getCachePath(dataDir),
     agentName,
     agentType: registrationType,
-  }).catch((err) => {
-    cache.delete(key);
-    throw err;
-  });
+  }).then((client) => client as unknown as RelaycastClientLike)
+    .catch((err: unknown) => {
+      cache.delete(key);
+      throw err;
+    });
 
   cache.set(key, clientPromise);
   return clientPromise;
@@ -167,8 +192,8 @@ export function getWriterClient(
       new RelayCast({
         apiKey: config.apiKey,
         baseUrl: config.baseUrl,
-      }).as(config.agentToken),
-    ).catch((err) => {
+      }).as(config.agentToken) as unknown as RelaycastClientLike,
+    ).catch((err: unknown) => {
       writerClientCache.delete(key);
       throw err;
     });

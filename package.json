@@ -28,7 +28,8 @@
   },
   "devDependencies": {
     "agent-trajectories": "^0.3.0",
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "typescript": "^5.9.3"
   },
   "repository": {
     "type": "git",

@@ -111,9 +111,9 @@ export async function fetchAgents(config: RelaycastConfig): Promise<AgentStatus[
     const reader = await getReaderClient(config);
     const agents = await reader.client.get<RelaycastAgentRecord[]>('/v1/agents');
 
-    return agents
-      .filter((agent) => agent.type !== 'human')
-      .filter((agent) => agent.name.toLowerCase() !== DASHBOARD_READER_NAME)
+    return (agents as RelaycastAgentRecord[])
+      .filter((agent: RelaycastAgentRecord) => agent.type !== 'human')
+      .filter((agent: RelaycastAgentRecord) => agent.name.toLowerCase() !== DASHBOARD_READER_NAME)
       .map(mapAgentStatus);
   } catch (err) {
     console.warn('[relaycast-provider] Failed to fetch agents:', (err as Error).message);
@@ -157,13 +157,13 @@ export async function fetchChannelMessages(
 
     if (typeof options.before === 'number' && Number.isFinite(options.before)) {
       const beforeTs = options.before;
-      messages = messages.filter((msg) => {
+      messages = messages.filter((msg: RelaycastMessage) => {
         const ts = parseTimestamp(msg.created_at);
         return ts !== null && ts < beforeTs;
       });
     }
 
-    messages.sort((a, b) => (parseTimestamp(a.created_at) ?? 0) - (parseTimestamp(b.created_at) ?? 0));
+    messages.sort((a: RelaycastMessage, b: RelaycastMessage) => (parseTimestamp(a.created_at) ?? 0) - (parseTimestamp(b.created_at) ?? 0));
     return messages;
   } catch (err) {
     console.warn(`[relaycast-provider] Failed to fetch channel messages for #${channelName}:`, (err as Error).message);

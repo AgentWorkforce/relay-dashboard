@@ -8,8 +8,17 @@
  * module-level state.
  */
 
-import { isBrokerIdentity as isBrokerIdentityContract } from '@agent-relay/contracts';
 import { DASHBOARD_DISPLAY_NAME, DASHBOARD_READER_NAME } from '../relaycast-provider-types.js';
+
+/**
+ * Check if a name matches the broker identity pattern.
+ * Returns true for "broker" or "broker-*" (e.g., "broker-abc123").
+ */
+function isBrokerIdentityContract(name: string): boolean {
+  const trimmed = (name ?? '').trim().toLowerCase();
+  if (!trimmed) return false;
+  return trimmed === 'broker' || trimmed.startsWith('broker-');
+}
 
 export interface IdentityConfig {
   /** Project identity derived from dashboard runtime context. */
