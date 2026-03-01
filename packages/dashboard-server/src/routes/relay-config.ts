@@ -6,8 +6,9 @@ import type { RouteContext } from '../lib/types.js';
 export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void {
   app.get('/api/relay-config', (req: Request, res: Response) => {
     // In cloud deployments (WORKSPACE_TOKEN set), require a valid token.
+    // Skip auth check in standalone mode (local development).
     const expectedToken = process.env.WORKSPACE_TOKEN;
-    if (expectedToken) {
+    if (expectedToken && ctx.mode !== 'standalone') {
       const authHeader = req.headers.authorization;
       const token = authHeader?.startsWith('Bearer ')
         ? authHeader.substring(7)

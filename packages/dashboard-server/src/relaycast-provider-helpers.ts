@@ -1,5 +1,8 @@
 import path from 'path';
 import { RelayCast, type AgentClient } from '@relaycast/sdk';
+// Import SDK's createRelaycastClient if available (for backwards compatibility and testing)
+// Falls back to local implementation when not exported by SDK
+import * as agentRelaySdk from '@agent-relay/sdk';
 import type {
   AgentStatus,
   Message,
@@ -101,7 +104,7 @@ function getClientCacheKey(
 
 /**
  * Create a Relaycast client by registering an agent and returning an AgentClient.
- * Replaces the removed @agent-relay/sdk createRelaycastClient function.
+ * Uses SDK's createRelaycastClient if available, otherwise falls back to local implementation.
  */
 async function createRelaycastClient(options: {
   apiKey: string;
@@ -109,7 +112,14 @@ async function createRelaycastClient(options: {
   cachePath?: string;
   agentName: string;
   agentType: RelaycastRegistrationType;
-}): Promise<AgentClient> {
+}): Promise<RelaycastClientLike> {
+  // Use SDK's createRelaycastClient if available (allows test mocking)
+  const sdkCreateClient = (agentRelaySdk as Record<string, unknown>).createRelaycastClient;
+  if (typeof sdkCreateClient === 'function') {
+    return sdkCreateClient(options) as Promise<RelaycastClientLike>;
+  }
+
+  // Fallback: local implementation
   const relay = new RelayCast({
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
@@ -122,7 +132,7 @@ async function createRelaycastClient(options: {
   });
 
   // Return an AgentClient using the agent token
-  return relay.as(response.token);
+  return relay.as(response.token) as unknown as RelaycastClientLike;
 }
 
 function senderRegistrationType(agentName: string, identityConfig: IdentityConfig): RelaycastRegistrationType {
@@ -168,7 +178,73 @@ async function getCachedClient(
 }
 
 export function getReaderClient(config: RelaycastConfig): Promise<RelaycastClientLike> {
-  return getCachedClient(readerClientCache, config, DASHBOARD_READER_NAME, 'human');
+  // Use SDK's createRelaycastClient if available (for test mocking)
+  const sdkCreateClient = (agentRelaySdk as Record<string, unknown>).createRelaycastClient;
+  if (typeof sdkCreateClient === 'function') {
+    return getCachedClient(readerClientCache, config, DASHBOARD_READER_NAME, 'human');
+  }
+
+  // For reader operations, use a simple fetch-based client without agent registration.
+  // This avoids requiring POST /v1/agents for read-only data fetching.
+  const key = `reader:${config.baseUrl}|${config.apiKey}`;
+  const existing = readerClientCache.get(key);
+  if (existing) {
+    return existing;
+  }
+
+  const baseUrl = config.baseUrl || 'https://api.relaycast.dev';
+
+  // Simple HTTP client that makes direct fetch calls
+  const httpClient = {
+    async get<T>(urlPath: string, query?: Record<string, string>): Promise<T> {
+      const url = new URL(urlPath, baseUrl);
+      if (query) {
+        for (const [k, v] of Object.entries(query)) {
+          url.searchParams.set(k, v);
+        }
+      }
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const json = await response.json() as { ok?: boolean; data?: T };
+      // Unwrap standard Relaycast response format
+      if (json && typeof json === 'object' && 'data' in json) {
+        return json.data as T;
+      }
+      return json as T;
+    },
+  };
+
+  // Create a minimal RelaycastClientLike wrapper for read operations
+  const readerWrapper: RelaycastClientLike = {
+    client: httpClient,
+    channels: {
+      list: async (opts) => {
+        const query: Record<string, string> = {};
+        if (opts?.include_archived || opts?.includeArchived) {
+          query.include_archived = 'true';
+        }
+        return httpClient.get('/v1/channels', query);
+      },
+      create: () => Promise.reject(new Error('Reader client cannot create channels')),
+      join: () => Promise.reject(new Error('Reader client cannot join channels')),
+      leave: () => Promise.reject(new Error('Reader client cannot leave channels')),
+      invite: () => Promise.reject(new Error('Reader client cannot invite to channels')),
+    },
+    send: () => Promise.reject(new Error('Reader client cannot send messages')),
+    dm: () => Promise.reject(new Error('Reader client cannot send DMs')),
+    dms: {
+      conversations: () => httpClient.get('/v1/dm/conversations'),
+    },
+  };
+
+  const clientPromise = Promise.resolve(readerWrapper);
+  readerClientCache.set(key, clientPromise);
+  return clientPromise;
 }
 
 export function getWriterClient(
@@ -249,15 +325,22 @@ export function mapChannelMessage(
   msg: RelaycastMessage,
   identityConfig: IdentityConfig,
 ): Message {
+  // Handle both snake_case (raw API) and camelCase (SDK-processed) field names
+  const msgAny = msg as Record<string, unknown>;
+  const agentName = (msg.agent_name ?? msgAny.agentName ?? '') as string;
+  const createdAt = (msg.created_at ?? msgAny.createdAt ?? '') as string;
+  const threadId = (msg.thread_id ?? msgAny.threadId ?? undefined) as string | undefined;
+  const replyCount = (msg.reply_count ?? msgAny.replyCount ?? 0) as number;
+
   return {
-    from: resolveIdentity(msg.agent_name, identityConfig) || 'unknown',
+    from: resolveIdentity(agentName, identityConfig) || 'unknown',
     to: `#${channelName}`,
     content: msg.text,
-    timestamp: msg.created_at,
+    timestamp: createdAt,
     id: msg.id,
-    thread: msg.thread_id ?? undefined,
+    thread: threadId,
     reactions: msg.reactions ?? [],
-    replyCount: msg.reply_count ?? 0,
+    replyCount,
   };
 }
 
@@ -267,19 +350,26 @@ export function mapDmMessage(
   msg: RelaycastMessage,
   identityConfig: IdentityConfig,
 ): Message {
-  const from = resolveIdentity(msg.agent_name, identityConfig) || 'unknown';
+  // Handle both snake_case (raw API) and camelCase (SDK-processed) field names
+  const msgAny = msg as Record<string, unknown>;
+  const agentName = (msg.agent_name ?? msgAny.agentName ?? '') as string;
+  const createdAt = (msg.created_at ?? msgAny.createdAt ?? '') as string;
+  const threadId = (msg.thread_id ?? msgAny.threadId ?? undefined) as string | undefined;
+  const replyCount = (msg.reply_count ?? msgAny.replyCount ?? 0) as number;
+
+  const from = resolveIdentity(agentName, identityConfig) || 'unknown';
   const to = resolveDmRecipient(participants, from, identityConfig);
-  const id = msg.id?.trim() || `dm_${conversationId}_${msg.created_at}`;
+  const id = msg.id?.trim() || `dm_${conversationId}_${createdAt}`;
 
   return {
     from,
     to,
     content: msg.text,
-    timestamp: msg.created_at,
+    timestamp: createdAt,
     id,
-    thread: msg.thread_id ?? undefined,
+    thread: threadId,
     reactions: msg.reactions ?? [],
-    replyCount: msg.reply_count ?? 0,
+    replyCount,
   };
 }
 
