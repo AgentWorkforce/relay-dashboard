@@ -7,7 +7,7 @@
  * 1. User runs `agent-relay cloud link` in terminal
  * 2. CLI opens this page with ?code=<temp>&machine=<id>&name=<name>
  * 3. User confirms machine details and clicks "Link Machine"
- * 4. Server generates API key via POST /api/daemons/link
+ * 4. Server generates API key via POST /api/brokers/link
  * 5. User copies API key back to terminal
  */
 
@@ -31,7 +31,7 @@ interface Workspace {
 
 interface LinkResult {
   apiKey: string;
-  daemonId: string;
+  brokerId: string;
   workspaceId: string | null;
 }
 
@@ -108,7 +108,7 @@ function CloudLinkContent() {
     setError('');
 
     try {
-      const result = await api.post<{ apiKey: string; daemonId: string; workspaceId: string | null }>('/api/daemons/link', {
+      const payload = {
         machineId: machineInfo.machineId,
         name: machineInfo.machineName,
         workspaceId: selectedWorkspaceId,
@@ -116,17 +116,25 @@ function CloudLinkContent() {
           linkedVia: 'cli',
           userAgent: navigator.userAgent,
         },
-      });
+      };
+      const result = await api.post<{ apiKey: string; brokerId: string; workspaceId: string | null }>('/api/brokers/link', payload);
 
       setLinkResult({
         apiKey: result.apiKey,
-        daemonId: result.daemonId,
+        brokerId: result.brokerId,
         workspaceId: result.workspaceId,
       });
       setState('success');
     } catch (err: any) {
       console.error('Link failed:', err);
-      setError(err.message || 'Failed to link machine. Please try again.');
+      const message = err?.message || 'Failed to link machine. Please try again.';
+      if (typeof message === 'string' && message.includes('HTTP 404')) {
+        setError(
+          'BREAKING CHANGE: daemon link endpoints were removed. Cloud API must expose POST /api/brokers/link.'
+        );
+      } else {
+        setError(message);
+      }
       setState('error');
     }
   };

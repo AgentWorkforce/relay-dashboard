@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { resolveEmoji } from '@relaycast/types';
 import type { Reaction } from '../types';
 import { ReactionPicker } from './ReactionPicker';
 
@@ -40,7 +41,7 @@ export function ReactionChips({
               }
             `}
           >
-            <span>{reaction.emoji}</span>
+            <span>{resolveEmoji(reaction.emoji)}</span>
             <span className="font-medium">{reaction.count}</span>
           </button>
         );

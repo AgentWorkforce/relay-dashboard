@@ -4,6 +4,7 @@
 
 import type { AgentStatus } from '../lib/colors';
 import type { ThreadMetadata } from './threading';
+import type { ReactionGroup } from '@relaycast/types';
 
 export type { ThreadMetadata } from './threading';
 
@@ -22,6 +23,7 @@ export interface Agent {
   server?: string; // For fleet view - which server the agent is on
   isProcessing?: boolean; // True when agent is thinking/processing a message
   processingStartedAt?: number; // Timestamp when processing started
+  lastLogLine?: string; // Last log output line from worker_stream
   isSpawned?: boolean; // True if agent was spawned via dashboard (can be killed)
   team?: string; // Optional user-defined team grouping (e.g., "frontend-team", "backend-team")
   agentId?: string; // Unique agent ID for resume functionality
@@ -32,10 +34,10 @@ export interface Agent {
   avatarUrl?: string; // Avatar URL for human users
   authRevoked?: boolean; // True if agent's authentication has been revoked (needs re-login)
   cwd?: string; // Working directory (repo name) the agent was spawned in
-  // Local daemon agent fields
-  isLocal?: boolean; // True if agent is from a linked local daemon
-  daemonName?: string; // Name of the linked daemon
-  machineId?: string; // Machine ID of the linked daemon
+  // Local broker agent fields
+  isLocal?: boolean; // True if agent is from a linked local broker
+  brokerName?: string; // Name of the linked broker
+  machineId?: string; // Machine ID of the linked broker
   // Profile fields for understanding agent behavior
   profile?: AgentProfile;
 }
@@ -101,12 +103,8 @@ export interface Attachment {
 }
 
 
-// Reaction Types
-export interface Reaction {
-  emoji: string;
-  count: number;
-  agents: string[];
-}
+// Reaction Types — sourced from canonical @relaycast/types
+export type Reaction = ReactionGroup;
 
 // Message Types
 export interface Message {
@@ -279,6 +277,8 @@ export interface SpawnAgentRequest {
   shadowTriggers?: SpeakOnTrigger[];
   /** When the shadow should speak */
   shadowSpeakOn?: SpeakOnTrigger[];
+  /** Agent name to continue session from (agent continuity) */
+  continueFrom?: string;
 }
 
 export interface SpawnAgentResponse {

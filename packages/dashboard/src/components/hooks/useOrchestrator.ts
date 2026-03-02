@@ -1,7 +1,7 @@
 /**
  * useOrchestrator Hook
  *
- * Connects to the daemon orchestrator for workspace and agent management.
+ * Connects to the broker orchestrator for workspace and agent management.
  * Provides real-time updates via WebSocket.
  */
 

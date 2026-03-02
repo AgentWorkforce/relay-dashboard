@@ -10,23 +10,9 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { SpawnModal } from './SpawnModal';
+import { DashboardConfigProvider } from '../adapters';
 
 const MOCK_WORKSPACE_ID = '12345678-1234-1234-1234-123456789012';
-
-// Mock cloudApi to return connected providers so the button is enabled
-vi.mock('../lib/cloudApi', () => ({
-  cloudApi: {
-    getProviders: vi.fn().mockResolvedValue({
-      success: true,
-      data: {
-        providers: [
-          { id: 'anthropic', name: 'Claude', displayName: 'Claude', isConnected: true },
-          { id: 'codex', name: 'Codex', displayName: 'Codex', isConnected: true },
-        ],
-      },
-    }),
-  },
-}));
 
 const mockRepos = [
   { id: 'repo-1', githubFullName: 'AgentWorkforce/relay' },
@@ -40,15 +26,27 @@ function getForm(): HTMLFormElement {
   return form;
 }
 
-function renderSpawnModal(overrides: Partial<React.ComponentProps<typeof SpawnModal>> = {}) {
+type SpawnModalOverrides = Partial<React.ComponentProps<typeof SpawnModal>> & {
+  isCloudMode?: boolean;
+};
+
+function renderSpawnModal(overrides: SpawnModalOverrides = {}) {
+  const { isCloudMode = false, ...spawnModalOverrides } = overrides;
   const defaultProps: React.ComponentProps<typeof SpawnModal> = {
     isOpen: true,
     onClose: vi.fn(),
     onSpawn: vi.fn().mockResolvedValue(true),
     existingAgents: [],
-    ...overrides,
+    ...spawnModalOverrides,
   };
-  return { ...render(<SpawnModal {...defaultProps} />), props: defaultProps };
+  return {
+    ...render(
+      <DashboardConfigProvider config={{ features: { workspaces: isCloudMode } }}>
+        <SpawnModal {...defaultProps} />
+      </DashboardConfigProvider>
+    ),
+    props: defaultProps,
+  };
 }
 
 describe('SpawnModal', () => {
@@ -154,6 +152,41 @@ describe('SpawnModal', () => {
 
       const config = onSpawn.mock.calls[0][0];
       expect(config.cwd).toBe('relay-cloud');
+    });
+  });
+
+  describe('resume previous session', () => {
+    it('includes continueFrom when toggle is enabled', async () => {
+      const onSpawn = vi.fn().mockResolvedValue(true);
+      renderSpawnModal({ onSpawn });
+
+      // Enable the resume toggle
+      const resumeSection = screen.getByText('Resume Previous Session');
+      const toggle = resumeSection.closest('div')?.parentElement?.querySelector('button[aria-pressed]');
+      if (toggle) fireEvent.click(toggle);
+
+      fireEvent.submit(getForm());
+
+      await waitFor(() => {
+        expect(onSpawn).toHaveBeenCalled();
+      });
+
+      const config = onSpawn.mock.calls[0][0];
+      expect(config.continueFrom).toBe('claude-1'); // default suggested name
+    });
+
+    it('does not include continueFrom when toggle is disabled', async () => {
+      const onSpawn = vi.fn().mockResolvedValue(true);
+      renderSpawnModal({ onSpawn });
+
+      fireEvent.submit(getForm());
+
+      await waitFor(() => {
+        expect(onSpawn).toHaveBeenCalled();
+      });
+
+      const config = onSpawn.mock.calls[0][0];
+      expect(config.continueFrom).toBeUndefined();
     });
   });
 

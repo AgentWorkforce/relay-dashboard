@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "id": "trace_b5b06swusdcc",
+  "timestamp": "2026-02-24T08:49:00.940Z",
+  "trajectory": "traj_l3kgjnj8c0xh",
+  "files": [
+    {
+      "path": "packages/dashboard/src/components/hooks/useThread.ts",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 9,
+              "revision": "17c9d1f41f43ea8d71afe6536702407a45e59d91"
+            },
+            {
+              "start_line": 22,
+              "end_line": 44,
+              "revision": "17c9d1f41f43ea8d71afe6536702407a45e59d91"
+            },
+            {
+              "start_line": 73,
+              "end_line": 96,
+              "revision": "17c9d1f41f43ea8d71afe6536702407a45e59d91"
+            },
+            {
+              "start_line": 102,
+              "end_line": 118,
+              "revision": "17c9d1f41f43ea8d71afe6536702407a45e59d91"
+            },
+            {
+              "start_line": 129,
+              "end_line": 135,
+              "revision": "17c9d1f41f43ea8d71afe6536702407a45e59d91"
+            },
+            {
+              "start_line": 141,
+              "end_line": 164,
+              "revision": "17c9d1f41f43ea8d71afe6536702407a45e59d91"
+            },
+            {
+              "start_line": 166,
+              "end_line": 172,
+              "revision": "17c9d1f41f43ea8d71afe6536702407a45e59d91"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/providers/MessageProvider.tsx",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 17,
+              "end_line": 23,
+              "revision": "17c9d1f41f43ea8d71afe6536702407a45e59d91"
+            },
+            {
+              "start_line": 573,
+              "end_line": 579,
+              "revision": "17c9d1f41f43ea8d71afe6536702407a45e59d91"
+            },
+            {
+              "start_line": 1028,
+              "end_line": 1051,
+              "revision": "17c9d1f41f43ea8d71afe6536702407a45e59d91"
+            },
+            {
+              "start_line": 1062,
+              "end_line": 1069,
+              "revision": "17c9d1f41f43ea8d71afe6536702407a45e59d91"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -185,7 +185,7 @@ export function AgentCard({
               <span
                 className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wider
                            bg-warning-light text-warning border border-warning/30"
-                title={`Local agent from ${agent.daemonName || 'linked daemon'}`}
+                title={`Local agent from ${agent.brokerName || 'linked broker'}`}
               >
                 Local
               </span>
@@ -329,7 +329,7 @@ export function AgentCard({
               <span
                 className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wider
                            bg-warning-light text-warning border border-warning/30"
-                title={`Local agent from ${agent.daemonName || 'linked daemon'}`}
+                title={`Local agent from ${agent.brokerName || 'linked broker'}`}
               >
                 Local
               </span>
@@ -352,9 +352,9 @@ export function AgentCard({
             )}
           </div>
           {showBreadcrumb ? (
-            <span className="text-xs text-text-muted truncate block">{agent.isLocal ? agent.daemonName || agent.machineId : getAgentBreadcrumb(agent.name)}</span>
+            <span className="text-xs text-text-muted truncate block">{agent.isLocal ? agent.brokerName || agent.machineId : getAgentBreadcrumb(agent.name)}</span>
           ) : (
-            <span className="text-xs text-text-muted truncate block">{agent.isLocal ? agent.daemonName || agent.machineId : agent.name}</span>
+            <span className="text-xs text-text-muted truncate block">{agent.isLocal ? agent.brokerName || agent.machineId : agent.name}</span>
           )}
           {agent.agentId && (
             <span className="text-[10px] text-text-muted font-mono opacity-70" title="Agent ID (use to resume)">

@@ -269,7 +269,7 @@ The agent will read the setup guide and start a relay session, ready to coordina
 Use our SDK to enable agent-to-agent communication in your app:
 
 \`\`\`bash
-# Install agent relay and start the daemon
+# Install agent relay and start the broker
 npm install -g agent-relay
 agent-relay up
 

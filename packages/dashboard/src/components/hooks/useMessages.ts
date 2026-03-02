@@ -64,8 +64,11 @@ export function useMessages({
   // This allows us to show new messages that arrive after viewing
   const [seenThreads, setSeenThreads] = useState<Map<string, number>>(new Map());
 
-  // Effective sender name for the current user (used for filtering own messages)
-  const effectiveSenderName = senderName || 'Dashboard';
+  // Effective sender name for the current user (used for filtering own messages).
+  // Read localStorage directly as a fallback so we never display "Dashboard".
+  const effectiveSenderName = senderName
+    || (typeof window !== 'undefined' ? localStorage.getItem('relay_username') : null)
+    || 'You';
 
   // Optimistic messages: shown immediately before server confirms
   // These have status='sending' and a temp ID prefixed with 'optimistic-'
@@ -272,8 +275,14 @@ export function useMessages({
         const result = await api.sendMessage(request);
 
         if (result.success) {
-          // Success! The optimistic message will be cleaned up when
-          // the real message arrives via WebSocket
+          // If the server returned a canonical message ID, update the optimistic
+          // message so dedup logic can match it when the real event arrives.
+          const canonicalId = result.data?.messageId;
+          if (canonicalId) {
+            setOptimisticMessages((prev) =>
+              prev.map((m) => (m.id === optimisticId ? { ...m, id: canonicalId } : m)),
+            );
+          }
           return true;
         }
 

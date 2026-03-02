@@ -43,13 +43,13 @@ const API_BASE = getApiBaseUrl();
 // Storage key for workspace ID persistence
 const WORKSPACE_ID_KEY = 'agentrelay_workspace_id';
 
-// Workspace ID for cloud mode proxying
+// Workspace ID persistence for workspace-scoped APIs
 let activeWorkspaceId: string | null = null;
 
 // CSRF token storage key
 const CSRF_TOKEN_KEY = 'agentrelay_csrf_token';
 
-// CSRF token for cloud mode requests - persisted in sessionStorage
+// CSRF token for requests - persisted in sessionStorage
 let csrfToken: string | null = null;
 
 // Initialize from sessionStorage if available
@@ -132,42 +132,12 @@ export function initializeWorkspaceId(): string | null {
 }
 
 /**
- * Cloud-native API paths that should NOT be proxied through workspace.
- * These are routes handled by the cloud server itself, not workspace daemons.
- */
-const CLOUD_NATIVE_PATHS = [
-  '/api/daemons/',      // Linked daemons API
-  '/api/workspaces/',   // Workspace management
-  '/api/providers/',    // OAuth providers
-  '/api/auth/',         // Authentication
-  '/api/billing/',      // Billing
-  '/api/usage/',        // Usage metrics
-  '/api/admin/',        // Admin endpoints
-  '/api/onboarding/',   // Onboarding
-  '/api/repos/',        // Repository management
-  '/api/project-groups/', // Coordinators
-  '/api/github-app/',   // GitHub App
-  '/api/channels',      // Channel proxy handled by dashboard server
-  '/api/bridge',        // Bridge data (multi-repo view)
-];
-
-/**
- * Get the API URL, accounting for cloud mode proxying
+ * Get the API URL using the configured API base.
  * @param path - API path like '/api/spawn' or '/api/send'
  */
 export function getApiUrl(path: string): string {
-  if (activeWorkspaceId) {
-    // Check if this is a cloud-native path that shouldn't be proxied
-    const isCloudNative = CLOUD_NATIVE_PATHS.some(prefix => path.startsWith(prefix));
-    if (isCloudNative) {
-      return `${API_BASE}${path}`;
-    }
-    // In cloud mode, proxy through the cloud server
-    // Strip /api/ prefix since the proxy endpoint adds it back
-    const proxyPath = path.startsWith('/api/') ? path.substring(5) : path.replace(/^\//, '');
-    return `/api/workspaces/${activeWorkspaceId}/proxy/${proxyPath}`;
-  }
-  return `${API_BASE}${path}`;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${API_BASE}${normalizedPath}`;
 }
 
 /**
@@ -408,17 +378,17 @@ export const api = {
   /**
    * Send a message via the relay
    */
-  async sendMessage(request: SendMessageRequest): Promise<ApiResponse<void>> {
+  async sendMessage(request: SendMessageRequest): Promise<ApiResponse<{ messageId?: string }>> {
     try {
       const response = await apiFetch(getApiUrl('/api/send'), {
         method: 'POST',
         body: JSON.stringify(request),
       });
 
-      const result = await response.json() as { success?: boolean; error?: string };
+      const result = await response.json() as { success?: boolean; error?: string; messageId?: string };
 
       if (response.ok && result.success) {
-        return { success: true };
+        return { success: true, data: { messageId: result.messageId } };
       }
 
       return { success: false, error: result.error || 'Failed to send message' };

@@ -371,7 +371,9 @@ function ThreadAttachments({ attachments }: ThreadAttachmentsProps) {
 }
 
 function formatTimestamp(timestamp: string | number): string {
+  if (!timestamp) return '';
   const date = new Date(timestamp);
+  if (isNaN(date.getTime())) return '';
   const now = new Date();
   const isToday = date.toDateString() === now.toDateString();
 

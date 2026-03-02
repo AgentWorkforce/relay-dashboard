@@ -4,10 +4,53 @@
  * Tests for the proxy/mock server in both proxy and mock modes.
  */
 
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { createServer as createHttpServer, type Server as HttpServer } from 'http';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer, type DashboardServer } from './proxy-server.js';
 
 describe('Dashboard Server', () => {
+  describe('Static Route Fallbacks', () => {
+    let server: DashboardServer;
+    let staticDir: string;
+
+    beforeAll(async () => {
+      staticDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dashboard-static-fallback-'));
+      fs.writeFileSync(path.join(staticDir, 'app.html'), '<!doctype html><h1>app-fallback</h1>', 'utf-8');
+
+      server = createServer({
+        port: 0,
+        mock: false,
+        staticDir,
+        verbose: false,
+      });
+      await new Promise<void>((resolve) => {
+        server.server.listen(0, () => resolve());
+      });
+    });
+
+    afterAll(async () => {
+      await server.close();
+      fs.rmSync(staticDir, { recursive: true, force: true });
+    });
+
+    it('should serve /metrics from app.html when metrics.html is missing', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/metrics`);
+      const html = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(html).toContain('app-fallback');
+    });
+  });
+
   describe('Mock Mode', () => {
     let server: DashboardServer;
 
@@ -242,6 +285,236 @@ describe('Dashboard Server', () => {
       expect(response.ok).toBe(true);
       expect(data.ok).toBe(true);
     });
+
+    it('should proxy /api/brokers/* routes in proxy mode', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      // No broker server is running in this test, so proxy should fail.
+      // Depending on proxy middleware timing/instrumentation, this can surface as:
+      // - 502 from explicit proxy error handling, or
+      // - 404 when the request falls through before proxy connect.
+      const response = await fetch(`http://localhost:${port}/api/brokers/workspace/ws-123/agents`);
+      expect([404, 502]).toContain(response.status);
+    });
+
+    it('should return breaking-change guidance for removed legacy broker alias routes in proxy mode', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const releaseResponse = await fetch(`http://localhost:${port}/api/release`, { method: 'POST' });
+      const releaseData = await releaseResponse.json();
+      expect(releaseResponse.status).toBe(410);
+      expect(releaseData.success).toBe(false);
+      expect(releaseData.code).toBe('endpoint_removed');
+
+      const cwdResponse = await fetch(`http://localhost:${port}/api/agents/WorkerA/cwd`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd: '/tmp/project' }),
+      });
+      const cwdData = await cwdResponse.json();
+      expect(cwdResponse.status).toBe(410);
+      expect(cwdData.success).toBe(false);
+      expect(cwdData.code).toBe('endpoint_removed');
+    });
+  });
+
+  describe('Standalone Mode (Local Logs)', () => {
+    let server: DashboardServer;
+    let dataDir: string;
+
+    beforeAll(async () => {
+      dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dashboard-standalone-logs-'));
+      const logsDir = path.join(dataDir, 'team', 'worker-logs');
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.writeFileSync(path.join(logsDir, 'WorkerA.log'), 'line-one\nline-two\n', 'utf-8');
+      fs.writeFileSync(
+        path.join(dataDir, 'state.json'),
+        JSON.stringify(
+          {
+            agents: {
+              WorkerA: {
+                pid: 999999,
+                started_at: 1700000000,
+                spec: {
+                  cli: 'codex',
+                  cwd: '/tmp/workspace',
+                },
+              },
+            },
+          },
+          null,
+          2,
+        ),
+        'utf-8',
+      );
+
+      server = createServer({
+        port: 0,
+        mock: false,
+        verbose: false,
+        dataDir,
+      });
+      await new Promise<void>((resolve) => {
+        server.server.listen(0, () => resolve());
+      });
+    });
+
+    afterAll(async () => {
+      await server.close();
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    });
+
+    it('should start in standalone mode when relay URL is not provided', () => {
+      expect(server.mode).toBe('standalone');
+    });
+
+    it('returns 503 from /api/relay-config when relaycast credentials are missing', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/relay-config`);
+      const data = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(data.success).toBe(false);
+      expect(typeof data.error).toBe('string');
+    });
+
+    it('should list local worker logs in standalone mode', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/logs`);
+      const data = await response.json();
+
+      expect(response.ok).toBe(true);
+      expect(data.success).toBe(true);
+      expect(data.agents).toContain('WorkerA');
+    });
+
+    it('should return local worker log content in standalone mode', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/logs/WorkerA`);
+      const data = await response.json();
+
+      expect(response.ok).toBe(true);
+      expect(data.found).toBe(true);
+      expect(data.content).toContain('line-one');
+      expect(data.content).toContain('line-two');
+    });
+
+    it('should return standalone spawned agents from local state', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/spawned`);
+      const data = await response.json();
+
+      expect(response.ok).toBe(true);
+      expect(data.success).toBe(true);
+      expect(Array.isArray(data.agents)).toBe(true);
+      expect(data.agents.some((agent: { name: string }) => agent.name === 'WorkerA')).toBe(true);
+    });
+
+    it('should provide actionable error for spawn in standalone mode', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/spawn`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'TestSpawn', cli: 'codex' }),
+      });
+      const data = await response.json();
+
+      expect(response.status).toBe(501);
+      expect(data.success).toBe(false);
+      expect(data.code).toBe('unsupported_operation');
+      expect(typeof data.error).toBe('string');
+    });
+
+    it('should return actionable error for broker API routes in standalone mode', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/brokers/workspace/ws-123/agents`);
+      const data = await response.json();
+
+      expect(response.status).toBe(501);
+      expect(data.success).toBe(false);
+      expect(data.code).toBe('unsupported_operation');
+      expect(data.error).toContain('standalone mode');
+    });
+
+    it('should return breaking-change guidance for daemon API routes', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/daemons/workspace/ws-123/agents`);
+      const data = await response.json();
+
+      expect(response.status).toBe(410);
+      expect(data.success).toBe(false);
+      expect(data.code).toBe('daemon_removed');
+      expect(data.error).toContain('BREAKING CHANGE');
+      expect(Array.isArray(data.requiredEndpoints)).toBe(true);
+      expect(data.requiredEndpoints).toContain('/api/brokers/*');
+    });
+
+    it('should return breaking-change guidance for removed legacy broker alias routes in standalone mode', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const releaseResponse = await fetch(`http://localhost:${port}/api/release`, { method: 'POST' });
+      const releaseData = await releaseResponse.json();
+      expect(releaseResponse.status).toBe(410);
+      expect(releaseData.success).toBe(false);
+      expect(releaseData.code).toBe('endpoint_removed');
+
+      const cwdResponse = await fetch(`http://localhost:${port}/api/agents/WorkerA/cwd`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd: '/tmp/project' }),
+      });
+      const cwdData = await cwdResponse.json();
+      expect(cwdResponse.status).toBe(410);
+      expect(cwdData.success).toBe(false);
+      expect(cwdData.code).toBe('endpoint_removed');
+    });
   });
 });
 
@@ -319,5 +592,91 @@ describe('Mock Fixtures', () => {
       expect(task.priority).toBeDefined();
       expect(task.status).toBeDefined();
     }
+  });
+});
+
+describe('Proxy Send Routing', () => {
+  let brokerServer: HttpServer;
+  let dashboard: DashboardServer;
+  let brokerPayload: Record<string, unknown> | null = null;
+
+  beforeAll(async () => {
+    brokerServer = createHttpServer((req, res) => {
+      if (req.method === 'POST' && req.url === '/api/send') {
+        let body = '';
+        req.on('data', (chunk) => {
+          body += chunk.toString();
+        });
+        req.on('end', () => {
+          brokerPayload = body ? JSON.parse(body) as Record<string, unknown> : {};
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            event_id: 'http_evt_proxy_send',
+            local: true,
+          }));
+        });
+        return;
+      }
+
+      res.writeHead(404, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'not found' }));
+    });
+
+    await new Promise<void>((resolve) => {
+      brokerServer.listen(0, () => resolve());
+    });
+
+    const brokerAddress = brokerServer.address();
+    if (!brokerAddress || typeof brokerAddress === 'string') {
+      throw new Error('Broker address not available');
+    }
+
+    dashboard = createServer({
+      port: 0,
+      mock: false,
+      verbose: false,
+      relayUrl: `http://127.0.0.1:${brokerAddress.port}`,
+    });
+    await new Promise<void>((resolve) => {
+      dashboard.server.listen(0, () => resolve());
+    });
+  });
+
+  afterAll(async () => {
+    await dashboard.close();
+    await new Promise<void>((resolve, reject) => {
+      brokerServer.close((err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve();
+      });
+    });
+  });
+
+  it('routes /api/send through broker and returns broker event_id as messageId', async () => {
+    const address = dashboard.server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Server address not available');
+    }
+    const port = address.port;
+
+    const response = await fetch(`http://localhost:${port}/api/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: 'Lead', message: 'hello from proxy mode', from: 'Dashboard' }),
+    });
+    const data = await response.json();
+
+    expect(response.ok).toBe(true);
+    expect(data.success).toBe(true);
+    expect(data.messageId).toBe('http_evt_proxy_send');
+    expect(brokerPayload).toMatchObject({
+      to: 'Lead',
+      message: 'hello from proxy mode',
+    });
+    expect(typeof brokerPayload?.from).toBe('string');
   });
 });

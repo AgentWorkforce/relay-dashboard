@@ -6,7 +6,7 @@
  * worker output, updated via broker event subscription.
  */
 
-import type { RelayAdapter, RelayAgentInfo } from '@agent-relay/broker-sdk';
+import type { RelayAdapter, RelayAgentInfo } from '@agent-relay/sdk';
 import type { SpawnManagerLike } from '../types/index.js';
 
 /** Max lines of output to buffer per agent (matches xterm scrollback). */
@@ -55,7 +55,7 @@ export class BrokerSpawnReader implements SpawnManagerLike {
     }
 
     // Subscribe to events for live updates
-    this.unsubscribe = this.adapter.onEvent((event) => {
+    this.unsubscribe = this.adapter.onEvent((event: any) => {
       switch (event.kind) {
         case 'agent_spawned': {
           this.agentCache.set(event.name, {
@@ -89,8 +89,9 @@ export class BrokerSpawnReader implements SpawnManagerLike {
             this.outputBuffers.set(event.name, [event.chunk]);
           }
 
-          // Append to raw buffer (capped at MAX_RAW_BYTES)
-          let raw = (this.rawOutputBuffers.get(event.name) ?? '') + event.chunk + '\n';
+          // Append raw chunk as-is (no newline synthesis) so TUI repaint
+          // control sequences remain faithful for xterm rendering.
+          let raw = (this.rawOutputBuffers.get(event.name) ?? '') + event.chunk;
           if (raw.length > MAX_RAW_BYTES) {
             // Trim from the front, keeping from the first newline after the cut point
             const trimPoint = raw.length - MAX_RAW_BYTES;
@@ -144,7 +145,7 @@ export class BrokerSpawnReader implements SpawnManagerLike {
   async refresh(): Promise<void> {
     try {
       const agents = await this.adapter.listAgents();
-      const currentNames = new Set(agents.map((a) => a.name));
+      const currentNames = new Set(agents.map((a: any) => a.name));
 
       // Remove agents no longer present
       for (const name of this.agentCache.keys()) {

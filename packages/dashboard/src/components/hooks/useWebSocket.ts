@@ -12,6 +12,29 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Agent, Message, Session, AgentSummary, FleetData } from '../../types';
 import { getWebSocketUrl } from '../../lib/config';
 
+/** Broker event payload forwarded by the dashboard server */
+interface BrokerEvent {
+  kind: string;
+  name?: string;
+  from?: string;
+  target?: string;
+  body?: string;
+  event_id?: string;
+  thread_id?: string | null;
+  code?: number | null;
+  signal?: string | null;
+  cli?: string | null;
+  model?: string | null;
+  runtime?: string;
+  reason?: string;
+  idle_secs?: number;
+  restart_count?: number;
+  delivery_id?: string;
+  error?: unknown;
+  stream?: string;
+  chunk?: string;
+}
+
 export interface DashboardData {
   agents: Agent[];
   users?: Agent[]; // Human users (cli === 'dashboard')
@@ -65,6 +88,214 @@ const DEFAULT_OPTIONS: Omit<Required<UseWebSocketOptions>, 'onEvent'> & { onEven
  */
 function getDefaultUrl(): string {
   return getWebSocketUrl('/ws');
+}
+
+/**
+ * Apply an incremental broker event to the current dashboard state.
+ * Returns a new state object with the event applied, or the previous state
+ * if the event is not relevant for the UI.
+ */
+export function applyBrokerEvent(prev: DashboardData | null, event: BrokerEvent): DashboardData | null {
+  if (!prev) {
+    // Bootstrap empty state so events arriving before the snapshot aren't lost
+    prev = { agents: [], messages: [] };
+  }
+
+  switch (event.kind) {
+    case 'relay_inbound': {
+      if (!event.from || !event.target || !event.body) return prev;
+      // Channel messages are handled by useChannels — skip here to avoid duplication
+      if (event.target.startsWith('#')) return prev;
+      const msgId = event.event_id || `broker_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      // Deduplicate by event_id — the same event can arrive via multiple paths
+      if (event.event_id && prev.messages.some((m) => m.id === event.event_id)) {
+        return prev;
+      }
+      const newMessage: Message = {
+        id: msgId,
+        from: event.from,
+        to: event.target,
+        content: event.body,
+        timestamp: new Date().toISOString(),
+        thread: event.thread_id ?? undefined,
+        isBroadcast: event.target === '*',
+      };
+      // Clear thinking/processing state only when a known processing agent sends a response
+      const senderIsProcessingAgent = prev.agents.some(
+        (a) => a.name === event.from && a.isProcessing,
+      );
+      // If this is a thread reply, increment replyCount on the parent message
+      const updatedMessages = [...prev.messages, newMessage];
+      if (event.thread_id) {
+        const parentIdx = updatedMessages.findIndex((m) => m.id === event.thread_id);
+        if (parentIdx !== -1) {
+          updatedMessages[parentIdx] = {
+            ...updatedMessages[parentIdx],
+            replyCount: (updatedMessages[parentIdx].replyCount ?? 0) + 1,
+          };
+        }
+      }
+      return {
+        ...prev,
+        messages: updatedMessages,
+        agents: senderIsProcessingAgent
+          ? prev.agents.map((a) =>
+              a.name === event.from
+                ? { ...a, isProcessing: false, processingStartedAt: undefined, lastLogLine: undefined }
+                : a,
+            )
+          : prev.agents,
+      };
+    }
+
+    case 'agent_spawned': {
+      if (!event.name) return prev;
+      // Avoid duplicates
+      const exists = prev.agents.some((a) => a.name === event.name);
+      if (exists) {
+        return {
+          ...prev,
+          agents: prev.agents.map((a) =>
+            a.name === event.name ? { ...a, status: 'online' as const, cli: event.cli ?? a.cli, model: event.model ?? a.model } : a,
+          ),
+        };
+      }
+      return {
+        ...prev,
+        agents: [
+          ...prev.agents,
+          {
+            name: event.name,
+            status: 'online' as const,
+            cli: event.cli ?? undefined,
+            model: event.model ?? undefined,
+            isSpawned: true,
+          },
+        ],
+      };
+    }
+
+    case 'agent_exited': {
+      if (!event.name) return prev;
+      return {
+        ...prev,
+        agents: prev.agents.filter((a) => a.name !== event.name),
+      };
+    }
+
+    case 'agent_released': {
+      if (!event.name) return prev;
+      return {
+        ...prev,
+        agents: prev.agents.filter((a) => a.name !== event.name),
+      };
+    }
+
+    case 'worker_ready': {
+      if (!event.name) return prev;
+      return {
+        ...prev,
+        agents: prev.agents.map((a) =>
+          a.name === event.name
+            ? { ...a, status: 'online' as const, cli: event.cli ?? a.cli, model: event.model ?? a.model }
+            : a,
+        ),
+      };
+    }
+
+    case 'agent_idle': {
+      if (!event.name) return prev;
+      return {
+        ...prev,
+        agents: prev.agents.map((a) =>
+          a.name === event.name
+            ? { ...a, isProcessing: false, processingStartedAt: undefined, lastLogLine: undefined }
+            : a,
+        ),
+      };
+    }
+
+    case 'agent_restarting': {
+      if (!event.name) return prev;
+      return {
+        ...prev,
+        agents: prev.agents.map((a) =>
+          a.name === event.name ? { ...a, status: 'busy' as const } : a,
+        ),
+      };
+    }
+
+    case 'agent_restarted': {
+      if (!event.name) return prev;
+      return {
+        ...prev,
+        agents: prev.agents.map((a) =>
+          a.name === event.name ? { ...a, status: 'online' as const } : a,
+        ),
+      };
+    }
+
+    case 'agent_permanently_dead': {
+      if (!event.name) return prev;
+      return {
+        ...prev,
+        agents: prev.agents.map((a) =>
+          a.name === event.name ? { ...a, status: 'offline' as const } : a,
+        ),
+      };
+    }
+
+    case 'delivery_verified': {
+      if (!event.event_id) return prev;
+      return {
+        ...prev,
+        messages: prev.messages.map((m) =>
+          m.id === event.event_id ? { ...m, status: 'acked' as const } : m,
+        ),
+      };
+    }
+
+    case 'delivery_failed': {
+      if (!event.event_id) return prev;
+      return {
+        ...prev,
+        messages: prev.messages.map((m) =>
+          m.id === event.event_id ? { ...m, status: 'failed' as const } : m,
+        ),
+      };
+    }
+
+    case 'delivery_ack':
+    case 'delivery_active': {
+      if (!event.name) return prev;
+      return {
+        ...prev,
+        agents: prev.agents.map((a) =>
+          a.name === event.name
+            ? { ...a, isProcessing: true, processingStartedAt: Date.now() }
+            : a,
+        ),
+      };
+    }
+
+    case 'worker_stream': {
+      if (!event.name) return prev;
+      return {
+        ...prev,
+        agents: prev.agents.map((a) =>
+          a.name === event.name ? { ...a, lastLogLine: event.chunk } : a,
+        ),
+      };
+    }
+
+    case 'worker_error': {
+      // Worker error — could show in agent details
+      return prev;
+    }
+
+    default:
+      return prev;
+  }
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketReturn {
@@ -122,13 +353,20 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     // Strip seq from the payload before routing (it's only for tracking, not data)
     const { seq: _seq, ...payload } = parsed;
 
-    // Check if this is an event message (has a 'type' field like direct_message, channel_message)
-    // vs dashboard data (has agents array)
+    // Check message type and route accordingly
     if (payload && typeof payload === 'object' && 'type' in payload && typeof payload.type === 'string') {
-      // This is an event message - route to callback
-      onEventRef.current?.(payload as WebSocketEvent);
+      // Incremental broker event — apply as state patch
+      if (payload.type === 'broker_event' && payload.payload && typeof payload.payload === 'object' && 'kind' in payload.payload) {
+        setData((prev) => applyBrokerEvent(prev, payload.payload as BrokerEvent));
+      } else {
+        // Other event messages (direct_message, channel_message, presence, etc.)
+        onEventRef.current?.(payload as WebSocketEvent);
+      }
+    } else if (payload && typeof payload === 'object' && 'kind' in payload && typeof payload.kind === 'string') {
+      // Raw (unwrapped) broker event — apply as incremental patch
+      setData((prev) => applyBrokerEvent(prev, payload as BrokerEvent));
     } else {
-      // This is dashboard data - update state
+      // Full dashboard snapshot — replace state
       setData(payload as DashboardData);
     }
 

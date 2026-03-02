@@ -77,7 +77,7 @@ const TERMINAL_MESSAGES = [
   '> Establishing secure connection...',
   '> Allocating compute resources...',
   '> Configuring agent protocols...',
-  '> Initializing relay daemon...',
+  '> Initializing relay broker...',
   '> Syncing workspace state...',
   '> Warming up inference engine...',
   '> Connecting to neural mesh...',

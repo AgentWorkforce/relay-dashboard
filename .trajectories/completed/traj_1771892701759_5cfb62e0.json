@@ -1,0 +1,80 @@
+{
+  "id": "traj_1771892701759_5cfb62e0",
+  "version": 1,
+  "task": {
+    "title": "default run #d04bd2ce",
+    "source": {
+      "system": "workflow-runner",
+      "id": "d04bd2ce367169d8b869f39b"
+    }
+  },
+  "status": "completed",
+  "startedAt": "2026-02-24T00:25:01.759Z",
+  "agents": [
+    {
+      "name": "orchestrator",
+      "role": "workflow-runner",
+      "joinedAt": "2026-02-24T00:25:01.759Z"
+    },
+    {
+      "name": "agent-a",
+      "role": "agent-a",
+      "joinedAt": "2026-02-24T00:25:01.761Z"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "ch_934952e8",
+      "title": "Planning",
+      "agentName": "orchestrator",
+      "startedAt": "2026-02-24T00:25:01.759Z",
+      "events": [
+        {
+          "ts": 1771892701759,
+          "type": "note",
+          "content": "Workflow \"default\" started with 1 steps"
+        },
+        {
+          "ts": 1771892701759,
+          "type": "note",
+          "content": "Parsed 1 steps, DAG validated, no cycles"
+        },
+        {
+          "ts": 1771892701761,
+          "type": "note",
+          "content": "Step \"step-1\" assigned to agent \"agent-a\""
+        },
+        {
+          "ts": 1771892701762,
+          "type": "finding",
+          "content": "Step \"step-1\" completed: Agent completed (force-released after idle nudging)",
+          "significance": "medium"
+        }
+      ],
+      "endedAt": "2026-02-24T00:25:01.765Z"
+    },
+    {
+      "id": "ch_9dbec865",
+      "title": "Retrospective",
+      "agentName": "orchestrator",
+      "startedAt": "2026-02-24T00:25:01.765Z",
+      "events": [
+        {
+          "ts": 1771892701765,
+          "type": "reflection",
+          "content": "Workflow completed in 0 seconds. 1/1 steps passed. (completed in 0 seconds)",
+          "significance": "high"
+        }
+      ],
+      "endedAt": "2026-02-24T00:25:01.765Z"
+    }
+  ],
+  "completedAt": "2026-02-24T00:25:01.765Z",
+  "retrospective": {
+    "summary": "Workflow completed in 0 seconds. 1/1 steps passed.",
+    "approach": "workflow-runner DAG execution",
+    "confidence": 0.75,
+    "learnings": [],
+    "challenges": []
+  }
+}

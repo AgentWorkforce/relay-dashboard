@@ -1,0 +1,69 @@
+{
+  "id": "traj_4uueirz6ed4w",
+  "version": 1,
+  "task": {
+    "title": "Fix C1 hook-order issue and finalize relaycast migration",
+    "source": {
+      "system": "plain",
+      "id": "mlztgfn7"
+    }
+  },
+  "status": "completed",
+  "startedAt": "2026-02-24T00:23:50.919Z",
+  "agents": [
+    {
+      "name": "default",
+      "role": "lead",
+      "joinedAt": "2026-02-24T00:27:02.908Z"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "chap_hzzd3onz1qrn",
+      "title": "Work",
+      "agentName": "default",
+      "startedAt": "2026-02-24T00:27:02.908Z",
+      "events": [
+        {
+          "ts": 1771892822910,
+          "type": "decision",
+          "content": "Resolve hook-order violation by always keeping SDK hooks mounted under RelayProvider context: Resolve hook-order violation by always keeping SDK hooks mounted under RelayProvider context",
+          "raw": {
+            "question": "Resolve hook-order violation by always keeping SDK hooks mounted under RelayProvider context",
+            "chosen": "Resolve hook-order violation by always keeping SDK hooks mounted under RelayProvider context",
+            "alternatives": [],
+            "reasoning": "try/catch wrappers around SDK hooks caused variable hook counts when provider presence changed; stable provider+hook order removes Rules-of-Hooks risk"
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771892822917,
+          "type": "decision",
+          "content": "Replace AgentClient cast with structural RelaycastClientLike interface: Replace AgentClient cast with structural RelaycastClientLike interface",
+          "raw": {
+            "question": "Replace AgentClient cast with structural RelaycastClientLike interface",
+            "chosen": "Replace AgentClient cast with structural RelaycastClientLike interface",
+            "alternatives": [],
+            "reasoning": "RelayCast.as(token) and @agent-relay/sdk AgentClient types come from different packages; structural typing removes unsafe runtime assumptions"
+          },
+          "significance": "high"
+        }
+      ],
+      "endedAt": "2026-02-24T00:27:22.898Z"
+    }
+  ],
+  "commits": [],
+  "filesChanged": [],
+  "projectId": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard",
+  "tags": [],
+  "_trace": {
+    "startRef": "4ef474ee9b7b99ca1367ee9423a540ac9fc0b042",
+    "endRef": "4ef474ee9b7b99ca1367ee9423a540ac9fc0b042"
+  },
+  "completedAt": "2026-02-24T00:27:22.898Z",
+  "retrospective": {
+    "summary": "Fixed C1 Rules-of-Hooks regression by removing optional hook wrappers and stabilizing SDK hook usage; fixed C2 by replacing unsafe AgentClient cast with structural interface; revalidated dashboard and broker tests/typecheck.",
+    "approach": "Standard approach",
+    "confidence": 0.86
+  }
+}

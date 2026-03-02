@@ -7,6 +7,7 @@ const DEV_SERVER_URL = process.env.DEV_SERVER_URL || 'http://localhost:3889';
 const nextConfig = {
   // Static export - generates HTML/JS/CSS that can be served by any server
   output: 'export',
+
   // Export output goes to 'out/' by default with output: 'export'
 
   // Disable strict mode for now during development

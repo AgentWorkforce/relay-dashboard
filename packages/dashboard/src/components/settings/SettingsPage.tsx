@@ -11,18 +11,17 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { cloudApi, getCsrfToken } from '../../lib/cloudApi';
-import { WorkspaceSettingsPanel } from './WorkspaceSettingsPanel';
-import { TeamSettingsPanel } from './TeamSettingsPanel';
-import { BillingSettingsPanel } from './BillingSettingsPanel';
+import { useDashboardConfig, type DashboardFeatures } from '../../adapters';
 import type { Settings, CliType } from './types';
-import { CLAUDE_MODEL_OPTIONS, CURSOR_MODEL_OPTIONS, CODEX_MODEL_OPTIONS, GEMINI_MODEL_OPTIONS } from '../SpawnModal';
+import { type ModelOption, DEFAULT_MODEL_OPTIONS } from '../SpawnModal';
+
+type SettingsTab = 'dashboard' | 'workspace' | 'team' | 'billing';
 
 export interface SettingsPageProps {
   /** Current user ID for team membership checks */
   currentUserId?: string;
   /** Initial tab to show */
-  initialTab?: 'dashboard' | 'workspace' | 'team' | 'billing';
+  initialTab?: SettingsTab;
   /** Callback when settings page is closed */
   onClose?: () => void;
   /** Current dashboard settings */
@@ -33,6 +32,13 @@ export interface SettingsPageProps {
   activeWorkspaceId?: string | null;
   /** Callback when repos are added/removed in workspace settings */
   onReposChanged?: () => void;
+  /** Model options per agent type — provided by the host app */
+  modelOptions?: {
+    claude?: ModelOption[];
+    cursor?: ModelOption[];
+    codex?: ModelOption[];
+    gemini?: ModelOption[];
+  };
 }
 
 interface WorkspaceSummary {
@@ -41,20 +47,48 @@ interface WorkspaceSummary {
   status: string;
 }
 
+function isTabEnabled(tab: SettingsTab, features: DashboardFeatures): boolean {
+  if (tab === 'workspace') return features.workspaces;
+  if (tab === 'team') return features.teams;
+  if (tab === 'billing') return features.billing;
+  return true;
+}
+
+function resolveInitialTab(initialTab: SettingsTab, features: DashboardFeatures): SettingsTab {
+  return isTabEnabled(initialTab, features) ? initialTab : 'dashboard';
+}
+
+const EMPTY_MODEL_OPTIONS: ModelOption[] = [];
+
 export function SettingsPage({
-  currentUserId,
   initialTab = 'dashboard',
   onClose,
   settings,
   onUpdateSettings,
   activeWorkspaceId,
-  onReposChanged,
+  modelOptions,
 }: SettingsPageProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'workspace' | 'team' | 'billing'>(initialTab);
+  const config = useDashboardConfig();
+  const { features, api, settingsSlots } = config;
+
+  const claudeModels = modelOptions?.claude ?? DEFAULT_MODEL_OPTIONS.claude ?? EMPTY_MODEL_OPTIONS;
+  const cursorModels = modelOptions?.cursor ?? DEFAULT_MODEL_OPTIONS.cursor ?? EMPTY_MODEL_OPTIONS;
+  const codexModels = modelOptions?.codex ?? DEFAULT_MODEL_OPTIONS.codex ?? EMPTY_MODEL_OPTIONS;
+  const geminiModels = modelOptions?.gemini ?? DEFAULT_MODEL_OPTIONS.gemini ?? EMPTY_MODEL_OPTIONS;
+
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() =>
+    resolveInitialTab(initialTab, features)
+  );
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   // Initialize with activeWorkspaceId from parent if provided
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(activeWorkspaceId ?? null);
   const [isLoadingWorkspaces, setIsLoadingWorkspaces] = useState(true);
+
+  useEffect(() => {
+    if (!isTabEnabled(activeTab, features)) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, features.billing, features.teams, features.workspaces]);
 
   // Sync selectedWorkspaceId when activeWorkspaceId prop changes
   useEffect(() => {
@@ -63,23 +97,49 @@ export function SettingsPage({
     }
   }, [activeWorkspaceId]);
 
-  // Load workspaces
+  // Load workspaces only when workspace features and API adapter are available.
   useEffect(() => {
+    const apiAdapter = api;
+
+    if (!features.workspaces || !apiAdapter) {
+      setIsLoadingWorkspaces(false);
+      setWorkspaces([]);
+      return;
+    }
+
+    const workspaceApi = apiAdapter;
+    let cancelled = false;
+
     async function loadWorkspaces() {
       setIsLoadingWorkspaces(true);
-      const result = await cloudApi.getWorkspaceSummary();
+      const result = await workspaceApi.getWorkspaceSummary();
+
+      if (cancelled) {
+        return;
+      }
+
       if (result.success && result.data.workspaces.length > 0) {
-        setWorkspaces(result.data.workspaces);
+        const summaries = result.data.workspaces.map((workspace) => ({
+          id: workspace.id,
+          name: workspace.name,
+          status: workspace.status,
+        }));
+        setWorkspaces(summaries);
         // Only auto-select first workspace if no workspace is selected
         // (either from prop or previous user selection)
-        if (!selectedWorkspaceId) {
-          setSelectedWorkspaceId(result.data.workspaces[0].id);
-        }
+        setSelectedWorkspaceId((prev) => prev ?? summaries[0].id);
+      } else {
+        setWorkspaces([]);
       }
       setIsLoadingWorkspaces(false);
     }
+
     loadWorkspaces();
-  }, [selectedWorkspaceId]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, features.workspaces]);
 
   const updateSettings = useCallback((updater: (prev: Settings) => Settings) => {
     onUpdateSettings(updater);
@@ -98,12 +158,18 @@ export function SettingsPage({
     });
   }, [updateSettings]);
 
-  const tabs = [
+  const allTabs = [
     { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
     { id: 'workspace', label: 'Workspace', icon: <WorkspaceIcon /> },
     { id: 'team', label: 'Team', icon: <TeamIcon /> },
     { id: 'billing', label: 'Billing', icon: <BillingIcon /> },
   ] as const;
+
+  const tabs = allTabs.filter((tab) => isTabEnabled(tab.id, features));
+
+  const BillingPanelSlot = settingsSlots?.BillingPanel;
+  const TeamPanelSlot = settingsSlots?.TeamPanel;
+  const WorkspacePanelSlot = settingsSlots?.WorkspacePanel;
 
   return (
     <div className="fixed inset-0 z-[1100] bg-bg-deep">
@@ -328,7 +394,7 @@ export function SettingsPage({
                       description="Default model when spawning Claude agents"
                     >
                       <select
-                        value={settings.agentDefaults?.defaultModels?.claude ?? 'sonnet'}
+                        value={settings.agentDefaults?.defaultModels?.claude ?? claudeModels[0]?.value ?? ''}
                         onChange={(e) => updateSettings((prev) => ({
                           ...prev,
                           agentDefaults: {
@@ -341,7 +407,7 @@ export function SettingsPage({
                         }))}
                         className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
                       >
-                        {CLAUDE_MODEL_OPTIONS.map((model) => (
+                        {claudeModels.map((model) => (
                           <option key={model.value} value={model.value}>{model.label}</option>
                         ))}
                       </select>
@@ -352,7 +418,7 @@ export function SettingsPage({
                       description="Default model when spawning Cursor agents"
                     >
                       <select
-                        value={settings.agentDefaults?.defaultModels?.cursor ?? 'opus-4.5-thinking'}
+                        value={settings.agentDefaults?.defaultModels?.cursor ?? cursorModels[0]?.value ?? ''}
                         onChange={(e) => updateSettings((prev) => ({
                           ...prev,
                           agentDefaults: {
@@ -365,7 +431,7 @@ export function SettingsPage({
                         }))}
                         className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
                       >
-                        {CURSOR_MODEL_OPTIONS.map((model) => (
+                        {cursorModels.map((model) => (
                           <option key={model.value} value={model.value}>{model.label}</option>
                         ))}
                       </select>
@@ -376,7 +442,7 @@ export function SettingsPage({
                       description="Default model when spawning Codex agents"
                     >
                       <select
-                        value={settings.agentDefaults?.defaultModels?.codex ?? 'gpt-5.2-codex'}
+                        value={settings.agentDefaults?.defaultModels?.codex ?? codexModels[0]?.value ?? ''}
                         onChange={(e) => updateSettings((prev) => ({
                           ...prev,
                           agentDefaults: {
@@ -389,7 +455,7 @@ export function SettingsPage({
                         }))}
                         className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
                       >
-                        {CODEX_MODEL_OPTIONS.map((model) => (
+                        {codexModels.map((model) => (
                           <option key={model.value} value={model.value}>{model.label}</option>
                         ))}
                       </select>
@@ -400,7 +466,7 @@ export function SettingsPage({
                       description="Default model when spawning Gemini agents"
                     >
                       <select
-                        value={settings.agentDefaults?.defaultModels?.gemini ?? 'gemini-2.5-pro'}
+                        value={settings.agentDefaults?.defaultModels?.gemini ?? geminiModels[0]?.value ?? ''}
                         onChange={(e) => updateSettings((prev) => ({
                           ...prev,
                           agentDefaults: {
@@ -413,7 +479,7 @@ export function SettingsPage({
                         }))}
                         className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
                       >
-                        {GEMINI_MODEL_OPTIONS.map((model) => (
+                        {geminiModels.map((model) => (
                           <option key={model.value} value={model.value}>{model.label}</option>
                         ))}
                       </select>
@@ -432,23 +498,13 @@ export function SettingsPage({
                       </div>
                       <span className="ml-4 text-text-muted">Loading workspaces...</span>
                     </div>
-                  ) : selectedWorkspaceId ? (
-                    <WorkspaceSettingsPanel
-                      workspaceId={selectedWorkspaceId}
-                      csrfToken={getCsrfToken() || undefined}
-                      onClose={onClose}
-                      onReposChanged={onReposChanged}
-                    />
+                  ) : WorkspacePanelSlot ? (
+                    <WorkspacePanelSlot />
                   ) : (
                     <EmptyState
                       icon={<WorkspaceIcon />}
-                      title="No Workspace"
-                      description="Create a workspace to get started with Agent Relay."
-                      action={
-                        <button className="px-6 py-3 bg-accent-cyan text-bg-deep font-semibold rounded-lg hover:bg-accent-cyan/90 transition-colors">
-                          Create Workspace
-                        </button>
-                      }
+                      title="Workspace Settings Unavailable"
+                      description="A workspace settings panel has not been provided for this mode."
                     />
                   )}
                 </>
@@ -457,22 +513,19 @@ export function SettingsPage({
               {/* Team Settings */}
               {activeTab === 'team' && (
                 <>
-                  {selectedWorkspaceId ? (
+                  {TeamPanelSlot ? (
                     <div className="space-y-8">
                       <PageHeader
                         title="Team Settings"
                         subtitle="Manage workspace members and permissions"
                       />
-                      <TeamSettingsPanel
-                        workspaceId={selectedWorkspaceId}
-                        currentUserId={currentUserId}
-                      />
+                      <TeamPanelSlot />
                     </div>
                   ) : (
                     <EmptyState
                       icon={<TeamIcon />}
-                      title="No Workspace Selected"
-                      description="Select a workspace to manage team members."
+                      title="Team Settings Unavailable"
+                      description="A team settings panel has not been provided for this mode."
                     />
                   )}
                 </>
@@ -485,7 +538,15 @@ export function SettingsPage({
                     title="Billing & Subscription"
                     subtitle="Manage your plan and payment methods"
                   />
-                  <BillingSettingsPanel />
+                  {BillingPanelSlot ? (
+                    <BillingPanelSlot />
+                  ) : (
+                    <EmptyState
+                      icon={<BillingIcon />}
+                      title="Billing Settings Unavailable"
+                      description="A billing settings panel has not been provided for this mode."
+                    />
+                  )}
                 </div>
               )}
             </div>

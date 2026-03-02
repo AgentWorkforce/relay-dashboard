@@ -1,0 +1,298 @@
+{
+  "version": 1,
+  "id": "trace_fsayvz0ihqqj",
+  "timestamp": "2026-02-24T11:40:04.286Z",
+  "trajectory": "traj_6qttpknwx172",
+  "files": [
+    {
+      "path": "package-lock.json",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 1275,
+              "end_line": 1311,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 7245,
+              "end_line": 7251,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 7290,
+              "end_line": 7296,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard-server/.trajectories/index.json",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 12,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard-server/src/proxy-server.ts",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 201,
+              "end_line": 207,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard-server/src/relaycast-provider-helpers.ts",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 46,
+              "end_line": 55,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 90,
+              "end_line": 96,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 108,
+              "end_line": 114,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 131,
+              "end_line": 137,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard-server/src/relaycast-provider.test.ts",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 269,
+              "end_line": 275,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard-server/src/relaycast-provider.ts",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 43,
+              "end_line": 56,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 281,
+              "end_line": 287,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 302,
+              "end_line": 308,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 318,
+              "end_line": 324,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 345,
+              "end_line": 351,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 353,
+              "end_line": 359,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard-server/src/routes/relay-config.ts",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 26,
+              "end_line": 32,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/components/ReactionChips.tsx",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 7,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 41,
+              "end_line": 47,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/providers/MessageProvider.tsx",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 94,
+              "end_line": 102,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 230,
+              "end_line": 236,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 362,
+              "end_line": 368,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 457,
+              "end_line": 463,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 560,
+              "end_line": 566,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 614,
+              "end_line": 620,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 627,
+              "end_line": 633,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 648,
+              "end_line": 654,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 1016,
+              "end_line": 1022,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 1225,
+              "end_line": 1231,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/providers/RelayConfigProvider.tsx",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 8,
+              "end_line": 14,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 18,
+              "end_line": 30,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            },
+            {
+              "start_line": 80,
+              "end_line": 86,
+              "revision": "a236da81083291da09235c376001a8b84769ec75"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

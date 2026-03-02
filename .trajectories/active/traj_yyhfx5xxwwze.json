@@ -1,0 +1,406 @@
+{
+  "id": "traj_yyhfx5xxwwze",
+  "version": 1,
+  "task": {
+    "title": "Remove legacy relay client and begin server.ts decomposition"
+  },
+  "status": "active",
+  "startedAt": "2026-02-24T09:12:07.241Z",
+  "agents": [
+    {
+      "name": "default",
+      "role": "lead",
+      "joinedAt": "2026-02-24T09:20:31.761Z"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "chap_1ku36n0p7y3x",
+      "title": "Work",
+      "agentName": "default",
+      "startedAt": "2026-02-24T09:20:31.761Z",
+      "events": [
+        {
+          "ts": 1771924831762,
+          "type": "decision",
+          "content": "Removed legacy socket relay-client path and required RelayAdapter: Removed legacy socket relay-client path and required RelayAdapter",
+          "raw": {
+            "question": "Removed legacy socket relay-client path and required RelayAdapter",
+            "chosen": "Removed legacy socket relay-client path and required RelayAdapter",
+            "alternatives": [],
+            "reasoning": "Spec requires broker-only operation and eliminating daemon-mode branches to simplify server behavior."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771924831797,
+          "type": "decision",
+          "content": "Kept UserBridge interface but backed it with broker shim clients: Kept UserBridge interface but backed it with broker shim clients",
+          "raw": {
+            "question": "Kept UserBridge interface but backed it with broker shim clients",
+            "chosen": "Kept UserBridge interface but backed it with broker shim clients",
+            "alternatives": [],
+            "reasoning": "Preserves presence/channel API contracts while removing RelayClient/socket dependencies and duplicate-connection logic."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771925320711,
+          "type": "decision",
+          "content": "Introduced ServerState module to centralize mutable runtime data: Introduced ServerState module to centralize mutable runtime data",
+          "raw": {
+            "question": "Introduced ServerState module to centralize mutable runtime data",
+            "chosen": "Introduced ServerState module to centralize mutable runtime data",
+            "alternatives": [],
+            "reasoning": "Phase 1 requires decoupling shared state from startDashboard closures so subsequent websocket/routes extraction can use a stable state object."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771925454179,
+          "type": "decision",
+          "content": "Wave 1 (Phase 0) approved: Legacy relay-client.ts deleted, all daemon code paths removed, useBrokerAdapter/useExternalSpawnManager collapsed. ~1800 lines removed. Minor: stale spawnManager type and MultiProjectClient comment noted.: Wave 1 (Phase 0) approved: Legacy relay-client.ts deleted, all daemon code paths removed, useBrokerAdapter/useExternalSpawnManager collapsed. ~1800 lines removed. Minor: stale spawnManager type and MultiProjectClient comment noted.",
+          "raw": {
+            "question": "Wave 1 (Phase 0) approved: Legacy relay-client.ts deleted, all daemon code paths removed, useBrokerAdapter/useExternalSpawnManager collapsed. ~1800 lines removed. Minor: stale spawnManager type and MultiProjectClient comment noted.",
+            "chosen": "Wave 1 (Phase 0) approved: Legacy relay-client.ts deleted, all daemon code paths removed, useBrokerAdapter/useExternalSpawnManager collapsed. ~1800 lines removed. Minor: stale spawnManager type and MultiProjectClient comment noted.",
+            "alternatives": [],
+            "reasoning": "Clean removal with no orphaned imports. BrokerRelayClientShim properly typed. Fail-fast on missing RelayAdapter. 2 cosmetic findings deferred to Wave 2."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771925459651,
+          "type": "decision",
+          "content": "Wave 2 (Phase 1) approved: ServerState extracted to server-state.ts (279 lines). Pure state+accessors, zero Express dependency. BrokerRelayClientShim type consolidated. Wave 1 cosmetic findings addressed.: Wave 2 (Phase 1) approved: ServerState extracted to server-state.ts (279 lines). Pure state+accessors, zero Express dependency. BrokerRelayClientShim type consolidated. Wave 1 cosmetic findings addressed.",
+          "raw": {
+            "question": "Wave 2 (Phase 1) approved: ServerState extracted to server-state.ts (279 lines). Pure state+accessors, zero Express dependency. BrokerRelayClientShim type consolidated. Wave 1 cosmetic findings addressed.",
+            "chosen": "Wave 2 (Phase 1) approved: ServerState extracted to server-state.ts (279 lines). Pure state+accessors, zero Express dependency. BrokerRelayClientShim type consolidated. Wave 1 cosmetic findings addressed.",
+            "alternatives": [],
+            "reasoning": "Clean foundation for remaining extractions. Generic type params allow server.ts to cast to concrete types. Aliasing pattern shares references correctly."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771925663516,
+          "type": "decision",
+          "content": "Extracted broadcaster logic from server.ts into createBroadcasters and wired state-backed broadcasters: Extracted broadcaster logic from server.ts into createBroadcasters and wired state-backed broadcasters",
+          "raw": {
+            "question": "Extracted broadcaster logic from server.ts into createBroadcasters and wired state-backed broadcasters",
+            "chosen": "Extracted broadcaster logic from server.ts into createBroadcasters and wired state-backed broadcasters",
+            "alternatives": [],
+            "reasoning": "Centralizing dedup/replay-aware broadcast behavior reduces server.ts surface area and prepares for websocket/route module extraction without changing call-site contracts"
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771925726230,
+          "type": "decision",
+          "content": "Wave 3 (Phase 2) approved: broadcast.ts extracted (180 lines). All 4 broadcaster functions moved with dedup/hash/buffer logic. No inline broadcast implementations remain in server.ts.: Wave 3 (Phase 2) approved: broadcast.ts extracted (180 lines). All 4 broadcaster functions moved with dedup/hash/buffer logic. No inline broadcast implementations remain in server.ts.",
+          "raw": {
+            "question": "Wave 3 (Phase 2) approved: broadcast.ts extracted (180 lines). All 4 broadcaster functions moved with dedup/hash/buffer logic. No inline broadcast implementations remain in server.ts.",
+            "chosen": "Wave 3 (Phase 2) approved: broadcast.ts extracted (180 lines). All 4 broadcaster functions moved with dedup/hash/buffer logic. No inline broadcast implementations remain in server.ts.",
+            "alternatives": [],
+            "reasoning": "Clean extraction with proper dependency injection via createBroadcasters(state, deps). Dedup state (lastBroadcastPayload, recentLogHashes) encapsulated in broadcast module. PTY global bridge preserved."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771925995880,
+          "type": "decision",
+          "content": "Extracted dashboard data assembly into lib/data-assembly.ts and replaced inline helpers in server.ts: Extracted dashboard data assembly into lib/data-assembly.ts and replaced inline helpers in server.ts",
+          "raw": {
+            "question": "Extracted dashboard data assembly into lib/data-assembly.ts and replaced inline helpers in server.ts",
+            "chosen": "Extracted dashboard data assembly into lib/data-assembly.ts and replaced inline helpers in server.ts",
+            "alternatives": [],
+            "reasoning": "Moving getAllData/getBridgeData and shared mapping utilities behind a factory isolates stateful data composition logic, keeps server routes/websockets behavior unchanged, and reduces orchestrator complexity for later route/websocket extraction"
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771926066571,
+          "type": "decision",
+          "content": "Wave 4 (Phase 3) approved: data-assembly.ts extracted (749 lines). getAllData, getBridgeData, and all helper utilities moved. Storage dual-mode and cloud needs-attention preserved.: Wave 4 (Phase 3) approved: data-assembly.ts extracted (749 lines). getAllData, getBridgeData, and all helper utilities moved. Storage dual-mode and cloud needs-attention preserved.",
+          "raw": {
+            "question": "Wave 4 (Phase 3) approved: data-assembly.ts extracted (749 lines). getAllData, getBridgeData, and all helper utilities moved. Storage dual-mode and cloud needs-attention preserved.",
+            "chosen": "Wave 4 (Phase 3) approved: data-assembly.ts extracted (749 lines). getAllData, getBridgeData, and all helper utilities moved. Storage dual-mode and cloud needs-attention preserved.",
+            "alternatives": [],
+            "reasoning": "Largest extraction so far. Clean factory pattern with DataAssemblyDeps interface. Helper utilities (isInternalAgent, remapAgentName, buildThreadSummaryMap, formatDuration) exported standalone and used at 12 call sites in server.ts. No inline data assembly remains."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771926125682,
+          "type": "decision",
+          "content": "Extracted main and bridge WebSocket handlers into websocket modules: Extracted main and bridge WebSocket handlers into websocket modules",
+          "raw": {
+            "question": "Extracted main and bridge WebSocket handlers into websocket modules",
+            "chosen": "Extracted main and bridge WebSocket handlers into websocket modules",
+            "alternatives": [],
+            "reasoning": "Moving connection/replay/initial-sync logic into setupMainWebSocket/setupBridgeWebSocket reduces server.ts orchestration burden while preserving ping integration and existing broadcast call sites"
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771926372336,
+          "type": "decision",
+          "content": "Extracted integrated logs WebSocket handler into websocket/logs.ts while preserving standalone proxy log handler export: Extracted integrated logs WebSocket handler into websocket/logs.ts while preserving standalone proxy log handler export",
+          "raw": {
+            "question": "Extracted integrated logs WebSocket handler into websocket/logs.ts while preserving standalone proxy log handler export",
+            "chosen": "Extracted integrated logs WebSocket handler into websocket/logs.ts while preserving standalone proxy log handler export",
+            "alternatives": [],
+            "reasoning": "The logs connection logic (subscriptions, file watching, replay, input passthrough, keepalive) is isolated behind setupLogsWebSocket; preserving handleStandaloneLogWebSocket in the same module avoids proxy-mode regression"
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771926438874,
+          "type": "decision",
+          "content": "Wave 5/6 (Phase 4 partial) approved: logs WebSocket extracted to websocket/logs.ts (543 lines). setupLogsWebSocket(deps) factory with keepalive, subscribe/unsubscribe, replay, file watching, and input passthrough.: Wave 5/6 (Phase 4 partial) approved: logs WebSocket extracted to websocket/logs.ts (543 lines). setupLogsWebSocket(deps) factory with keepalive, subscribe/unsubscribe, replay, file watching, and input passthrough.",
+          "raw": {
+            "question": "Wave 5/6 (Phase 4 partial) approved: logs WebSocket extracted to websocket/logs.ts (543 lines). setupLogsWebSocket(deps) factory with keepalive, subscribe/unsubscribe, replay, file watching, and input passthrough.",
+            "chosen": "Wave 5/6 (Phase 4 partial) approved: logs WebSocket extracted to websocket/logs.ts (543 lines). setupLogsWebSocket(deps) factory with keepalive, subscribe/unsubscribe, replay, file watching, and input passthrough.",
+            "alternatives": [],
+            "reasoning": "Existing handleStandaloneLogWebSocket preserved unchanged. New setupLogsWebSocket cleanly extracted from server.ts inline block. All log state (subscriptions, file watchers, file sizes, buffers) passed via LogsWebSocketDeps interface. No inline logs WS code remains in server.ts."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771926632613,
+          "type": "decision",
+          "content": "Extracted presence websocket lifecycle and channel/DM broadcasters into websocket/presence.ts: Extracted presence websocket lifecycle and channel/DM broadcasters into websocket/presence.ts",
+          "raw": {
+            "question": "Extracted presence websocket lifecycle and channel/DM broadcasters into websocket/presence.ts",
+            "chosen": "Extracted presence websocket lifecycle and channel/DM broadcasters into websocket/presence.ts",
+            "alternatives": [],
+            "reasoning": "Centralizing presence connection management, heartbeat, typing/join/leave handling, and channel/direct broadcast helpers removes another large closure from server.ts while preserving relay inbound message routing via returned broadcaster functions"
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771926687936,
+          "type": "decision",
+          "content": "Wave 7 (Phase 4 complete) approved: All 4 WebSocket handlers extracted. presence.ts (429 lines) handles heartbeat, join/leave, typing, channel/DM message events. Returns broadcastChannelMessage and broadcastDirectMessage to caller.: Wave 7 (Phase 4 complete) approved: All 4 WebSocket handlers extracted. presence.ts (429 lines) handles heartbeat, join/leave, typing, channel/DM message events. Returns broadcastChannelMessage and broadcastDirectMessage to caller.",
+          "raw": {
+            "question": "Wave 7 (Phase 4 complete) approved: All 4 WebSocket handlers extracted. presence.ts (429 lines) handles heartbeat, join/leave, typing, channel/DM message events. Returns broadcastChannelMessage and broadcastDirectMessage to caller.",
+            "chosen": "Wave 7 (Phase 4 complete) approved: All 4 WebSocket handlers extracted. presence.ts (429 lines) handles heartbeat, join/leave, typing, channel/DM message events. Returns broadcastChannelMessage and broadcastDirectMessage to caller.",
+            "alternatives": [],
+            "reasoning": "Clean extraction with security checks preserved (auth validation, username mismatch guards). Multi-tab support intact. UserBridgeLike interface avoids tight coupling. broadcastChannelMessage/broadcastDirectMessage returned to server.ts for relay_inbound event routing. Server.ts now 5046 lines."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771926785147,
+          "type": "decision",
+          "content": "Extracted integrated messaging endpoints into routes/messaging.ts and registered via registerMessagingRoutes: Extracted integrated messaging endpoints into routes/messaging.ts and registered via registerMessagingRoutes",
+          "raw": {
+            "question": "Extracted integrated messaging endpoints into routes/messaging.ts and registered via registerMessagingRoutes",
+            "chosen": "Extracted integrated messaging endpoints into routes/messaging.ts and registered via registerMessagingRoutes",
+            "alternatives": [],
+            "reasoning": "Moving send/bridge-send/upload/attachment routes behind explicit deps separates route logic from server orchestration and establishes the register*Routes(app, deps) pattern for remaining Phase 5 extractions"
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771926830322,
+          "type": "decision",
+          "content": "Wave 8 (Phase 5 partial) approved: messaging.ts extracted (275 lines). /api/send, /api/bridge/send, /api/upload, /api/attachment/:id moved with MessagingRouteDeps interface.: Wave 8 (Phase 5 partial) approved: messaging.ts extracted (275 lines). /api/send, /api/bridge/send, /api/upload, /api/attachment/:id moved with MessagingRouteDeps interface.",
+          "raw": {
+            "question": "Wave 8 (Phase 5 partial) approved: messaging.ts extracted (275 lines). /api/send, /api/bridge/send, /api/upload, /api/attachment/:id moved with MessagingRouteDeps interface.",
+            "chosen": "Wave 8 (Phase 5 partial) approved: messaging.ts extracted (275 lines). /api/send, /api/bridge/send, /api/upload, /api/attachment/:id moved with MessagingRouteDeps interface.",
+            "alternatives": [],
+            "reasoning": "Clean registerMessagingRoutes(app, deps) pattern. RelayClientLike interface for loose coupling. Attachment MIME validation and base64 handling preserved. Bridge send returns 501 as expected."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771926915466,
+          "type": "decision",
+          "content": "Extracted history/session/stat endpoints into routes/history.ts and registered via registerHistoryRoutes: Extracted history/session/stat endpoints into routes/history.ts and registered via registerHistoryRoutes",
+          "raw": {
+            "question": "Extracted history/session/stat endpoints into routes/history.ts and registered via registerHistoryRoutes",
+            "chosen": "Extracted history/session/stat endpoints into routes/history.ts and registered via registerHistoryRoutes",
+            "alternatives": [],
+            "reasoning": "History APIs are storage-focused and share common remapping/filter helpers; moving them into a dedicated route module reduces server.ts size and follows the same dependency-injected route registration pattern"
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771927008844,
+          "type": "decision",
+          "content": "Wave 9 (Phase 5: history routes) approved: 5 endpoints extracted to routes/history.ts (263 lines). Clean HistoryRouteDeps with storage, formatDuration, isInternalAgent, remapAgentName.: Wave 9 (Phase 5: history routes) approved: 5 endpoints extracted to routes/history.ts (263 lines). Clean HistoryRouteDeps with storage, formatDuration, isInternalAgent, remapAgentName.",
+          "raw": {
+            "question": "Wave 9 (Phase 5: history routes) approved: 5 endpoints extracted to routes/history.ts (263 lines). Clean HistoryRouteDeps with storage, formatDuration, isInternalAgent, remapAgentName.",
+            "chosen": "Wave 9 (Phase 5: history routes) approved: 5 endpoints extracted to routes/history.ts (263 lines). Clean HistoryRouteDeps with storage, formatDuration, isInternalAgent, remapAgentName.",
+            "alternatives": [],
+            "reasoning": "All /api/history/* handlers moved. Storage guard (503 when unconfigured) preserved. Search filtering, conversation pairing, and stats aggregation intact."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771927180319,
+          "type": "decision",
+          "content": "Extracted CLI auth + credentials endpoints into routes/auth.ts with dependency-injected auth handlers: Extracted CLI auth + credentials endpoints into routes/auth.ts with dependency-injected auth handlers",
+          "raw": {
+            "question": "Extracted CLI auth + credentials endpoints into routes/auth.ts with dependency-injected auth handlers",
+            "chosen": "Extracted CLI auth + credentials endpoints into routes/auth.ts with dependency-injected auth handlers",
+            "alternatives": [],
+            "reasoning": "Keeps server.ts focused on orchestration and preserves existing token-validation/auth polling behavior while isolating auth concerns"
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771927232229,
+          "type": "decision",
+          "content": "Wave 10 (Phase 5: auth routes) approved: 10 endpoints extracted to routes/auth.ts (341 lines). Timing-safe token validation middleware preserved. OAuth flow, code submission, credential CRUD all moved.: Wave 10 (Phase 5: auth routes) approved: 10 endpoints extracted to routes/auth.ts (341 lines). Timing-safe token validation middleware preserved. OAuth flow, code submission, credential CRUD all moved.",
+          "raw": {
+            "question": "Wave 10 (Phase 5: auth routes) approved: 10 endpoints extracted to routes/auth.ts (341 lines). Timing-safe token validation middleware preserved. OAuth flow, code submission, credential CRUD all moved.",
+            "chosen": "Wave 10 (Phase 5: auth routes) approved: 10 endpoints extracted to routes/auth.ts (341 lines). Timing-safe token validation middleware preserved. OAuth flow, code submission, credential CRUD all moved.",
+            "alternatives": [],
+            "reasoning": "Security-sensitive code properly extracted. timingSafeEqual for workspace token validation preserved. Dynamic import of @agent-relay/user-directory for credential management intact. AuthRouteDeps cleanly decouples from cli-auth internals."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771927287673,
+          "type": "decision",
+          "content": "Wave 11 (Phase 5: settings routes) approved: 3 endpoints in routes/settings.ts (128 lines). Zero deps — all config via dynamic imports.: Wave 11 (Phase 5: settings routes) approved: 3 endpoints in routes/settings.ts (128 lines). Zero deps — all config via dynamic imports.",
+          "raw": {
+            "question": "Wave 11 (Phase 5: settings routes) approved: 3 endpoints in routes/settings.ts (128 lines). Zero deps — all config via dynamic imports.",
+            "chosen": "Wave 11 (Phase 5: settings routes) approved: 3 endpoints in routes/settings.ts (128 lines). Zero deps — all config via dynamic imports.",
+            "alternatives": [],
+            "reasoning": "Self-contained module. No external state needed. Dynamic imports of @agent-relay/config preserve lazy loading pattern."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771927379792,
+          "type": "decision",
+          "content": "Wave 12 (Phase 5: decisions routes) approved: 5 CRUD endpoints in routes/decisions.ts (156 lines). Urgency ordering, relay notification on approve/reject preserved.: Wave 12 (Phase 5: decisions routes) approved: 5 CRUD endpoints in routes/decisions.ts (156 lines). Urgency ordering, relay notification on approve/reject preserved.",
+          "raw": {
+            "question": "Wave 12 (Phase 5: decisions routes) approved: 5 CRUD endpoints in routes/decisions.ts (156 lines). Urgency ordering, relay notification on approve/reject preserved.",
+            "chosen": "Wave 12 (Phase 5: decisions routes) approved: 5 CRUD endpoints in routes/decisions.ts (156 lines). Urgency ordering, relay notification on approve/reject preserved.",
+            "alternatives": [],
+            "reasoning": "Clean DecisionsRouteDeps. Decision type exported for server.ts casting. Approve/reject notify agent via relay client."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771927439821,
+          "type": "decision",
+          "content": "Wave 13 (Phase 5: tasks routes) approved: 4 CRUD endpoints in routes/tasks.ts (150 lines). Priority sorting, relay notification on assign/cancel preserved.: Wave 13 (Phase 5: tasks routes) approved: 4 CRUD endpoints in routes/tasks.ts (150 lines). Priority sorting, relay notification on assign/cancel preserved.",
+          "raw": {
+            "question": "Wave 13 (Phase 5: tasks routes) approved: 4 CRUD endpoints in routes/tasks.ts (150 lines). Priority sorting, relay notification on assign/cancel preserved.",
+            "chosen": "Wave 13 (Phase 5: tasks routes) approved: 4 CRUD endpoints in routes/tasks.ts (150 lines). Priority sorting, relay notification on assign/cancel preserved.",
+            "alternatives": [],
+            "reasoning": "Mirrors decisions pattern. TaskAssignment type exported. Filter by status/agent on GET."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771927546736,
+          "type": "decision",
+          "content": "Wave 14 (Phase 5: fleet routes) approved: 2 endpoints + loadAgentStatuses helper in routes/fleet.ts (174 lines). Bridge-state enrichment, local-daemon fallback, aggregate stats preserved.: Wave 14 (Phase 5: fleet routes) approved: 2 endpoints + loadAgentStatuses helper in routes/fleet.ts (174 lines). Bridge-state enrichment, local-daemon fallback, aggregate stats preserved.",
+          "raw": {
+            "question": "Wave 14 (Phase 5: fleet routes) approved: 2 endpoints + loadAgentStatuses helper in routes/fleet.ts (174 lines). Bridge-state enrichment, local-daemon fallback, aggregate stats preserved.",
+            "chosen": "Wave 14 (Phase 5: fleet routes) approved: 2 endpoints + loadAgentStatuses helper in routes/fleet.ts (174 lines). Bridge-state enrichment, local-daemon fallback, aggregate stats preserved.",
+            "alternatives": [],
+            "reasoning": "Imports Decision and TaskAssignment types from sibling route modules — good cross-module typing. loadAgentStatuses moved out of server.ts."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771927758597,
+          "type": "decision",
+          "content": "Extracted spawn/logs/repos/trajectory endpoints into routes/spawn.ts and wired via registerSpawnRoutes: Extracted spawn/logs/repos/trajectory endpoints into routes/spawn.ts and wired via registerSpawnRoutes",
+          "raw": {
+            "question": "Extracted spawn/logs/repos/trajectory endpoints into routes/spawn.ts and wired via registerSpawnRoutes",
+            "chosen": "Extracted spawn/logs/repos/trajectory endpoints into routes/spawn.ts and wired via registerSpawnRoutes",
+            "alternatives": [],
+            "reasoning": "Consolidates operational endpoints into a dedicated module and removes a large inline server.ts block while preserving broker passthrough and relay event broadcasts"
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771928119975,
+          "type": "decision",
+          "content": "Wave 15 (spawn routes): APPROVED - 637 lines extracted to routes/spawn.ts. 16 endpoints covering logs, online status, cwd registration, spawn, release, interrupt, repos clone/remove, architect spawn, broker spawned-agents proxy, and trajectory APIs. Clean dependency injection via SpawnRouteDeps. Path traversal guard on repos/clone and repos/remove. 409 duplicate check on architect spawn.: Wave 15 (spawn routes): APPROVED - 637 lines extracted to routes/spawn.ts. 16 endpoints covering logs, online status, cwd registration, spawn, release, interrupt, repos clone/remove, architect spawn, broker spawned-agents proxy, and trajectory APIs. Clean dependency injection via SpawnRouteDeps. Path traversal guard on repos/clone and repos/remove. 409 duplicate check on architect spawn.",
+          "raw": {
+            "question": "Wave 15 (spawn routes): APPROVED - 637 lines extracted to routes/spawn.ts. 16 endpoints covering logs, online status, cwd registration, spawn, release, interrupt, repos clone/remove, architect spawn, broker spawned-agents proxy, and trajectory APIs. Clean dependency injection via SpawnRouteDeps. Path traversal guard on repos/clone and repos/remove. 409 duplicate check on architect spawn.",
+            "chosen": "Wave 15 (spawn routes): APPROVED - 637 lines extracted to routes/spawn.ts. 16 endpoints covering logs, online status, cwd registration, spawn, release, interrupt, repos clone/remove, architect spawn, broker spawned-agents proxy, and trajectory APIs. Clean dependency injection via SpawnRouteDeps. Path traversal guard on repos/clone and repos/remove. 409 duplicate check on architect spawn.",
+            "alternatives": [],
+            "reasoning": ""
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771928126636,
+          "type": "decision",
+          "content": "Wave 16 (metrics + process-metrics): APPROVED - 267 lines in routes/metrics.ts (5 endpoints: needs-attention proxy, metrics, prometheus, agents, health) and 291 lines in lib/process-metrics.ts (process-tree CPU/RSS sampling with /proc + ps fallback, cached snapshots). Clean factory pattern createProcessMetrics(). Server.ts down to 2542 lines from 7153 original.: Wave 16 (metrics + process-metrics): APPROVED - 267 lines in routes/metrics.ts (5 endpoints: needs-attention proxy, metrics, prometheus, agents, health) and 291 lines in lib/process-metrics.ts (process-tree CPU/RSS sampling with /proc + ps fallback, cached snapshots). Clean factory pattern createProcessMetrics(). Server.ts down to 2542 lines from 7153 original.",
+          "raw": {
+            "question": "Wave 16 (metrics + process-metrics): APPROVED - 267 lines in routes/metrics.ts (5 endpoints: needs-attention proxy, metrics, prometheus, agents, health) and 291 lines in lib/process-metrics.ts (process-tree CPU/RSS sampling with /proc + ps fallback, cached snapshots). Clean factory pattern createProcessMetrics(). Server.ts down to 2542 lines from 7153 original.",
+            "chosen": "Wave 16 (metrics + process-metrics): APPROVED - 267 lines in routes/metrics.ts (5 endpoints: needs-attention proxy, metrics, prometheus, agents, health) and 291 lines in lib/process-metrics.ts (process-tree CPU/RSS sampling with /proc + ps fallback, cached snapshots). Clean factory pattern createProcessMetrics(). Server.ts down to 2542 lines from 7153 original.",
+            "alternatives": [],
+            "reasoning": ""
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771929086825,
+          "type": "decision",
+          "content": "Waves 17-18 (Phase 6-7: Final extraction + orchestrator slim-down): APPROVED - 5 new modules extracted: cloud-persistence.ts (150 lines, session tracking via API), channel-state.ts (194 lines, channel record persistence), attachment-storage.ts (64 lines, uploads/eviction), websocket-runtime.ts (110 lines, upgrade routing + ping/pong), system.ts (220 lines, health/files/bridge/beads/relay-send), ui.ts (117 lines, static serving + fallback). Server.ts reduced to 593 lines — pure orchestrator wiring imports, creates state, and registers all modules. No inline business logic remains.: Waves 17-18 (Phase 6-7: Final extraction + orchestrator slim-down): APPROVED - 5 new modules extracted: cloud-persistence.ts (150 lines, session tracking via API), channel-state.ts (194 lines, channel record persistence), attachment-storage.ts (64 lines, uploads/eviction), websocket-runtime.ts (110 lines, upgrade routing + ping/pong), system.ts (220 lines, health/files/bridge/beads/relay-send), ui.ts (117 lines, static serving + fallback). Server.ts reduced to 593 lines — pure orchestrator wiring imports, creates state, and registers all modules. No inline business logic remains.",
+          "raw": {
+            "question": "Waves 17-18 (Phase 6-7: Final extraction + orchestrator slim-down): APPROVED - 5 new modules extracted: cloud-persistence.ts (150 lines, session tracking via API), channel-state.ts (194 lines, channel record persistence), attachment-storage.ts (64 lines, uploads/eviction), websocket-runtime.ts (110 lines, upgrade routing + ping/pong), system.ts (220 lines, health/files/bridge/beads/relay-send), ui.ts (117 lines, static serving + fallback). Server.ts reduced to 593 lines — pure orchestrator wiring imports, creates state, and registers all modules. No inline business logic remains.",
+            "chosen": "Waves 17-18 (Phase 6-7: Final extraction + orchestrator slim-down): APPROVED - 5 new modules extracted: cloud-persistence.ts (150 lines, session tracking via API), channel-state.ts (194 lines, channel record persistence), attachment-storage.ts (64 lines, uploads/eviction), websocket-runtime.ts (110 lines, upgrade routing + ping/pong), system.ts (220 lines, health/files/bridge/beads/relay-send), ui.ts (117 lines, static serving + fallback). Server.ts reduced to 593 lines — pure orchestrator wiring imports, creates state, and registers all modules. No inline business logic remains.",
+            "alternatives": [],
+            "reasoning": ""
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771929682527,
+          "type": "decision",
+          "content": "CodexReviewer final audit: 3 CRITICAL (command injection in bead endpoint, unauthed credential mutations, presence identity spoofing), 7 WARNING (path traversal, missing catch handlers, dropped thread semantics, unguarded decodeURIComponent, type-safety regressions, orphaned initCloudPersistence import, global state leaks), 2 INFO (dead Dashboard filter, unused spawn void fields). Prioritized CRITICALs #1 and #2 for immediate patching by Implementer.: CodexReviewer final audit: 3 CRITICAL (command injection in bead endpoint, unauthed credential mutations, presence identity spoofing), 7 WARNING (path traversal, missing catch handlers, dropped thread semantics, unguarded decodeURIComponent, type-safety regressions, orphaned initCloudPersistence import, global state leaks), 2 INFO (dead Dashboard filter, unused spawn void fields). Prioritized CRITICALs #1 and #2 for immediate patching by Implementer.",
+          "raw": {
+            "question": "CodexReviewer final audit: 3 CRITICAL (command injection in bead endpoint, unauthed credential mutations, presence identity spoofing), 7 WARNING (path traversal, missing catch handlers, dropped thread semantics, unguarded decodeURIComponent, type-safety regressions, orphaned initCloudPersistence import, global state leaks), 2 INFO (dead Dashboard filter, unused spawn void fields). Prioritized CRITICALs #1 and #2 for immediate patching by Implementer.",
+            "chosen": "CodexReviewer final audit: 3 CRITICAL (command injection in bead endpoint, unauthed credential mutations, presence identity spoofing), 7 WARNING (path traversal, missing catch handlers, dropped thread semantics, unguarded decodeURIComponent, type-safety regressions, orphaned initCloudPersistence import, global state leaks), 2 INFO (dead Dashboard filter, unused spawn void fields). Prioritized CRITICALs #1 and #2 for immediate patching by Implementer.",
+            "alternatives": [],
+            "reasoning": ""
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771929856904,
+          "type": "decision",
+          "content": "Verified all CRITICAL and WARNING patches from CodexReviewer audit. CRITICAL #1 (command injection) fixed via execFile with array args. CRITICAL #2 (unauthed credentials) fixed via workspace-token middleware on /api/credentials. CRITICAL #3 (presence spoofing) confirmed pre-existing. 5 WARNING fixes also verified (path traversal, catch handlers, thread semantics, decodeURIComponent guard, orphaned import removed). All checks passing.: Verified all CRITICAL and WARNING patches from CodexReviewer audit. CRITICAL #1 (command injection) fixed via execFile with array args. CRITICAL #2 (unauthed credentials) fixed via workspace-token middleware on /api/credentials. CRITICAL #3 (presence spoofing) confirmed pre-existing. 5 WARNING fixes also verified (path traversal, catch handlers, thread semantics, decodeURIComponent guard, orphaned import removed). All checks passing.",
+          "raw": {
+            "question": "Verified all CRITICAL and WARNING patches from CodexReviewer audit. CRITICAL #1 (command injection) fixed via execFile with array args. CRITICAL #2 (unauthed credentials) fixed via workspace-token middleware on /api/credentials. CRITICAL #3 (presence spoofing) confirmed pre-existing. 5 WARNING fixes also verified (path traversal, catch handlers, thread semantics, decodeURIComponent guard, orphaned import removed). All checks passing.",
+            "chosen": "Verified all CRITICAL and WARNING patches from CodexReviewer audit. CRITICAL #1 (command injection) fixed via execFile with array args. CRITICAL #2 (unauthed credentials) fixed via workspace-token middleware on /api/credentials. CRITICAL #3 (presence spoofing) confirmed pre-existing. 5 WARNING fixes also verified (path traversal, catch handlers, thread semantics, decodeURIComponent guard, orphaned import removed). All checks passing.",
+            "alternatives": [],
+            "reasoning": ""
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771941976453,
+          "type": "decision",
+          "content": "Chose dashboard postbuild out-sync over proxy static path change: Chose dashboard postbuild out-sync over proxy static path change",
+          "raw": {
+            "question": "Chose dashboard postbuild out-sync over proxy static path change",
+            "chosen": "Chose dashboard postbuild out-sync over proxy static path change",
+            "alternatives": [],
+            "reasoning": "Keeps server runtime/static path unchanged while ensuring dashboard-server/out stays current after dashboard builds"
+          },
+          "significance": "high"
+        }
+      ]
+    }
+  ],
+  "commits": [],
+  "filesChanged": [],
+  "projectId": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard",
+  "tags": [],
+  "_trace": {
+    "startRef": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8",
+    "endRef": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+  }
+}

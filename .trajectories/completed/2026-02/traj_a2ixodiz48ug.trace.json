@@ -1,0 +1,191 @@
+{
+  "version": 1,
+  "id": "trace_1t4cc26flyd4",
+  "timestamp": "2026-02-24T09:06:29.212Z",
+  "trajectory": "traj_a2ixodiz48ug",
+  "files": [
+    {
+      "path": "packages/dashboard/src/components/App.tsx",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 831,
+              "end_line": 844,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 925,
+              "end_line": 931,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/components/channels/ChannelMessageList.tsx",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 28,
+              "end_line": 37,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 165,
+              "end_line": 174,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 206,
+              "end_line": 227,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 232,
+              "end_line": 251,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 255,
+              "end_line": 262,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/components/channels/ChannelViewV1.tsx",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 4,
+              "end_line": 10,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 12,
+              "end_line": 21,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 40,
+              "end_line": 60,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 84,
+              "end_line": 93,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 101,
+              "end_line": 108,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 134,
+              "end_line": 143,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 154,
+              "end_line": 166,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/components/channels/api.ts",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 249,
+              "end_line": 255,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/components/channels/types.ts",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 6,
+              "end_line": 14,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 299,
+              "end_line": 315,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "packages/dashboard/src/providers/MessageProvider.tsx",
+      "conversations": [
+        {
+          "contributor": {
+            "type": "agent",
+            "model": "unknown"
+          },
+          "ranges": [
+            {
+              "start_line": 148,
+              "end_line": 154,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 1010,
+              "end_line": 1017,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 1029,
+              "end_line": 1040,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            },
+            {
+              "start_line": 1044,
+              "end_line": 1063,
+              "revision": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

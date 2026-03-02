@@ -6,8 +6,57 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useDashboardConfig } from '../adapters';
+
+/**
+ * Model options inlined from @agent-relay/config (cli-registry.yaml).
+ * Inlined to avoid importing Node.js dependencies into the browser bundle.
+ */
+const RegistryModelOptions = {
+  Claude: [
+    { value: 'sonnet', label: 'Sonnet' },
+    { value: 'opus', label: 'Opus' },
+    { value: 'haiku', label: 'Haiku' },
+  ],
+  Codex: [
+    { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex — Frontier agentic coding model' },
+    { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex — Latest frontier agentic coding model' },
+    { value: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark — Ultra-fast coding model' },
+    { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max — Deep and fast reasoning' },
+    { value: 'gpt-5.2', label: 'GPT-5.2 — Frontier model, knowledge & reasoning' },
+    { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini — Cheaper, faster' },
+  ],
+  Gemini: [
+    { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
+  ],
+  Cursor: [
+    { value: 'opus-4.5-thinking', label: 'Claude 4.5 Opus (Thinking)' },
+    { value: 'opus-4.5', label: 'Claude 4.5 Opus' },
+    { value: 'sonnet-4.5', label: 'Claude 4.5 Sonnet' },
+    { value: 'sonnet-4.5-thinking', label: 'Claude 4.5 Sonnet (Thinking)' },
+    { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
+    { value: 'gpt-5.2-codex-high', label: 'GPT-5.2 Codex High' },
+    { value: 'gpt-5.2-codex-low', label: 'GPT-5.2 Codex Low' },
+    { value: 'gpt-5.2-codex-xhigh', label: 'GPT-5.2 Codex Extra High' },
+    { value: 'gpt-5.2-codex-fast', label: 'GPT-5.2 Codex Fast' },
+    { value: 'gpt-5.2-codex-high-fast', label: 'GPT-5.2 Codex High Fast' },
+    { value: 'gpt-5.2-codex-low-fast', label: 'GPT-5.2 Codex Low Fast' },
+    { value: 'gpt-5.2-codex-xhigh-fast', label: 'GPT-5.2 Codex Extra High Fast' },
+    { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
+    { value: 'gpt-5.1-codex-max-high', label: 'GPT-5.1 Codex Max High' },
+    { value: 'gpt-5.2', label: 'GPT-5.2' },
+    { value: 'gpt-5.2-high', label: 'GPT-5.2 High' },
+    { value: 'gpt-5.1-high', label: 'GPT-5.1 High' },
+    { value: 'gemini-3-pro', label: 'Gemini 3 Pro' },
+    { value: 'gemini-3-flash', label: 'Gemini 3 Flash' },
+    { value: 'composer-1', label: 'Composer 1' },
+    { value: 'grok', label: 'Grok' },
+  ],
+};
 import { getAgentColor, getAgentInitials } from '../lib/colors';
-import { cloudApi } from '../lib/cloudApi';
 
 export type SpeakOnTrigger = 'SESSION_END' | 'CODE_WRITTEN' | 'REVIEW_REQUEST' | 'EXPLICIT_ASK' | 'ALL_MESSAGES';
 
@@ -21,6 +70,7 @@ export interface SpawnConfig {
   shadowAgent?: string;
   shadowTriggers?: SpeakOnTrigger[];
   shadowSpeakOn?: SpeakOnTrigger[];
+  continueFrom?: string;
 }
 
 function deriveShadowMode(command: string): 'subagent' | 'process' {
@@ -36,8 +86,6 @@ export interface SpawnModalProps {
   existingAgents: string[];
   isSpawning?: boolean;
   error?: string | null;
-  /** Whether running in cloud mode (enables credentials check) */
-  isCloudMode?: boolean;
   /** Active workspace ID for provider setup redirect */
   workspaceId?: string;
   /** Agent defaults from settings */
@@ -54,64 +102,31 @@ export interface SpawnModalProps {
   repos?: Array<{ id: string; githubFullName: string }>;
   /** Currently active repo ID (cloud mode) */
   activeRepoId?: string;
+  /** Connected provider IDs (cloud mode) - used to disable unconnected providers */
+  connectedProviders?: string[];
+  /** Model options per agent type — provided by the host app */
+  modelOptions?: {
+    claude?: ModelOption[];
+    cursor?: ModelOption[];
+    codex?: ModelOption[];
+    gemini?: ModelOption[];
+  };
 }
 
-/** Model options for Claude agents */
-export const CLAUDE_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'opus', label: 'Opus' },
-  { value: 'haiku', label: 'Haiku' },
-];
+export interface ModelOption {
+  value: string;
+  label: string;
+}
 
-type ClaudeModel = string;
+const EMPTY_MODEL_OPTIONS: ModelOption[] = [];
 
-/** Model options for Cursor agents */
-export const CURSOR_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'opus-4.5-thinking', label: 'Claude 4.5 Opus (Thinking)' },
-  { value: 'opus-4.5', label: 'Claude 4.5 Opus' },
-  { value: 'sonnet-4.5', label: 'Claude 4.5 Sonnet' },
-  { value: 'sonnet-4.5-thinking', label: 'Claude 4.5 Sonnet (Thinking)' },
-  { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
-  { value: 'gpt-5.2-codex-high', label: 'GPT-5.2 Codex High' },
-  { value: 'gpt-5.2-codex-low', label: 'GPT-5.2 Codex Low' },
-  { value: 'gpt-5.2-codex-xhigh', label: 'GPT-5.2 Codex Extra High' },
-  { value: 'gpt-5.2-codex-fast', label: 'GPT-5.2 Codex Fast' },
-  { value: 'gpt-5.2-codex-high-fast', label: 'GPT-5.2 Codex High Fast' },
-  { value: 'gpt-5.2-codex-low-fast', label: 'GPT-5.2 Codex Low Fast' },
-  { value: 'gpt-5.2-codex-xhigh-fast', label: 'GPT-5.2 Codex Extra High Fast' },
-  { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
-  { value: 'gpt-5.1-codex-max-high', label: 'GPT-5.1 Codex Max High' },
-  { value: 'gpt-5.2', label: 'GPT-5.2' },
-  { value: 'gpt-5.2-high', label: 'GPT-5.2 High' },
-  { value: 'gpt-5.1-high', label: 'GPT-5.1 High' },
-  { value: 'gemini-3-pro', label: 'Gemini 3 Pro' },
-  { value: 'gemini-3-flash', label: 'Gemini 3 Flash' },
-  { value: 'composer-1', label: 'Composer 1' },
-  { value: 'grok', label: 'Grok' },
-];
-
-type CursorModel = string;
-
-/** Model options for Codex agents */
-export const CODEX_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex — Frontier agentic coding model' },
-  { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex — Latest frontier agentic coding model' },
-  { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max — Deep and fast reasoning' },
-  { value: 'gpt-5.2', label: 'GPT-5.2 — Frontier model, knowledge & reasoning' },
-  { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini — Cheaper, faster' },
-];
-
-type CodexModel = string;
-
-/** Model options for Gemini agents */
-export const GEMINI_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-];
-
-type GeminiModel = string;
+/** Built-in model options sourced from @agent-relay/config (cli-registry.yaml) */
+export const DEFAULT_MODEL_OPTIONS: Record<string, ModelOption[]> = {
+  claude: RegistryModelOptions.Claude,
+  cursor: RegistryModelOptions.Cursor,
+  codex: RegistryModelOptions.Codex,
+  gemini: RegistryModelOptions.Gemini,
+};
 
 const AGENT_TEMPLATES = [
   {
@@ -185,22 +200,33 @@ export function SpawnModal({
   existingAgents,
   isSpawning = false,
   error,
-  isCloudMode = false,
   workspaceId,
   agentDefaults,
   repos,
   activeRepoId,
+  connectedProviders,
+  modelOptions,
 }: SpawnModalProps) {
+  const { features } = useDashboardConfig();
+  const hasWorkspaceFeature = features.workspaces;
+  const canUseWorkspaceRepoSelection = hasWorkspaceFeature && !!repos?.length;
+
+  const claudeModels = modelOptions?.claude ?? DEFAULT_MODEL_OPTIONS.claude ?? EMPTY_MODEL_OPTIONS;
+  const cursorModels = modelOptions?.cursor ?? DEFAULT_MODEL_OPTIONS.cursor ?? EMPTY_MODEL_OPTIONS;
+  const codexModels = modelOptions?.codex ?? DEFAULT_MODEL_OPTIONS.codex ?? EMPTY_MODEL_OPTIONS;
+  const geminiModels = modelOptions?.gemini ?? DEFAULT_MODEL_OPTIONS.gemini ?? EMPTY_MODEL_OPTIONS;
+
   const [selectedTemplate, setSelectedTemplate] = useState(AGENT_TEMPLATES[0]);
   const [name, setName] = useState('');
   const [customCommand, setCustomCommand] = useState('');
-  const [selectedModel, setSelectedModel] = useState<ClaudeModel>('sonnet');
-  const [selectedCursorModel, setSelectedCursorModel] = useState<CursorModel>('opus-4.5-thinking');
-  const [selectedCodexModel, setSelectedCodexModel] = useState<CodexModel>('gpt-5.2-codex');
-  const [selectedGeminiModel, setSelectedGeminiModel] = useState<GeminiModel>('gemini-2.5-pro');
+  const [selectedModel, setSelectedModel] = useState(agentDefaults?.defaultModels?.claude ?? claudeModels[0]?.value ?? '');
+  const [selectedCursorModel, setSelectedCursorModel] = useState(agentDefaults?.defaultModels?.cursor ?? cursorModels[0]?.value ?? '');
+  const [selectedCodexModel, setSelectedCodexModel] = useState(agentDefaults?.defaultModels?.codex ?? codexModels[0]?.value ?? '');
+  const [selectedGeminiModel, setSelectedGeminiModel] = useState(agentDefaults?.defaultModels?.gemini ?? geminiModels[0]?.value ?? '');
   const [cwd, setCwd] = useState('');
   const [selectedRepoId, setSelectedRepoId] = useState<string | undefined>(activeRepoId);
   const [team, setTeam] = useState('');
+  const [continueFromPrevious, setContinueFromPrevious] = useState(false);
   const [isShadow, setIsShadow] = useState(false);
   const [shadowOf, setShadowOf] = useState('');
   const [shadowAgent, setShadowAgent] = useState('');
@@ -234,69 +260,6 @@ export function SpawnModal({
 
   const shadowMode = useMemo(() => deriveShadowMode(effectiveCommand), [effectiveCommand]);
 
-  // Provider credentials state (for cloud mode)
-  const [connectedProviders, setConnectedProviders] = useState<Set<string>>(new Set());
-  const [isLoadingCredentials, setIsLoadingCredentials] = useState(false);
-
-  // Check if selected provider has active credentials
-  const hasActiveCredentials = useMemo(() => {
-    // Non-cloud mode or custom template: no credentials check needed
-    if (!isCloudMode || !selectedTemplate.providerId) {
-      return true;
-    }
-    // Check if provider is connected (handle both 'openai' and 'codex' for OpenAI)
-    if (selectedTemplate.providerId === 'codex') {
-      return connectedProviders.has('codex') || connectedProviders.has('openai');
-    }
-    return connectedProviders.has(selectedTemplate.providerId);
-  }, [isCloudMode, selectedTemplate.providerId, connectedProviders]);
-
-  // Provider setup URL for CTA
-  // Note: /providers/setup/ only supports 'claude' and 'codex'
-  // Other providers should go to /providers page
-  const providerSetupUrl = useMemo(() => {
-    if (!selectedTemplate.providerId) return null;
-    const command = selectedTemplate.command;
-    const supportedSetupPages = ['claude', 'codex'];
-
-    if (supportedSetupPages.includes(command)) {
-      const base = `/providers/setup/${command}`;
-      return workspaceId ? `${base}?workspace=${workspaceId}` : base;
-    } else {
-      // For other providers, go to main providers page
-      return workspaceId ? `/providers?workspace=${workspaceId}` : '/providers';
-    }
-  }, [selectedTemplate, workspaceId]);
-
-  // Fetch connected providers when modal opens in cloud mode
-  useEffect(() => {
-    if (!isOpen || !isCloudMode || !workspaceId) {
-      return;
-    }
-
-    const fetchProviders = async () => {
-      setIsLoadingCredentials(true);
-      try {
-        // Get workspace-specific provider connection status
-        const result = await cloudApi.getProviders(workspaceId);
-        if (result.success && result.data.providers) {
-          const providers = new Set(
-            result.data.providers
-              .filter(p => p.isConnected)
-              .map(p => p.id)
-          );
-          setConnectedProviders(providers);
-        }
-      } catch (err) {
-        console.error('Failed to fetch provider credentials:', err);
-      } finally {
-        setIsLoadingCredentials(false);
-      }
-    };
-
-    fetchProviders();
-  }, [isOpen, isCloudMode, workspaceId]);
-
   const SPEAK_ON_OPTIONS: { value: SpeakOnTrigger; label: string; description: string }[] = [
     { value: 'EXPLICIT_ASK', label: 'Explicit Ask', description: 'When directly asked' },
     { value: 'SESSION_END', label: 'Session End', description: 'When session ends' },
@@ -317,22 +280,30 @@ export function SpawnModal({
   useEffect(() => {
     if (isOpen) {
       // Determine default template based on settings
+      // In cloud mode, also skip templates whose provider isn't connected
+      const isTemplateAvailable = (t: typeof AGENT_TEMPLATES[number]) => {
+        if (t.comingSoon && hasWorkspaceFeature) return false;
+        if (connectedProviders && t.providerId && !connectedProviders.includes(t.providerId)) return false;
+        return true;
+      };
       const defaultTemplateId = agentDefaults?.defaultCliType;
       const defaultTemplate = defaultTemplateId
-        ? AGENT_TEMPLATES.find(t => t.id === defaultTemplateId && !t.comingSoon) ?? AGENT_TEMPLATES[0]
-        : AGENT_TEMPLATES[0];
+        ? AGENT_TEMPLATES.find(t => t.id === defaultTemplateId && isTemplateAvailable(t))
+          ?? AGENT_TEMPLATES.find(t => isTemplateAvailable(t))
+          ?? AGENT_TEMPLATES[0]
+        : AGENT_TEMPLATES.find(t => isTemplateAvailable(t)) ?? AGENT_TEMPLATES[0];
 
       setSelectedTemplate(defaultTemplate);
       setName('');
       setCustomCommand('');
-      // Use settings-based model defaults with fallbacks
-      setSelectedModel(agentDefaults?.defaultModels?.claude ?? 'sonnet');
-      setSelectedCursorModel(agentDefaults?.defaultModels?.cursor ?? 'opus-4.5-thinking');
-      setSelectedCodexModel(agentDefaults?.defaultModels?.codex ?? 'gpt-5.2-codex');
-      setSelectedGeminiModel(agentDefaults?.defaultModels?.gemini ?? 'gemini-2.5-pro');
+      setSelectedModel(agentDefaults?.defaultModels?.claude ?? claudeModels[0]?.value ?? '');
+      setSelectedCursorModel(agentDefaults?.defaultModels?.cursor ?? cursorModels[0]?.value ?? '');
+      setSelectedCodexModel(agentDefaults?.defaultModels?.codex ?? codexModels[0]?.value ?? '');
+      setSelectedGeminiModel(agentDefaults?.defaultModels?.gemini ?? geminiModels[0]?.value ?? '');
       setCwd('');
       setSelectedRepoId(activeRepoId);
       setTeam('');
+      setContinueFromPrevious(false);
       setIsShadow(false);
       setShadowOf('');
       setShadowAgent('');
@@ -340,7 +311,7 @@ export function SpawnModal({
       setLocalError(null);
       setTimeout(() => nameInputRef.current?.focus(), 100);
     }
-  }, [isOpen, agentDefaults, activeRepoId, repos]);
+  }, [isOpen, agentDefaults, activeRepoId, repos, connectedProviders, hasWorkspaceFeature, claudeModels, cursorModels, codexModels, geminiModels]);
 
   const validateName = useCallback(
     (value: string): string | null => {
@@ -383,7 +354,7 @@ export function SpawnModal({
 
     // Derive cwd: in cloud mode with repos, use selected repo name; otherwise use text input
     let effectiveCwd: string | undefined;
-    if (isCloudMode && repos && repos.length > 0 && selectedRepoId) {
+    if (canUseWorkspaceRepoSelection && selectedRepoId) {
       if (selectedRepoId === '__all__') {
         // Coordinator mode: no cwd, agent starts at workspace root with access to all repos
         effectiveCwd = undefined;
@@ -407,6 +378,7 @@ export function SpawnModal({
       shadowAgent: shadowAgent.trim() || undefined,
       shadowTriggers: isShadow ? shadowSpeakOn : undefined,
       shadowSpeakOn: isShadow ? shadowSpeakOn : undefined,
+      continueFrom: continueFromPrevious ? finalName : undefined,
     });
 
     if (success) {
@@ -454,13 +426,34 @@ export function SpawnModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6">
+          {/* No providers connected warning */}
+          {connectedProviders && connectedProviders.length === 0 && (
+            <div className="mb-5 p-4 rounded-lg border border-red-400/30 bg-red-400/10">
+              <p className="text-sm text-red-400 font-medium mb-1">No AI providers connected</p>
+              <p className="text-xs text-text-muted">
+                Connect an AI provider in your{' '}
+                <a
+                  href={workspaceId ? `/app?workspace=${workspaceId}&tab=providers` : '/providers'}
+                  className="text-accent underline"
+                >
+                  workspace settings
+                </a>
+                {' '}to spawn agents.
+              </p>
+            </div>
+          )}
           {/* Agent Type Selection */}
           <div className="mb-5">
             <label className="block text-sm font-semibold text-text-primary mb-2">Agent Type</label>
             <div className="grid grid-cols-3 gap-2">
               {AGENT_TEMPLATES.map((template) => {
                 // Only disable "coming soon" providers in cloud mode - locally they might be available
-                const isDisabled = template.comingSoon && isCloudMode;
+                const isComingSoon = template.comingSoon && hasWorkspaceFeature;
+                // In cloud mode, disable providers that aren't connected (skip for custom/null providerId)
+                const isProviderMissing = connectedProviders && template.providerId
+                  ? !connectedProviders.includes(template.providerId)
+                  : false;
+                const isDisabled = isComingSoon || isProviderMissing;
                 return (
                 <button
                   key={template.id}
@@ -477,9 +470,14 @@ export function SpawnModal({
                   `}
                   onClick={() => !isDisabled && setSelectedTemplate(template)}
                 >
-                  {isDisabled && (
+                  {isComingSoon && (
                     <span className="absolute top-1 right-1 px-1.5 py-0.5 bg-amber-400/20 text-amber-400 text-[10px] font-medium rounded">
                       Soon
+                    </span>
+                  )}
+                  {isProviderMissing && !isComingSoon && (
+                    <span className="absolute top-1 right-1 px-1.5 py-0.5 bg-red-400/20 text-red-400 text-[10px] font-medium rounded">
+                      Not Connected
                     </span>
                   )}
                   <span className={`text-2xl ${isDisabled ? 'grayscale' : ''}`}>{template.icon}</span>
@@ -501,10 +499,10 @@ export function SpawnModal({
                 id="claude-model"
                 className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
                 value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value as ClaudeModel)}
+                onChange={(e) => setSelectedModel(e.target.value)}
                 disabled={isSpawning}
               >
-                {CLAUDE_MODEL_OPTIONS.map((model) => (
+                {claudeModels.map((model) => (
                   <option key={model.value} value={model.value}>
                     {model.label}
                   </option>
@@ -523,10 +521,10 @@ export function SpawnModal({
                 id="cursor-model"
                 className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
                 value={selectedCursorModel}
-                onChange={(e) => setSelectedCursorModel(e.target.value as CursorModel)}
+                onChange={(e) => setSelectedCursorModel(e.target.value)}
                 disabled={isSpawning}
               >
-                {CURSOR_MODEL_OPTIONS.map((model) => (
+                {cursorModels.map((model) => (
                   <option key={model.value} value={model.value}>
                     {model.label}
                   </option>
@@ -545,10 +543,10 @@ export function SpawnModal({
                 id="codex-model"
                 className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
                 value={selectedCodexModel}
-                onChange={(e) => setSelectedCodexModel(e.target.value as CodexModel)}
+                onChange={(e) => setSelectedCodexModel(e.target.value)}
                 disabled={isSpawning}
               >
-                {CODEX_MODEL_OPTIONS.map((model) => (
+                {codexModels.map((model) => (
                   <option key={model.value} value={model.value}>
                     {model.label}
                   </option>
@@ -567,10 +565,10 @@ export function SpawnModal({
                 id="gemini-model"
                 className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
                 value={selectedGeminiModel}
-                onChange={(e) => setSelectedGeminiModel(e.target.value as GeminiModel)}
+                onChange={(e) => setSelectedGeminiModel(e.target.value)}
                 disabled={isSpawning}
               >
-                {GEMINI_MODEL_OPTIONS.map((model) => (
+                {geminiModels.map((model) => (
                   <option key={model.value} value={model.value}>
                     {model.label}
                   </option>
@@ -642,7 +640,7 @@ export function SpawnModal({
           )}
 
           {/* Repository (cloud) / Working Directory (local) */}
-          {isCloudMode && repos && repos.length > 0 ? (
+          {canUseWorkspaceRepoSelection ? (
             <div className="mb-5">
               <label className="block text-sm font-semibold text-text-primary mb-2" htmlFor="agent-repo">
                 Repository
@@ -685,6 +683,37 @@ export function SpawnModal({
               />
             </div>
           )}
+
+          {/* Resume from Previous Session */}
+          <div className="mb-5 p-4 border border-border rounded-lg bg-bg-hover/50">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="block text-sm font-semibold text-text-primary">
+                  Resume Previous Session
+                </label>
+                <span className="text-xs text-text-muted">
+                  Inject context from this agent's last session
+                </span>
+              </div>
+              <button
+                type="button"
+                className={`
+                  relative w-11 h-6 rounded-full transition-colors duration-200
+                  ${continueFromPrevious ? 'bg-accent' : 'bg-bg-active'}
+                `}
+                onClick={() => setContinueFromPrevious(!continueFromPrevious)}
+                disabled={isSpawning}
+                aria-pressed={continueFromPrevious}
+              >
+                <span
+                  className={`
+                    absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform duration-200 shadow-sm
+                    ${continueFromPrevious ? 'translate-x-5' : 'translate-x-0'}
+                  `}
+                />
+              </button>
+            </div>
+          </div>
 
           {/* Shadow Agent Configuration */}
           <div className="mb-5 p-4 border border-border rounded-lg bg-bg-hover/50">
@@ -791,40 +820,6 @@ export function SpawnModal({
             )}
           </div>
 
-          {/* Credentials CTA - shown when provider is not connected */}
-          {isCloudMode && !hasActiveCredentials && !isLoadingCredentials && selectedTemplate.providerId && (
-            <div className="p-4 bg-amber-400/10 border border-amber-400/30 rounded-lg mb-5">
-              <div className="flex items-start gap-3">
-                <div className="shrink-0 w-8 h-8 rounded-lg bg-amber-400/20 flex items-center justify-center">
-                  <LockIcon />
-                </div>
-                <div className="flex-1">
-                  <h4 className="text-sm font-semibold text-amber-400 mb-1">
-                    {selectedTemplate.name} credentials required
-                  </h4>
-                  <p className="text-xs text-text-secondary mb-3">
-                    Connect your {selectedTemplate.name} account to spawn {selectedTemplate.name} agents.
-                    This enables secure access to the AI provider's API.
-                  </p>
-                  <a
-                    href={providerSetupUrl || '#'}
-                    className="inline-flex items-center gap-2 py-2 px-4 bg-amber-400 text-bg-deep font-semibold rounded-md text-sm hover:bg-amber-500 transition-colors"
-                  >
-                    <LockIcon />
-                    Connect {selectedTemplate.name}
-                  </a>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Loading credentials indicator */}
-          {isCloudMode && isLoadingCredentials && (
-            <div className="flex items-center gap-2 p-3 bg-bg-hover rounded-md text-text-muted text-sm mb-5">
-              <Spinner />
-              <span>Checking provider credentials...</span>
-            </div>
-          )}
 
           {/* Error Display */}
           {displayError && (
@@ -847,8 +842,7 @@ export function SpawnModal({
             <button
               type="submit"
               className="flex items-center gap-1.5 py-2.5 px-4 border-none rounded-md text-sm font-medium cursor-pointer font-sans transition-all duration-150 bg-accent text-white hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={isSpawning || (isCloudMode && !hasActiveCredentials)}
-              title={!hasActiveCredentials && isCloudMode ? `Connect ${selectedTemplate.name} credentials first` : undefined}
+              disabled={isSpawning}
             >
               <RocketIcon />
               Spawn Agent
@@ -886,23 +880,6 @@ function RocketIcon() {
       <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
       <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
       <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
-    </svg>
-  );
-}
-
-function Spinner() {
-  return (
-    <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24">
-      <circle
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="2"
-        fill="none"
-        strokeDasharray="32"
-        strokeLinecap="round"
-      />
     </svg>
   );
 }
@@ -988,14 +965,5 @@ function SpawningOverlay({ agentName, colors }: { agentName: string; colors: { p
         }
       `}</style>
     </div>
-  );
-}
-
-function LockIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
   );
 }

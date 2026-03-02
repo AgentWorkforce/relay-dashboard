@@ -4,7 +4,7 @@
  * Composed channel view that combines:
  * - ChannelHeader
  * - ChannelMessageList
- * - MessageInput
+ * - MessageComposer
  *
  * This is the main view component for displaying a channel's content.
  */
@@ -12,7 +12,10 @@
 import React, { useCallback, useMemo } from 'react';
 import { ChannelHeader } from './ChannelHeader';
 import { ChannelMessageList } from './ChannelMessageList';
-import { MessageInput } from './MessageInput';
+import { MessageComposer } from '../MessageComposer';
+import type { Agent } from '../../types';
+import type { HumanUser } from '../MentionAutocomplete';
+import type { UserPresence } from '../hooks/usePresence';
 import type {
   Channel,
   ChannelMember,
@@ -37,12 +40,21 @@ export interface ChannelViewV1Props {
   isLoadingMore?: boolean;
   /** Whether there are more messages to load */
   hasMoreMessages?: boolean;
-  /** Available users/agents for @-mentions */
-  mentionSuggestions?: string[];
+  /** Agents available for @-mentions */
+  agents?: Agent[];
+  /** Human users available for @-mentions */
+  humanUsers?: HumanUser[];
+  /** Current user profile for avatar fallback */
+  currentUserInfo?: {
+    displayName: string;
+    avatarUrl?: string;
+  };
+  /** Online users for avatar fallback */
+  onlineUsers?: UserPresence[];
   /** Callback to load more messages */
   onLoadMore?: () => void;
   /** Callback to send a message */
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, attachmentIds?: string[]) => Promise<boolean>;
   /** Callback when editing channel settings */
   onEditChannel?: () => void;
   /** Callback to show member list */
@@ -59,6 +71,8 @@ export interface ChannelViewV1Props {
   onMarkRead?: (upToTimestamp: string) => void;
   /** Callback when clicking on a member name (for DM navigation) */
   onMemberClick?: (memberId: string, entityType: 'user' | 'agent') => void;
+  /** Callback when toggling a reaction on a message */
+  onReaction?: (messageId: string, emoji: string, hasReacted: boolean) => void;
 }
 
 export function ChannelViewV1({
@@ -70,7 +84,10 @@ export function ChannelViewV1({
   canEditChannel = false,
   isLoadingMore = false,
   hasMoreMessages = false,
-  mentionSuggestions = [],
+  agents = [],
+  humanUsers = [],
+  currentUserInfo,
+  onlineUsers = [],
   onLoadMore,
   onSendMessage,
   onEditChannel,
@@ -81,10 +98,11 @@ export function ChannelViewV1({
   onTyping,
   onMarkRead,
   onMemberClick,
+  onReaction,
 }: ChannelViewV1Props) {
   // Handle send
-  const handleSend = useCallback((content: string) => {
-    onSendMessage(content);
+  const handleSend = useCallback((content: string, attachmentIds?: string[]) => {
+    return onSendMessage(content, attachmentIds);
   }, [onSendMessage]);
 
   // Get placeholder text based on channel type
@@ -116,11 +134,16 @@ export function ChannelViewV1({
         messages={messages}
         unreadState={unreadState}
         currentUser={currentUser}
+        currentUserInfo={currentUserInfo}
+        onlineUsers={onlineUsers}
+        agents={agents}
+        humanUsers={humanUsers}
         isLoadingMore={isLoadingMore}
         hasMore={hasMoreMessages}
         onLoadMore={onLoadMore}
         onThreadClick={onThreadClick}
         onMemberClick={onMemberClick}
+        onReaction={onReaction}
       />
 
       {/* Message Input */}
@@ -131,12 +154,13 @@ export function ChannelViewV1({
           </p>
         </div>
       ) : (
-        <MessageInput
-          channelId={channel.id}
+        <MessageComposer
           placeholder={inputPlaceholder}
           onSend={handleSend}
           onTyping={onTyping}
-          mentionSuggestions={mentionSuggestions}
+          agents={agents}
+          humanUsers={humanUsers}
+          enableFileAutocomplete
         />
       )}
     </div>

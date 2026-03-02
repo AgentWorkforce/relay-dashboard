@@ -19,7 +19,7 @@ describe('mergeAgentsForDashboard', () => {
       { name: 'Lead', status: 'online' },
     ];
     const localAgents: Agent[] = [
-      { name: 'Lead', status: 'online', isLocal: true, daemonName: 'local-daemon' },
+      { name: 'Lead', status: 'online', isLocal: true, brokerName: 'local-broker' },
     ];
 
     const merged = mergeAgentsForDashboard({ agents, localAgents });
@@ -31,7 +31,7 @@ describe('mergeAgentsForDashboard', () => {
 
   it('preserves local agents when no cloud agent exists', () => {
     const localAgents: Agent[] = [
-      { name: 'Worker', status: 'online', isLocal: true, daemonName: 'local-daemon' },
+      { name: 'Worker', status: 'online', isLocal: true, brokerName: 'local-broker' },
     ];
 
     const merged = mergeAgentsForDashboard({ localAgents });

@@ -55,5 +55,5 @@ export default function HomePage() {
 
   // Cloud mode: show landing page at root
   // Local mode: show dashboard at root
-  return isCloud ? <LandingPage /> : <App />;
+  return isCloud ? <LandingPage /> : <App enableReactions />;
 }

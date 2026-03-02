@@ -49,6 +49,61 @@ interface UseTrajectoryResult {
   selectedTrajectoryId: string | null;
 }
 
+function extractHistory(data: unknown): { success: boolean; trajectories: TrajectoryHistoryEntry[]; error?: string } {
+  if (!data || typeof data !== 'object') {
+    return { success: false, trajectories: [], error: 'Invalid history response' };
+  }
+
+  const raw = data as { success?: boolean; trajectories?: TrajectoryHistoryEntry[] };
+  const hasSuccess = Object.prototype.hasOwnProperty.call(raw, 'success');
+
+  if (Array.isArray((data as { trajectories?: unknown }).trajectories)) {
+    const trajectories = (data as { trajectories: TrajectoryHistoryEntry[] }).trajectories;
+    const isSuccess = hasSuccess ? raw.success === true : true;
+    return { success: Boolean(isSuccess), trajectories: isSuccess ? trajectories : [] };
+  }
+
+  if (Array.isArray(data)) {
+    return { success: true, trajectories: data as TrajectoryHistoryEntry[] };
+  }
+
+  return {
+    success: false,
+    trajectories: [],
+    error: 'History payload missing trajectories',
+  };
+}
+
+function extractSteps(data: unknown): { success: boolean; steps: TrajectoryStep[]; error?: string } {
+  if (!data || typeof data !== 'object') {
+    return { success: false, steps: [], error: 'Invalid steps response' };
+  }
+
+  const raw = data as { success?: boolean; steps?: TrajectoryStep[]; error?: string };
+  const hasSuccess = Object.prototype.hasOwnProperty.call(raw, 'success');
+  const hasSteps = Array.isArray(raw.steps);
+
+  if (hasSteps) {
+    const isSuccess = hasSuccess ? raw.success === true : true;
+    const steps = raw.steps ?? [];
+    return {
+      success: Boolean(isSuccess),
+      steps: isSuccess ? steps : [],
+      error: !isSuccess ? raw.error : undefined,
+    };
+  }
+
+  if (Array.isArray(data)) {
+    return { success: true, steps: data as TrajectoryStep[] };
+  }
+
+  return {
+    success: false,
+    steps: [],
+    error: 'Steps payload missing steps',
+  };
+}
+
 export function useTrajectory(options: UseTrajectoryOptions = {}): UseTrajectoryResult {
   const {
     pollInterval = 2000,
@@ -103,9 +158,10 @@ export function useTrajectory(options: UseTrajectoryOptions = {}): UseTrajectory
         : getApiUrl('/api/trajectory/history');
       const response = await fetch(url, { credentials: 'include' });
       const data = await response.json();
+      const normalized = extractHistory(data);
 
-      if (data.success) {
-        setHistory(data.trajectories || []);
+      if (normalized.success) {
+        setHistory(normalized.trajectories || []);
       }
     } catch (err: any) {
       console.error('[useTrajectory] History fetch error:', err);
@@ -129,6 +185,7 @@ export function useTrajectory(options: UseTrajectoryOptions = {}): UseTrajectory
 
       const response = await fetch(url, { credentials: 'include' });
       const data = await response.json();
+      const normalized = extractSteps(data);
 
       // Only update state if this is still the most recent request
       // Check both request counter AND trajectory ID for double protection
@@ -141,11 +198,11 @@ export function useTrajectory(options: UseTrajectoryOptions = {}): UseTrajectory
         return;
       }
 
-      if (data.success) {
-        setSteps(data.steps || []);
+      if (normalized.success) {
+        setSteps(normalized.steps || []);
         setError(null);
       } else {
-        setError(data.error || 'Failed to fetch trajectory steps');
+        setError(normalized.error || 'Failed to fetch trajectory steps');
       }
     } catch (err: any) {
       // Only update error state if this is still the current request

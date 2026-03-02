@@ -1,11 +1,11 @@
 /**
  * Channels API Service
  *
- * Channels are handled entirely by the daemon (not cloud).
- * Real-time messaging uses the daemon's CHANNEL_* protocol while the HTTP API now reads from daemon storage.
+ * Channels are handled entirely by the broker (not cloud).
+ * Real-time messaging uses the broker's CHANNEL_* protocol while the HTTP API now reads from broker storage.
  *
  * Cloud channels were removed because:
- * - Daemon already has full channel protocol support (CHANNEL_JOIN, CHANNEL_MESSAGE, etc.)
+ * - Broker already has full channel protocol support (CHANNEL_JOIN, CHANNEL_MESSAGE, etc.)
  * - Having two parallel implementations caused confusion
  * - See trajectory traj_fnmapojrllau for architectural decision
  */
@@ -50,7 +50,7 @@ export class ApiError extends Error {
 }
 
 // =============================================================================
-// Channel API Functions - daemon-backed with minimal placeholders
+// Channel API Functions - broker-backed with minimal placeholders
 // =============================================================================
 
 /**
@@ -96,7 +96,7 @@ export async function getChannel(
   _workspaceId: string,
   channelId: string
 ): Promise<GetChannelResponse> {
-  // Minimal channel details until daemon exposes metadata
+  // Minimal channel details until broker exposes metadata
   return {
     channel: {
       id: channelId,
@@ -229,7 +229,7 @@ export async function createChannel(
 }
 
 /**
- * Send a message to a channel via daemon API
+ * Send a message to a channel via broker API
  */
 export async function sendMessage(
   workspaceId: string,
@@ -249,6 +249,7 @@ export async function sendMessage(
         channel: channelId,
         body: request.content,
         thread: request.threadId,
+        attachmentIds: request.attachmentIds,
         workspaceId,
       }),
     });
@@ -279,7 +280,7 @@ export async function sendMessage(
 }
 
 /**
- * Join a channel via daemon API
+ * Join a channel via broker API
  */
 export async function joinChannel(
   workspaceId: string,
@@ -320,7 +321,7 @@ export async function joinChannel(
 }
 
 /**
- * Leave a channel via daemon API
+ * Leave a channel via broker API
  */
 export async function leaveChannel(
   workspaceId: string,
@@ -416,7 +417,7 @@ export async function deleteChannel(
   _workspaceId: string,
   _channelId: string
 ): Promise<void> {
-  // Daemon deletes automatically when empty; nothing to do client-side
+  // Broker deletes automatically when empty; nothing to do client-side
   return;
 }
 
@@ -428,31 +429,31 @@ export async function markRead(
   _channelId: string,
   _upToMessageId?: string
 ): Promise<void> {
-  // TODO: add mark-read to daemon; no-op for now
+  // TODO: add mark-read to broker; no-op for now
   return;
 }
 
 /**
- * Pin a message (no-op in daemon mode)
+ * Pin a message (no-op in broker mode)
  */
 export async function pinMessage(
   _workspaceId: string,
   _channelId: string,
   _messageId: string
 ): Promise<void> {
-  // Pinning not supported in daemon mode
+  // Pinning not supported in broker mode
   return;
 }
 
 /**
- * Unpin a message (no-op in daemon mode)
+ * Unpin a message (no-op in broker mode)
  */
 export async function unpinMessage(
   _workspaceId: string,
   _channelId: string,
   _messageId: string
 ): Promise<void> {
-  // Unpinning not supported in daemon mode
+  // Unpinning not supported in broker mode
   return;
 }
 
@@ -478,7 +479,7 @@ export interface AvailableMember {
 
 /**
  * Get available members for channel invites
- * Returns workspace members (humans) and agents from linked daemons
+ * Returns workspace members (humans) and agents from linked brokers
  */
 export async function getAvailableMembers(
   workspaceId?: string
@@ -519,14 +520,14 @@ export async function getAvailableMembers(
 // =============================================================================
 
 /**
- * Search messages (returns empty in daemon mode - search via relay)
+ * Search messages (returns empty in broker mode - search via relay)
  */
 export async function searchMessages(
   _workspaceId: string,
   query: string,
   _options?: { channelId?: string; limit?: number; offset?: number }
 ): Promise<SearchResponse> {
-  // Search not implemented in daemon mode
+  // Search not implemented in broker mode
   return {
     results: [],
     total: 0,
@@ -685,17 +686,17 @@ export async function getChannelMembers(
 // =============================================================================
 
 /**
- * Always returns true - channels now only use daemon/relay
+ * Always returns true - channels now only use broker/relay
  */
 export function isRealApiEnabled(): boolean {
   return true;
 }
 
 /**
- * No-op - API mode is fixed to daemon/local
+ * No-op - API mode is fixed to broker/local
  */
 export function setApiMode(_useReal: boolean): void {
-  console.log('[ChannelsAPI] Mode is fixed to daemon-based implementation');
+  console.log('[ChannelsAPI] Mode is fixed to broker-based implementation');
 }
 
 export function getApiMode(): 'real' | 'mock' {

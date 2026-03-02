@@ -127,6 +127,13 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
     });
   });
 
+  app.post('/api/agents/by-name/:name/inject', (req: Request, res: Response) => {
+    const { name } = req.params;
+    const { text } = req.body || {};
+    log(`POST /api/agents/by-name/${name}/inject - ${text}`);
+    res.json({ success: true, name, injected: text });
+  });
+
   // ===== Messaging =====
 
   app.post('/api/send', (req: Request, res: Response) => {
@@ -303,6 +310,19 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
       page: 1,
       pageSize: 20,
     });
+  });
+
+  app.post('/api/channels/admin-join', (req: Request, res: Response) => {
+    const { channel, member } = req.body || {};
+    log(`POST /api/channels/admin-join - ${channel} ${member}`);
+    res.json({ success: true, channel, member });
+  });
+
+  app.post('/api/channels/:channel/agents', (req: Request, res: Response) => {
+    const { channel } = req.params;
+    const { agentName } = req.body || {};
+    log(`POST /api/channels/${channel}/agents - ${agentName}`);
+    res.json({ success: true, channel, member: agentName });
   });
 
   app.post('/api/channels/message', (req: Request, res: Response) => {
@@ -532,9 +552,14 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
 
   app.get('/api/metrics/agents', (_req: Request, res: Response) => {
     log('GET /api/metrics/agents');
+    const totalMemory = 1024 * 1024 * 1024;
+    const freeMemory = 512 * 1024 * 1024;
     res.json({
-      success: true,
-      agents: mockMetrics.agents,
+      agents: mockMetrics.agents.map(a => ({ ...a, system: { totalMemory, freeMemory } })),
+      system: {
+        totalMemory,
+        freeMemory,
+      },
     });
   });
 
@@ -838,6 +863,7 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
   app.get('/api/trajectory', (_req: Request, res: Response) => {
     log('GET /api/trajectory');
     res.json({
+      success: true,
       steps: [],
       metadata: {
         agentName: 'claude-1',
@@ -853,7 +879,12 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
 
   app.get('/api/trajectory/history', (_req: Request, res: Response) => {
     log('GET /api/trajectory/history');
-    res.json({ trajectories: [] });
+    res.json({ success: true, trajectories: [] });
+  });
+
+  app.get('/api/trajectories', (_req: Request, res: Response) => {
+    log('GET /api/trajectories');
+    res.json({ success: true, trajectories: [] });
   });
 
   // ===== Logs =====

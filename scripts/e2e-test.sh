@@ -115,7 +115,6 @@ DASHBOARD_LOG="$TEST_DATA_DIR/dashboard.log"
 node "$PROJECT_DIR/packages/dashboard-server/dist/start.js" \
   --port "$DASHBOARD_PORT" \
   --data-dir "$TEST_DATA_DIR" \
-  --team-dir "$TEST_DATA_DIR/team" \
   --mock \
   > "$DASHBOARD_LOG" 2>&1 &
 DASHBOARD_PID=$!

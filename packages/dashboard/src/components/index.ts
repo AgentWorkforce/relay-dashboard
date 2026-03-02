@@ -14,7 +14,7 @@ export { MessageStatusIndicator, type MessageStatusIndicatorProps } from './Mess
 export { MessageList, type MessageListProps } from './MessageList';
 export { ThreadPanel, type ThreadPanelProps } from './ThreadPanel';
 export { CommandPalette, type CommandPaletteProps, type Command } from './CommandPalette';
-export { SpawnModal, type SpawnModalProps, type SpawnConfig, type SpeakOnTrigger } from './SpawnModal';
+export { SpawnModal, type SpawnModalProps, type SpawnConfig, type SpeakOnTrigger, type ModelOption } from './SpawnModal';
 export { NewConversationModal, type NewConversationModalProps } from './NewConversationModal';
 export { TrajectoryViewer, type TrajectoryViewerProps, type TrajectoryStep } from './TrajectoryViewer';
 export { DecisionQueue, type DecisionQueueProps, type Decision } from './DecisionQueue';
@@ -28,18 +28,10 @@ export { App, appStyles, type AppProps } from './App';
 export { MentionAutocomplete, useMentionAutocomplete, getMentionQuery, completeMentionInValue, type MentionAutocompleteProps } from './MentionAutocomplete';
 export { ProjectList, type ProjectListProps } from './ProjectList';
 export { WorkspaceSelector, type WorkspaceSelectorProps, type Workspace } from './WorkspaceSelector';
-export { WorkspaceSettingsPanel, type WorkspaceSettingsPanelProps } from './settings/WorkspaceSettingsPanel';
 export { AddWorkspaceModal, type AddWorkspaceModalProps } from './AddWorkspaceModal';
 export { PricingPlans, type PricingPlansProps, type Plan } from './PricingPlans';
 export { BillingPanel, type BillingPanelProps, type Subscription, type Invoice, type PaymentMethod } from './BillingPanel';
-export { SessionExpiredModal, type SessionExpiredModalProps } from './SessionExpiredModal';
 export { ProvisioningProgress, type ProvisioningProgressProps } from './ProvisioningProgress';
-export {
-  CloudSessionProvider,
-  useCloudSession,
-  useCloudSessionOptional,
-  type CloudSessionProviderProps,
-} from './CloudSessionProvider';
 export {
   WorkspaceProvider,
   useWorkspace,
@@ -50,6 +42,7 @@ export {
 // Terminal Components
 export { XTermLogViewer, type XTermLogViewerProps } from './XTermLogViewer';
 export { XTermInteractive, type XTermInteractiveProps } from './XTermInteractive';
+export { CliToolHarness, type CliToolHarnessConfig, type CliToolHarnessProps } from './CliToolHarness';
 
 // Layout Components
 export { Sidebar, type SidebarProps } from './layout/Sidebar';
@@ -61,7 +54,6 @@ export {
   useAgents,
   useMessages,
   useOrchestrator,
-  useSession,
   type UseWebSocketOptions,
   type UseWebSocketReturn,
   type UseAgentsOptions,
@@ -70,12 +62,8 @@ export {
   type UseMessagesReturn,
   type UseOrchestratorOptions,
   type UseOrchestratorResult,
-  type UseSessionOptions,
-  type UseSessionReturn,
   type DashboardData,
   type AgentWithColor,
   type OrchestratorAgent,
   type OrchestratorEvent,
-  type SessionError,
-  type CloudUser,
 } from './hooks';

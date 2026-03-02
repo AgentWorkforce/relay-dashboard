@@ -7,13 +7,13 @@
 import type { Express } from 'express';
 import type { Server } from 'http';
 import type { WebSocketServer } from 'ws';
-import type { RelayAdapter } from '@agent-relay/broker-sdk';
+import type { RelayAdapter } from '@agent-relay/sdk';
 
 /**
  * Interface for spawn manager read operations.
- * When the daemon's SpawnManager is passed in, the dashboard uses it
- * for read operations (logs, worker listing) instead of creating its own AgentSpawner.
- * Spawn/release go through the SDK client → daemon socket.
+ * When the broker SpawnManager is passed in, the dashboard uses it
+ * for read operations (logs, worker listing).
+ * Spawn/release go through the SDK client → broker socket.
  */
 export interface SpawnManagerLike {
   hasWorker(name: string): boolean;
@@ -41,7 +41,7 @@ export interface DashboardOptions {
   dataDir: string;
   /** Team directory for configuration */
   teamDir: string;
-  /** Path to SQLite database (defaults to dataDir/messages.sqlite - same as daemon) */
+  /** Path to SQLite database (defaults to dataDir/messages.sqlite - same as broker runtime) */
   dbPath?: string;
   /** Enable agent spawning API */
   enableSpawner?: boolean;
@@ -53,7 +53,7 @@ export interface DashboardOptions {
   verbose?: boolean;
   /**
    * Callback to mark an agent as spawning (before HELLO completes).
-   * Messages sent to this agent will be queued for delivery after registration.
+   * Messages sent to this agent can be queued for delivery after registration.
    */
   onMarkSpawning?: (agentName: string) => void;
   /**
@@ -62,15 +62,8 @@ export interface DashboardOptions {
    */
   onClearSpawning?: (agentName: string) => void;
   /**
-   * Daemon's SpawnManager instance for read operations (logs, worker listing).
-   * When provided, spawn/release go through the SDK client instead of a local AgentSpawner.
-   * This solves relay-pty binary resolution issues in npx/global installs.
-   */
-  spawnManager?: SpawnManagerLike;
-  /**
-   * RelayAdapter instance for broker SDK mode.
-   * When provided, replaces socket-based RelayClient, AgentSpawner,
-   * and MultiProjectClient with the broker binary via stdio.
+   * RelayAdapter instance for broker mode.
+   * Provides spawn/release/list/messaging via the broker binary.
    */
   relayAdapter?: RelayAdapter;
 }
@@ -81,13 +74,13 @@ export interface DashboardOptions {
 export interface ProxyServerOptions {
   /** Port to listen on (default: 3888) */
   port?: number;
-  /** Relay daemon URL to proxy to (default: http://localhost:3889) */
+  /** Relay broker URL to proxy to (default: http://localhost:3889) */
   relayUrl?: string;
   /** Path to static files directory (default: ../out) */
   staticDir?: string;
   /** Enable verbose logging */
   verbose?: boolean;
-  /** Run in mock mode (no relay daemon required) */
+  /** Run in mock mode (no relay broker required) */
   mock?: boolean;
   /** CORS allowed origins (comma-separated, or '*' for all) */
   corsOrigins?: string;
@@ -103,7 +96,7 @@ export interface DashboardServer {
   server: Server;
   wss: WebSocketServer;
   close: () => Promise<void>;
-  mode: 'proxy' | 'mock';
+  mode: 'proxy' | 'standalone' | 'mock';
 }
 
 /**
@@ -162,7 +155,4 @@ export interface ServerContext {
   defaultWorkspaceId?: string;
   /** Enable spawner */
   enableSpawner?: boolean;
-  /** Spawn callbacks */
-  onMarkSpawning?: (name: string) => void;
-  onClearSpawning?: (name: string) => void;
 }

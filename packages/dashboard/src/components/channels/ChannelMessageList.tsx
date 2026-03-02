@@ -10,17 +10,36 @@
 
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import type { ChannelMessage, ChannelMessageListProps, UnreadState } from './types';
+import type { Reaction } from '../../types';
+import { ReactionChips } from '../ReactionChips';
+import { ThinkingIndicator } from '../ThinkingIndicator';
 import { formatMessageBody } from '../utils/messageFormatting';
+import { formatRelayReplyCountLabel } from '../../lib/relaycastMessageAdapters';
+
+/** Convert channel `Record<string, string[]>` reactions to `Reaction[]` */
+function channelReactionsToArray(reactions?: Record<string, string[]>): Reaction[] {
+  if (!reactions) return [];
+  return Object.entries(reactions).map(([emoji, agents]) => ({
+    emoji,
+    count: agents.length,
+    agents,
+  }));
+}
 
 export function ChannelMessageList({
   messages,
   unreadState,
   currentUser,
+  currentUserInfo,
+  onlineUsers = [],
+  agents = [],
+  humanUsers = [],
   isLoadingMore = false,
   hasMore = false,
   onLoadMore,
   onThreadClick,
   onMemberClick,
+  onReaction,
 }: ChannelMessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -146,11 +165,37 @@ export function ChannelMessageList({
                     isOwn={message.from === currentUser}
                     onThreadClick={onThreadClick}
                     onMemberClick={onMemberClick}
+                    onReaction={onReaction}
+                    currentUser={currentUser}
+                    currentUserInfo={currentUserInfo}
+                    onlineUsers={onlineUsers}
+                    agents={agents}
+                    humanUsers={humanUsers}
                     showAvatar={shouldShowAvatar(dateMessages, index)}
                   />
                 </React.Fragment>
               );
             })}
+          </div>
+        ))}
+
+        {/* Thinking indicators for processing agents */}
+        {agents.filter((a) => a.isProcessing).map((agent) => (
+          <div key={`thinking-${agent.name}`} className="flex gap-3 py-1 mt-3">
+            <div className="w-9 flex-shrink-0">
+              <Avatar name={agent.name} avatarUrl={agent.avatarUrl} entityType="agent" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-sm font-semibold text-text-primary">{agent.name}</span>
+              </div>
+              <ThinkingIndicator
+                isProcessing={true}
+                processingStartedAt={agent.processingStartedAt}
+                size="small"
+                showLabel={true}
+              />
+            </div>
           </div>
         ))}
 
@@ -181,6 +226,24 @@ interface MessageItemProps {
   isOwn: boolean;
   onThreadClick?: (messageId: string) => void;
   onMemberClick?: (memberId: string, entityType: 'user' | 'agent') => void;
+  onReaction?: (messageId: string, emoji: string, hasReacted: boolean) => void;
+  currentUser?: string;
+  currentUserInfo?: {
+    displayName: string;
+    avatarUrl?: string;
+  };
+  onlineUsers?: Array<{
+    username: string;
+    avatarUrl?: string;
+  }>;
+  agents?: Array<{
+    name: string;
+    avatarUrl?: string;
+  }>;
+  humanUsers?: Array<{
+    username: string;
+    avatarUrl?: string;
+  }>;
   showAvatar: boolean;
 }
 
@@ -189,9 +252,24 @@ function MessageItem({
   isOwn,
   onThreadClick,
   onMemberClick,
+  onReaction,
+  currentUser,
+  currentUserInfo,
+  onlineUsers = [],
+  agents = [],
+  humanUsers = [],
   showAvatar,
 }: MessageItemProps) {
   const hasThread = message.threadSummary && message.threadSummary.replyCount > 0;
+  const replyCount = message.threadSummary?.replyCount ?? 0;
+  const replyLabel = formatRelayReplyCountLabel(replyCount);
+  const normalizedSender = message.from.toLowerCase();
+
+  const avatarUrl = message.fromAvatarUrl
+    || (isOwn ? currentUserInfo?.avatarUrl : undefined)
+    || onlineUsers.find((user) => user.username.toLowerCase() === normalizedSender)?.avatarUrl
+    || humanUsers.find((user) => user.username.toLowerCase() === normalizedSender)?.avatarUrl
+    || agents.find((agent) => agent.name.toLowerCase() === normalizedSender)?.avatarUrl;
 
   return (
     <div className={`group relative py-1 ${showAvatar ? 'mt-3' : ''}`}>
@@ -201,8 +279,8 @@ function MessageItem({
           {showAvatar && (
             <Avatar
               name={message.from}
-              avatarUrl={message.fromAvatarUrl}
-              entityType={message.fromEntityType}
+              avatarUrl={avatarUrl}
+              entityType={message.fromEntityType || 'agent'}
             />
           )}
         </div>
@@ -242,11 +320,13 @@ function MessageItem({
                     : 'text-text-muted bg-transparent opacity-0 group-hover:opacity-100 hover:text-accent-cyan hover:bg-accent-cyan/10'}
                 `}
                 onClick={() => onThreadClick?.(message.threadId || message.id)}
-                title={message.threadId ? `View thread` : (hasThread ? `${message.threadSummary!.replyCount} ${message.threadSummary!.replyCount === 1 ? 'reply' : 'replies'}` : 'Reply in thread')}
+                title={message.threadId ? 'View thread' : (hasThread ? replyLabel : 'Reply in thread')}
               >
                 <ThreadIcon className="w-3.5 h-3.5" />
                 {hasThread && (
-                  <span className="text-xs font-medium">{message.threadSummary!.replyCount}</span>
+                  <span className="text-xs font-medium">
+                    {replyLabel}
+                  </span>
                 )}
               </button>
             </div>
@@ -264,6 +344,16 @@ function MessageItem({
                 <AttachmentPreview key={attachment.id} attachment={attachment} />
               ))}
             </div>
+          )}
+
+          {/* Reactions */}
+          {onReaction && (
+            <ReactionChips
+              reactions={channelReactionsToArray(message.reactions)}
+              messageId={message.id}
+              currentUser={currentUser}
+              onToggleReaction={onReaction}
+            />
           )}
         </div>
       </div>

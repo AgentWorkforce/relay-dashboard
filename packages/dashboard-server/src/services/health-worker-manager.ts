@@ -1,187 +1,30 @@
-/**
- * Health Worker Manager
- *
- * Manages the health check worker thread, sending periodic stats updates
- * and handling worker lifecycle.
- */
+import { buildDashboardProxyUrl, getDashboardProxyRoute } from '../lib/proxy-route-table.js';
 
-import { Worker } from 'node:worker_threads';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Detect if running from a Bun bundled binary (virtual filesystem)
-const IS_BUNDLED = __dirname.startsWith('/$bunfs/');
-
-export interface HealthWorkerConfig {
-  /** Port for health check server (default: main port + 1) */
-  port: number;
-  /** Interval for sending stats updates (default: 5000ms) */
-  statsInterval?: number;
+export interface BrokerHealthProxyRequest {
+  workspaceId?: string;
+  authorization?: string;
 }
 
-export interface HealthStatsProvider {
-  getUptime: () => number;
-  getMemoryMB: () => number;
-  getRelayConnected: () => boolean;
-  getAgentCount: () => number;
-  getStatus: () => 'healthy' | 'busy' | 'degraded';
+function buildHeaders(request?: BrokerHealthProxyRequest): Record<string, string> | undefined {
+  if (!request) return undefined;
+  const headers: Record<string, string> = {};
+  if (request.authorization) headers.authorization = request.authorization;
+  if (request.workspaceId) headers['x-workspace-id'] = request.workspaceId;
+  return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
-export class HealthWorkerManager {
-  private worker: Worker | null = null;
-  private statsInterval: NodeJS.Timeout | null = null;
-  private config: HealthWorkerConfig;
-  private statsProvider: HealthStatsProvider;
-  private ready = false;
+export async function fetchBrokerHealth(opts: {
+  env?: NodeJS.ProcessEnv;
+  request?: BrokerHealthProxyRequest;
+  query?: URLSearchParams;
+  fetchImpl?: typeof fetch;
+} = {}): Promise<Response> {
+  const route = getDashboardProxyRoute('brokerHealth');
+  const url = buildDashboardProxyUrl(route, { env: opts.env, query: opts.query });
+  const fetchImpl = opts.fetchImpl ?? fetch;
 
-  constructor(config: HealthWorkerConfig, statsProvider: HealthStatsProvider) {
-    this.config = {
-      statsInterval: 5000,
-      ...config,
-    };
-    this.statsProvider = statsProvider;
-  }
-
-  /**
-   * Start the health worker thread
-   */
-  async start(): Promise<void> {
-    // Worker threads don't work in Bun bundled binaries - the worker file
-    // isn't accessible from the virtual filesystem. Fall back to main thread.
-    if (IS_BUNDLED) {
-      throw new Error('Worker threads not supported in bundled binary');
-    }
-
-    if (this.worker) {
-      console.warn('[health-manager] Worker already running');
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
-      // Worker script path - handle both dev (src) and prod (dist)
-      const workerPath = path.join(__dirname, 'health-worker.js');
-
-      this.worker = new Worker(workerPath, {
-        workerData: { port: this.config.port },
-      });
-
-      this.worker.on('message', (msg) => {
-        if (msg.type === 'ready') {
-          this.ready = true;
-          console.log(`[health-manager] Worker ready on port ${msg.port}`);
-          this.startStatsUpdates();
-          resolve();
-        } else if (msg.type === 'error') {
-          console.error('[health-manager] Worker error:', msg.error);
-        }
-      });
-
-      this.worker.on('error', (err) => {
-        console.error('[health-manager] Worker thread error:', err);
-        if (!this.ready) {
-          reject(err);
-        }
-      });
-
-      this.worker.on('exit', (code) => {
-        console.log(`[health-manager] Worker exited with code ${code}`);
-        this.ready = false;
-        this.worker = null;
-        this.stopStatsUpdates();
-      });
-
-      // Timeout for worker startup
-      setTimeout(() => {
-        if (!this.ready) {
-          reject(new Error('Health worker startup timeout'));
-        }
-      }, 10000);
-    });
-  }
-
-  /**
-   * Stop the health worker thread
-   */
-  async stop(): Promise<void> {
-    this.stopStatsUpdates();
-
-    if (this.worker) {
-      await this.worker.terminate();
-      this.worker = null;
-      this.ready = false;
-    }
-  }
-
-  /**
-   * Check if worker is ready
-   */
-  isReady(): boolean {
-    return this.ready;
-  }
-
-  /**
-   * Get the port the health worker is listening on
-   */
-  getPort(): number {
-    return this.config.port;
-  }
-
-  /**
-   * Start periodic stats updates to worker
-   */
-  private startStatsUpdates(): void {
-    if (this.statsInterval) return;
-
-    // Send initial stats
-    this.sendStats();
-
-    // Send periodic updates
-    this.statsInterval = setInterval(() => {
-      this.sendStats();
-    }, this.config.statsInterval);
-  }
-
-  /**
-   * Stop stats updates
-   */
-  private stopStatsUpdates(): void {
-    if (this.statsInterval) {
-      clearInterval(this.statsInterval);
-      this.statsInterval = null;
-    }
-  }
-
-  /**
-   * Send current stats to worker
-   */
-  private sendStats(): void {
-    if (!this.worker || !this.ready) return;
-
-    try {
-      const stats = {
-        uptime: this.statsProvider.getUptime(),
-        memoryMB: this.statsProvider.getMemoryMB(),
-        relayConnected: this.statsProvider.getRelayConnected(),
-        agentCount: this.statsProvider.getAgentCount(),
-        status: this.statsProvider.getStatus(),
-      };
-
-      this.worker.postMessage(stats);
-    } catch (err) {
-      console.error('[health-manager] Failed to send stats:', err);
-    }
-  }
-}
-
-/** Default health port offset from main port */
-export const HEALTH_PORT_OFFSET = 1;
-
-/**
- * Calculate health port from main port
- */
-export function getHealthPort(mainPort: number): number {
-  return mainPort + HEALTH_PORT_OFFSET;
+  return fetchImpl(url, {
+    method: route.method,
+    headers: buildHeaders(opts.request),
+  });
 }

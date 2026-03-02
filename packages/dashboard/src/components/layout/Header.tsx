@@ -10,7 +10,6 @@ import type { Agent, Project } from '../../types';
 import { getAgentColor, getAgentInitials } from '../../lib/colors';
 import { getAgentBreadcrumb } from '../../lib/hierarchy';
 import { RepoContextHeader } from './RepoContextHeader';
-import { WorkspaceStatusIndicator } from '../WorkspaceStatusIndicator';
 
 export interface HeaderProps {
   currentChannel: string;
@@ -96,12 +95,6 @@ export function Header({
       {projects.length > 0 && onProjectChange && (
         <div className="w-px h-6 bg-border-subtle mr-3 max-md:hidden" />
       )}
-
-      {/* Workspace Status Indicator */}
-      <WorkspaceStatusIndicator className="max-md:hidden mr-3" />
-
-      {/* Divider after workspace status */}
-      <div className="w-px h-6 bg-border-subtle mr-3 max-md:hidden" />
 
       <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
         {selectedAgent && !selectedAgent.isHuman && selectedAgent.cli !== 'dashboard' ? (
@@ -222,13 +215,15 @@ export function Header({
           <MetricsIcon />
         </a>
 
-        <button
-          className="flex items-center justify-center p-1.5 sm:p-2 bg-bg-tertiary border border-border-subtle rounded-lg text-text-secondary cursor-pointer transition-all duration-150 hover:bg-bg-elevated hover:border-border-medium hover:text-accent-purple"
-          onClick={onSettingsClick}
-          title="Settings"
-        >
-          <SettingsIcon />
-        </button>
+        {onSettingsClick && (
+          <button
+            className="flex items-center justify-center p-1.5 sm:p-2 bg-bg-tertiary border border-border-subtle rounded-lg text-text-secondary cursor-pointer transition-all duration-150 hover:bg-bg-elevated hover:border-border-medium hover:text-accent-purple"
+            onClick={onSettingsClick}
+            title="Settings"
+          >
+            <SettingsIcon />
+          </button>
+        )}
       </div>
     </header>
   );
@@ -308,4 +303,3 @@ function MenuIcon() {
     </svg>
   );
 }
-

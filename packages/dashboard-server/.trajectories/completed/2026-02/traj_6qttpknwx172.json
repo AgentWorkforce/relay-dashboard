@@ -1,0 +1,103 @@
+{
+  "id": "traj_6qttpknwx172",
+  "version": 1,
+  "task": {
+    "title": "Replace hardcoded 'Dashboard' sender name with project name derived from workspace directory"
+  },
+  "status": "completed",
+  "startedAt": "2026-02-24T11:39:35.774Z",
+  "agents": [
+    {
+      "name": "default",
+      "role": "lead",
+      "joinedAt": "2026-02-24T11:39:41.930Z"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "chap_on1gypwcobva",
+      "title": "Work",
+      "agentName": "default",
+      "startedAt": "2026-02-24T11:39:41.930Z",
+      "events": [
+        {
+          "ts": 1771933181931,
+          "type": "decision",
+          "content": "Used dataDir parent directory basename as project name fallback: Used dataDir parent directory basename as project name fallback",
+          "raw": {
+            "question": "Used dataDir parent directory basename as project name fallback",
+            "chosen": "Used dataDir parent directory basename as project name fallback",
+            "alternatives": [],
+            "reasoning": "relaycast.json agent_name is null in user's config. The dataDir is always .agent-relay inside the project root, so path.basename(path.resolve(dataDir, '..')) reliably gives the project directory name (e.g. relay-dashboard)."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771933187814,
+          "type": "decision",
+          "content": "Changed normalizeIdentity to return projectIdentity instead of DASHBOARD_DISPLAY_NAME: Changed normalizeIdentity to return projectIdentity instead of DASHBOARD_DISPLAY_NAME",
+          "raw": {
+            "question": "Changed normalizeIdentity to return projectIdentity instead of DASHBOARD_DISPLAY_NAME",
+            "chosen": "Changed normalizeIdentity to return projectIdentity instead of DASHBOARD_DISPLAY_NAME",
+            "alternatives": [],
+            "reasoning": "normalizeIdentity was mapping project names back to 'Dashboard', which defeated the purpose. By returning the project name when set, incoming messages now preserve the project identity for display. This is the key behavioral change - without it, server-side normalization would undo the frontend fallback changes."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771933193004,
+          "type": "decision",
+          "content": "Exposed agentName through RelayConfigProvider context: Exposed agentName through RelayConfigProvider context",
+          "raw": {
+            "question": "Exposed agentName through RelayConfigProvider context",
+            "chosen": "Exposed agentName through RelayConfigProvider context",
+            "alternatives": [],
+            "reasoning": "The relay-config API endpoint already returned agentName but the frontend ignored it. Threading it through the RelayConfigStatus context lets MessageProvider use it as the preferred fallback before 'Dashboard', keeping the frontend consistent with the server-side project identity."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771933198785,
+          "type": "decision",
+          "content": "Kept 'Dashboard' as final fallback in all locations: Kept 'Dashboard' as final fallback in all locations",
+          "raw": {
+            "question": "Kept 'Dashboard' as final fallback in all locations",
+            "chosen": "Kept 'Dashboard' as final fallback in all locations",
+            "alternatives": [],
+            "reasoning": "Rather than removing 'Dashboard' entirely, it remains as the last fallback in the chain: currentUser?.displayName -> relayAgentName/projectIdentity -> 'Dashboard'. This ensures backward compatibility if both relaycast.json agent_name is null AND dataDir derivation fails for any reason."
+          },
+          "significance": "high"
+        }
+      ],
+      "endedAt": "2026-02-24T11:40:04.219Z"
+    }
+  ],
+  "commits": [
+    "a236da8"
+  ],
+  "filesChanged": [
+    "package-lock.json",
+    "packages/dashboard-server/.trajectories/index.json",
+    "packages/dashboard-server/src/proxy-server.ts",
+    "packages/dashboard-server/src/relaycast-provider-helpers.ts",
+    "packages/dashboard-server/src/relaycast-provider.test.ts",
+    "packages/dashboard-server/src/relaycast-provider.ts",
+    "packages/dashboard-server/src/routes/relay-config.ts",
+    "packages/dashboard/src/components/ReactionChips.tsx",
+    "packages/dashboard/src/providers/MessageProvider.tsx",
+    "packages/dashboard/src/providers/RelayConfigProvider.tsx"
+  ],
+  "projectId": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard/packages/dashboard-server",
+  "tags": [],
+  "_trace": {
+    "startRef": "0ba17d79ad3177c224d3c24fe39ea80895151c62",
+    "endRef": "a236da81083291da09235c376001a8b84769ec75",
+    "traceId": "trace_fsayvz0ihqqj"
+  },
+  "completedAt": "2026-02-24T11:40:04.219Z",
+  "retrospective": {
+    "summary": "Replaced hardcoded 'Dashboard' sender name with project name across server and frontend. Server derives name from dataDir parent when relaycast.json agent_name is null. normalizeIdentity now preserves project identity instead of mapping to 'Dashboard'. Frontend reads agentName from relay-config API via context. All 137 tests pass. One known gap: Relay SDK agentToken identity is baked in at registration time and not addressed here.",
+    "approach": "Standard approach",
+    "confidence": 0.8
+  }
+}

@@ -1,0 +1,128 @@
+{
+  "id": "traj_cudn4n6wb6ol",
+  "version": 1,
+  "task": {
+    "title": "Fix /api/send false 409 when spawned agent is actually online in Relaycast"
+  },
+  "status": "completed",
+  "startedAt": "2026-02-23T11:33:36.394Z",
+  "agents": [
+    {
+      "name": "default",
+      "role": "lead",
+      "joinedAt": "2026-02-23T23:44:40.229Z"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "chap_8r8xtah8kdkd",
+      "title": "Work",
+      "agentName": "default",
+      "startedAt": "2026-02-23T23:44:40.229Z",
+      "events": [
+        {
+          "ts": 1771890280230,
+          "type": "decision",
+          "content": "Expose relay credentials through /api/relay-config for @relaycast/react integration: Expose relay credentials through /api/relay-config for @relaycast/react integration",
+          "raw": {
+            "question": "Expose relay credentials through /api/relay-config for @relaycast/react integration",
+            "chosen": "Expose relay credentials through /api/relay-config for @relaycast/react integration",
+            "alternatives": [],
+            "reasoning": "The current React SDK requires client-side apiKey + agentToken; returning credentials from local relaycast.json unblocks migration and can later be replaced by scoped credentials"
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1771891635522,
+          "type": "decision",
+          "content": "Prioritized SDK reactions + presence via public APIs: Prioritized SDK reactions + presence via public APIs",
+          "raw": {
+            "question": "Prioritized SDK reactions + presence via public APIs",
+            "chosen": "Prioritized SDK reactions + presence via public APIs",
+            "alternatives": [],
+            "reasoning": "Replaced custom reaction overlays and presence WS duplication while avoiding brittle internal SDK imports"
+          },
+          "significance": "high"
+        }
+      ],
+      "endedAt": "2026-02-24T00:07:15.560Z"
+    }
+  ],
+  "commits": [
+    "4ef474e",
+    "de7b349",
+    "b2382de",
+    "dc2049e",
+    "9dffdb7",
+    "bdca3b2",
+    "72aadb3",
+    "a9c36f9",
+    "34a5630",
+    "3133759",
+    "88a4d0c"
+  ],
+  "filesChanged": [
+    ".trajectories/active/traj_cudn4n6wb6ol.json",
+    ".trajectories/completed/2026-02/traj_fyunktog47v4.json",
+    ".trajectories/completed/2026-02/traj_fyunktog47v4.md",
+    ".trajectories/index.json",
+    "package-lock.json",
+    "packages/dashboard-server/package.json",
+    "packages/dashboard-server/src/lib/cli-auth.ts",
+    "packages/dashboard-server/src/lib/proxy-route-table.test.ts",
+    "packages/dashboard-server/src/lib/proxy-route-table.ts",
+    "packages/dashboard-server/src/lib/relay-client.ts",
+    "packages/dashboard-server/src/lib/spawned-agents.ts",
+    "packages/dashboard-server/src/lib/utils.ts",
+    "packages/dashboard-server/src/proxy-server.ts",
+    "packages/dashboard-server/src/relaycast-provider-helpers.ts",
+    "packages/dashboard-server/src/relaycast-provider-types.ts",
+    "packages/dashboard-server/src/relaycast-provider.test.ts",
+    "packages/dashboard-server/src/relaycast-provider.ts",
+    "packages/dashboard-server/src/routes/channels.ts",
+    "packages/dashboard-server/src/routes/reactions.ts",
+    "packages/dashboard-server/src/server.ts",
+    "packages/dashboard-server/src/services/health-worker-manager.ts",
+    "packages/dashboard-server/src/services/index.ts",
+    "packages/dashboard-server/src/services/metrics.test.ts",
+    "packages/dashboard-server/src/services/metrics.ts",
+    "packages/dashboard-server/src/services/needs-attention.test.ts",
+    "packages/dashboard-server/src/services/needs-attention.ts",
+    "packages/dashboard-server/src/services/user-bridge.ts",
+    "packages/dashboard-server/src/types/index.ts",
+    "packages/dashboard-server/src/websocket/standalone.ts",
+    "packages/dashboard/package.json",
+    "packages/dashboard/src/app/app/[[...slug]]/DashboardPageClient.tsx",
+    "packages/dashboard/src/app/page.tsx",
+    "packages/dashboard/src/components/App.tsx",
+    "packages/dashboard/src/components/SpawnModal.tsx",
+    "packages/dashboard/src/components/channels/ChannelMessageList.tsx",
+    "packages/dashboard/src/components/channels/ChannelViewV1.tsx",
+    "packages/dashboard/src/components/channels/types.ts",
+    "packages/dashboard/src/components/hooks/useMessages.test.ts",
+    "packages/dashboard/src/components/hooks/useMessages.ts",
+    "packages/dashboard/src/components/hooks/useWebSocket.test.ts",
+    "packages/dashboard/src/components/hooks/useWebSocket.ts",
+    "packages/dashboard/src/components/settings/SettingsPage.tsx",
+    "packages/dashboard/src/lib/api.ts",
+    "packages/dashboard/src/providers/AgentProvider.tsx",
+    "packages/dashboard/src/providers/CloudWorkspaceProvider.tsx",
+    "packages/dashboard/src/providers/MessageProvider.tsx",
+    "packages/dashboard/src/providers/SettingsProvider.tsx",
+    "packages/dashboard/src/providers/index.ts",
+    "packages/dashboard/src/types/index.ts"
+  ],
+  "projectId": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard",
+  "tags": [],
+  "_trace": {
+    "startRef": "e1e8d00efc419a3431a0175764737a67778e5825",
+    "endRef": "4ef474ee9b7b99ca1367ee9423a540ac9fc0b042",
+    "traceId": "trace_9k844b0c2cf2"
+  },
+  "completedAt": "2026-02-24T00:07:15.560Z",
+  "retrospective": {
+    "summary": "Implemented unified identity + SDK foundation, completed reaction migration and presence dedup path, validated all dashboard/server tests.",
+    "approach": "Standard approach",
+    "confidence": 0.78
+  }
+}

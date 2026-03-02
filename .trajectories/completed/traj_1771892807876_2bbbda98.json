@@ -1,0 +1,48 @@
+{
+  "id": "traj_1771892807876_2bbbda98",
+  "version": 1,
+  "task": {
+    "title": "default run #17348cf2",
+    "source": {
+      "system": "workflow-runner",
+      "id": "17348cf2972665d72f482a1d"
+    }
+  },
+  "status": "abandoned",
+  "startedAt": "2026-02-24T00:26:47.876Z",
+  "agents": [
+    {
+      "name": "orchestrator",
+      "role": "workflow-runner",
+      "joinedAt": "2026-02-24T00:26:47.876Z"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "ch_690da359",
+      "title": "Planning",
+      "agentName": "orchestrator",
+      "startedAt": "2026-02-24T00:26:47.876Z",
+      "events": [
+        {
+          "ts": 1771892807876,
+          "type": "note",
+          "content": "Workflow \"default\" started with 2 steps"
+        },
+        {
+          "ts": 1771892807876,
+          "type": "note",
+          "content": "Parsed 2 steps, 1 dependent steps, DAG validated, no cycles"
+        },
+        {
+          "ts": 1771892810868,
+          "type": "error",
+          "content": "Workflow abandoned: Rate limit exceeded. 60 requests per minute allowed for free plan.",
+          "significance": "high"
+        }
+      ],
+      "endedAt": "2026-02-24T00:26:50.868Z"
+    }
+  ],
+  "completedAt": "2026-02-24T00:26:50.868Z"
+}

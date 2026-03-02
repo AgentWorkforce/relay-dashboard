@@ -1,0 +1,80 @@
+{
+  "id": "traj_1771892701740_4ca630ab",
+  "version": 1,
+  "task": {
+    "title": "default run #02df9c40",
+    "source": {
+      "system": "workflow-runner",
+      "id": "02df9c406ca8ecdad8df40eb"
+    }
+  },
+  "status": "completed",
+  "startedAt": "2026-02-24T00:25:01.740Z",
+  "agents": [
+    {
+      "name": "orchestrator",
+      "role": "workflow-runner",
+      "joinedAt": "2026-02-24T00:25:01.740Z"
+    },
+    {
+      "name": "worker",
+      "role": "worker",
+      "joinedAt": "2026-02-24T00:25:01.742Z"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "ch_d7498ed0",
+      "title": "Planning",
+      "agentName": "orchestrator",
+      "startedAt": "2026-02-24T00:25:01.740Z",
+      "events": [
+        {
+          "ts": 1771892701740,
+          "type": "note",
+          "content": "Workflow \"default\" started with 1 steps"
+        },
+        {
+          "ts": 1771892701740,
+          "type": "note",
+          "content": "Parsed 1 steps, DAG validated, no cycles"
+        },
+        {
+          "ts": 1771892701742,
+          "type": "note",
+          "content": "Step \"step-1\" assigned to agent \"worker\""
+        },
+        {
+          "ts": 1771892701745,
+          "type": "finding",
+          "content": "Step \"step-1\" completed: Agent exited (exited)",
+          "significance": "medium"
+        }
+      ],
+      "endedAt": "2026-02-24T00:25:01.746Z"
+    },
+    {
+      "id": "ch_b670c1d0",
+      "title": "Retrospective",
+      "agentName": "orchestrator",
+      "startedAt": "2026-02-24T00:25:01.746Z",
+      "events": [
+        {
+          "ts": 1771892701746,
+          "type": "reflection",
+          "content": "Workflow completed in 0 seconds. 1/1 steps passed. (completed in 0 seconds)",
+          "significance": "high"
+        }
+      ],
+      "endedAt": "2026-02-24T00:25:01.746Z"
+    }
+  ],
+  "completedAt": "2026-02-24T00:25:01.746Z",
+  "retrospective": {
+    "summary": "Workflow completed in 0 seconds. 1/1 steps passed.",
+    "approach": "workflow-runner DAG execution",
+    "confidence": 0.75,
+    "learnings": [],
+    "challenges": []
+  }
+}

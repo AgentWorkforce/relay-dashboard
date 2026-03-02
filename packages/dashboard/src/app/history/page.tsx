@@ -21,12 +21,12 @@ import { getAgentColor, getAgentInitials } from '../../lib/colors';
 type ViewMode = 'conversations' | 'sessions' | 'messages';
 
 export default function HistoryPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>('conversations');
+  const [viewMode, setViewMode] = useState<ViewMode | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [sessions, setSessions] = useState<HistorySession[]>([]);
   const [messages, setMessages] = useState<HistoryMessage[]>([]);
   const [stats, setStats] = useState<HistoryStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Filters
@@ -34,8 +34,12 @@ export default function HistoryPage() {
   const [agentFilter, setAgentFilter] = useState('');
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
 
-  // Fetch stats on mount
+  // Fetch stats once when the user first selects a tab
+  const [statsLoaded, setStatsLoaded] = useState(false);
   useEffect(() => {
+    if (!viewMode || statsLoaded) return;
+
+    setStatsLoaded(true);
     const fetchStats = async () => {
       const result = await api.getHistoryStats();
       if (result.success && result.data) {
@@ -43,10 +47,12 @@ export default function HistoryPage() {
       }
     };
     fetchStats();
-  }, []);
+  }, [viewMode, statsLoaded]);
 
-  // Fetch data based on view mode
+  // Fetch data based on view mode — only when user has selected a tab
   useEffect(() => {
+    if (!viewMode) return;
+
     const fetchData = async () => {
       setIsLoading(true);
       setError(null);
@@ -120,6 +126,13 @@ export default function HistoryPage() {
     setViewMode('conversations');
   }, []);
 
+  const handleTabClick = useCallback((mode: ViewMode) => {
+    if (mode === 'conversations') {
+      setSelectedConversation(null);
+    }
+    setViewMode(mode);
+  }, []);
+
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary font-sans">
       {/* Header */}
@@ -162,24 +175,21 @@ export default function HistoryPage() {
           <div className="flex gap-1 bg-bg-secondary rounded-lg p-1 border border-border">
             <TabButton
               active={viewMode === 'conversations'}
-              onClick={() => {
-                setSelectedConversation(null);
-                setViewMode('conversations');
-              }}
+              onClick={() => handleTabClick('conversations')}
             >
               <ConversationIcon />
               Conversations
             </TabButton>
             <TabButton
               active={viewMode === 'sessions'}
-              onClick={() => setViewMode('sessions')}
+              onClick={() => handleTabClick('sessions')}
             >
               <SessionIcon />
               Sessions
             </TabButton>
             <TabButton
               active={viewMode === 'messages'}
-              onClick={() => setViewMode('messages')}
+              onClick={() => handleTabClick('messages')}
             >
               <MessageIcon />
               Messages
@@ -231,7 +241,13 @@ export default function HistoryPage() {
         </div>
 
         {/* Content */}
-        {isLoading ? (
+        {!viewMode ? (
+          <EmptyState
+            icon={<ConversationIcon className="w-12 h-12" />}
+            title="Conversation History"
+            description="Select a tab above to browse conversations, sessions, or messages."
+          />
+        ) : isLoading ? (
           <div className="flex items-center justify-center h-[60vh]">
             <div className="flex flex-col items-center gap-4">
               <div className="w-10 h-10 border-2 border-border border-t-accent rounded-full animate-spin" />

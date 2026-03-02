@@ -3,15 +3,17 @@
  *
  * Provides the current workspace's base URL for WebSocket connections.
  * Used by LogViewer and other components that need to connect to workspace-specific endpoints.
+ * Cloud mode is sourced from DashboardConfig instead of runtime hostname/env detection.
  */
 
 import React, { createContext, useContext, useMemo } from 'react';
+import { useDashboardConfig } from '../adapters';
 import { getWebSocketUrl } from '../lib/config';
 
 interface WorkspaceContextValue {
   /** Base WebSocket URL for the workspace (e.g., wss://workspace-abc.agentrelay.dev) */
   wsBaseUrl: string | null;
-  /** Whether we're in cloud mode (workspace URL is different from page host) */
+  /** Whether cloud mode is enabled in dashboard configuration */
   isCloudMode: boolean;
 }
 
@@ -40,26 +42,12 @@ function getBaseUrl(wsUrl: string): string {
 }
 
 export function WorkspaceProvider({ children, wsUrl }: WorkspaceProviderProps) {
+  const { isCloudMode } = useDashboardConfig();
+
   const value = useMemo(() => {
-    if (!wsUrl) {
-      return { wsBaseUrl: null, isCloudMode: false };
-    }
-
-    const wsBaseUrl = getBaseUrl(wsUrl);
-
-    // Check if we're in cloud mode by comparing the workspace URL host with the current page host
-    let isCloudMode = false;
-    if (typeof window !== 'undefined') {
-      try {
-        const wsHost = new URL(wsUrl).host;
-        isCloudMode = wsHost !== window.location.host;
-      } catch {
-        // Ignore parse errors
-      }
-    }
-
+    const wsBaseUrl = wsUrl ? getBaseUrl(wsUrl) : null;
     return { wsBaseUrl, isCloudMode };
-  }, [wsUrl]);
+  }, [wsUrl, isCloudMode]);
 
   return (
     <WorkspaceContext.Provider value={value}>

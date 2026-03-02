@@ -2,18 +2,18 @@
  * Dashboard V2 - Main App Page (Client Component)
  *
  * In cloud mode: Shows workspace selection and connects to selected workspace's dashboard.
- * In local mode: Connects to local daemon WebSocket.
+ * In local mode: Connects to local broker WebSocket.
  */
 
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { App } from '../../../components/App';
-import { CloudSessionProvider } from '../../../components/CloudSessionProvider';
 import { LogoIcon } from '../../../components/Logo';
 import { setActiveWorkspaceId } from '../../../lib/api';
 import { ProvisioningProgress } from '../../../components/ProvisioningProgress';
 import { ProviderConnectionList, type ProviderInfo } from '../../../components/ProviderConnectionList';
+import { DashboardConfigProvider, createCloudApiAdapter, createCloudAuthAdapter, setCloudCsrfToken } from '../../../adapters';
 
 interface Workspace {
   id: string;
@@ -56,6 +56,16 @@ const AI_PROVIDERS: ProviderInfo[] = [
 // Force cloud mode via env var - prevents silent fallback to local mode
 const FORCE_CLOUD_MODE = process.env.NEXT_PUBLIC_FORCE_CLOUD_MODE === 'true';
 
+// Detect cloud mode from server-injected config (relay-cloud injects this in app.html)
+function detectCloudConfig(): { isCloud: boolean; features?: Record<string, boolean> } {
+  if (typeof window !== 'undefined') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const config = (window as any).__RELAY_CLOUD_CONFIG__;
+    if (config) return config as { isCloud: boolean; features?: Record<string, boolean> };
+  }
+  return { isCloud: false };
+}
+
 export default function DashboardPageClient() {
   const [state, setState] = useState<PageState>('loading');
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -63,8 +73,7 @@ export default function DashboardPageClient() {
   const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null);
   const [wsUrl, setWsUrl] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  // Track cloud mode for potential future use
-  const [_isCloudMode, setIsCloudMode] = useState(FORCE_CLOUD_MODE);
+  const [isCloudMode, setIsCloudMode] = useState(() => FORCE_CLOUD_MODE || detectCloudConfig().isCloud);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [provisioningInfo, setProvisioningInfo] = useState<ProvisioningInfo | null>(null);
   const [connectedProviders, setConnectedProviders] = useState<string[]>([]);
@@ -81,6 +90,16 @@ export default function DashboardPageClient() {
           if (FORCE_CLOUD_MODE) {
             throw new Error('Cloud mode enforced but session endpoint returned 404. Is the cloud server running?');
           }
+          // Always sync username from the health endpoint so it reflects the current project
+          try {
+            const healthRes = await fetch('/api/health');
+            if (healthRes.ok) {
+              const health = await healthRes.json();
+              if (health.projectName) {
+                localStorage.setItem('relay_username', health.projectName);
+              }
+            }
+          } catch { /* ignore */ }
           setIsCloudMode(false);
           setState('local');
           return;
@@ -90,6 +109,7 @@ export default function DashboardPageClient() {
         const token = sessionRes.headers.get('X-CSRF-Token');
         if (token) {
           setCsrfToken(token);
+          setCloudCsrfToken(token);
         }
 
         const session = await sessionRes.json();
@@ -162,9 +182,12 @@ export default function DashboardPageClient() {
 
         // Check for previously connected workspace (stored in localStorage)
         // This enables seamless reconnection on page reload
-        const savedWorkspaceId = typeof window !== 'undefined'
+        const rawSavedId = typeof window !== 'undefined'
           ? localStorage.getItem('agentrelay_workspace_id')
           : null;
+        // Reject placeholder values like "default" that aren't real UUIDs
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const savedWorkspaceId = rawSavedId && UUID_RE.test(rawSavedId) ? rawSavedId : null;
 
         if (savedWorkspaceId) {
           const savedWorkspace = runningWorkspaces.find((w: Workspace) => w.id === savedWorkspaceId);
@@ -180,12 +203,11 @@ export default function DashboardPageClient() {
           connectToWorkspace(runningWorkspaces[0]);
         } else if (runningWorkspaces.length > 1) {
           setState('select-workspace');
-        } else if ((workspacesData.workspaces || []).length > 0) {
-          // Has workspaces but none running
-          setState('select-workspace');
         } else if ((reposData.repositories || []).length > 0) {
-          // Has repos but no workspaces - show create workspace
-          setState('no-workspaces');
+          // No running workspaces but has repos — onboarding handles
+          // both "no workspace" and "workspace exists but not running" cases
+          window.location.href = '/app/onboarding';
+          return;
         } else {
           // No repos, no workspaces - redirect to connect repos
           window.location.href = '/connect-repos';
@@ -393,6 +415,38 @@ export default function DashboardPageClient() {
     }
   }, [connectToWorkspace, csrfToken]);
 
+  // Create cloud config for wrapping App when in cloud mode.
+  // Memoized to avoid recreating adapters on every render.
+  // IMPORTANT: All hooks must be called before any early returns (React rules of hooks).
+  const cloudConfig = useMemo(() => {
+    if (!isCloudMode) return null;
+    const serverConfig = detectCloudConfig();
+    return {
+      features: {
+        workspaces: true,
+        auth: true,
+        billing: serverConfig.features?.billing ?? true,
+        teams: serverConfig.features?.teams ?? true,
+      },
+      api: createCloudApiAdapter(),
+      auth: createCloudAuthAdapter(),
+      isCloudMode: true,
+    };
+  }, [isCloudMode]);
+
+  // Helper: wraps App with cloud config provider when in cloud mode
+  const renderApp = (props?: { wsUrl?: string }) => {
+    const app = <App wsUrl={props?.wsUrl} enableReactions />;
+    if (cloudConfig) {
+      return (
+        <DashboardConfigProvider config={cloudConfig}>
+          {app}
+        </DashboardConfigProvider>
+      );
+    }
+    return app;
+  };
+
   // Loading state
   if (state === 'loading') {
     return (
@@ -410,17 +464,12 @@ export default function DashboardPageClient() {
 
   // Local mode - just render the App component
   if (state === 'local') {
-    return <App />;
+    return renderApp();
   }
 
   // Connected to workspace - render App with workspace's WebSocket
-  // Wrap in CloudSessionProvider so App has access to cloud session context
   if (state === 'connected' && wsUrl) {
-    return (
-      <CloudSessionProvider cloudMode={true}>
-        <App wsUrl={wsUrl} />
-      </CloudSessionProvider>
-    );
+    return renderApp({ wsUrl });
   }
 
   // Connecting state
