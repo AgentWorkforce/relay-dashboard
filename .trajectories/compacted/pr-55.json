@@ -1,0 +1,128 @@
+{
+  "id": "compact_n1qaw83d6opa",
+  "version": 1,
+  "type": "compacted",
+  "compactedAt": "2026-03-02T05:32:09.090Z",
+  "sourceTrajectories": [
+    "traj_a2ixodiz48ug",
+    "traj_l3kgjnj8c0xh",
+    "traj_cudn4n6wb6ol"
+  ],
+  "dateRange": {
+    "start": "2026-02-23T11:33:36.394Z",
+    "end": "2026-02-24T09:06:29.155Z"
+  },
+  "summary": {
+    "totalDecisions": 4,
+    "totalEvents": 4,
+    "uniqueAgents": [
+      "default"
+    ]
+  },
+  "decisionGroups": [
+    {
+      "category": "api",
+      "decisions": [
+        {
+          "question": "Use SDK thread/reply APIs first with REST fallback",
+          "chosen": "Use SDK thread/reply APIs first with REST fallback",
+          "reasoning": "Phase 4 requires Relay SDK threading without regressing topic-thread or non-relay flows; fallback keeps compatibility when SDK cannot resolve thread IDs",
+          "fromTrajectory": "traj_l3kgjnj8c0xh"
+        },
+        {
+          "question": "Expose relay credentials through /api/relay-config for @relaycast/react integration",
+          "chosen": "Expose relay credentials through /api/relay-config for @relaycast/react integration",
+          "reasoning": "The current React SDK requires client-side apiKey + agentToken; returning credentials from local relaycast.json unblocks migration and can later be replaced by scoped credentials",
+          "fromTrajectory": "traj_cudn4n6wb6ol"
+        },
+        {
+          "question": "Prioritized SDK reactions + presence via public APIs",
+          "chosen": "Prioritized SDK reactions + presence via public APIs",
+          "reasoning": "Replaced custom reaction overlays and presence WS duplication while avoiding brittle internal SDK imports",
+          "fromTrajectory": "traj_cudn4n6wb6ol"
+        }
+      ]
+    },
+    {
+      "category": "compliance",
+      "decisions": [
+        {
+          "question": "Switched channels to shared MessageComposer and avatar fallback chain",
+          "chosen": "Switched channels to shared MessageComposer and avatar fallback chain",
+          "reasoning": "Channel used legacy MessageInput and relied on fromAvatarUrl only; DM uses MessageComposer and richer identity sources. Unifying to shared composer + fallback sources aligns behavior with minimal risk.",
+          "fromTrajectory": "traj_a2ixodiz48ug"
+        }
+      ]
+    }
+  ],
+  "keyLearnings": [],
+  "keyFindings": [],
+  "filesAffected": [
+    "packages/dashboard/src/components/App.tsx",
+    "packages/dashboard/src/components/channels/ChannelMessageList.tsx",
+    "packages/dashboard/src/components/channels/ChannelViewV1.tsx",
+    "packages/dashboard/src/components/channels/api.ts",
+    "packages/dashboard/src/components/channels/types.ts",
+    "packages/dashboard/src/providers/MessageProvider.tsx",
+    "packages/dashboard/src/components/hooks/useThread.ts",
+    ".trajectories/active/traj_cudn4n6wb6ol.json",
+    ".trajectories/completed/2026-02/traj_fyunktog47v4.json",
+    ".trajectories/completed/2026-02/traj_fyunktog47v4.md",
+    ".trajectories/index.json",
+    "package-lock.json",
+    "packages/dashboard-server/package.json",
+    "packages/dashboard-server/src/lib/cli-auth.ts",
+    "packages/dashboard-server/src/lib/proxy-route-table.test.ts",
+    "packages/dashboard-server/src/lib/proxy-route-table.ts",
+    "packages/dashboard-server/src/lib/relay-client.ts",
+    "packages/dashboard-server/src/lib/spawned-agents.ts",
+    "packages/dashboard-server/src/lib/utils.ts",
+    "packages/dashboard-server/src/proxy-server.ts",
+    "packages/dashboard-server/src/relaycast-provider-helpers.ts",
+    "packages/dashboard-server/src/relaycast-provider-types.ts",
+    "packages/dashboard-server/src/relaycast-provider.test.ts",
+    "packages/dashboard-server/src/relaycast-provider.ts",
+    "packages/dashboard-server/src/routes/channels.ts",
+    "packages/dashboard-server/src/routes/reactions.ts",
+    "packages/dashboard-server/src/server.ts",
+    "packages/dashboard-server/src/services/health-worker-manager.ts",
+    "packages/dashboard-server/src/services/index.ts",
+    "packages/dashboard-server/src/services/metrics.test.ts",
+    "packages/dashboard-server/src/services/metrics.ts",
+    "packages/dashboard-server/src/services/needs-attention.test.ts",
+    "packages/dashboard-server/src/services/needs-attention.ts",
+    "packages/dashboard-server/src/services/user-bridge.ts",
+    "packages/dashboard-server/src/types/index.ts",
+    "packages/dashboard-server/src/websocket/standalone.ts",
+    "packages/dashboard/package.json",
+    "packages/dashboard/src/app/app/[[...slug]]/DashboardPageClient.tsx",
+    "packages/dashboard/src/app/page.tsx",
+    "packages/dashboard/src/components/SpawnModal.tsx",
+    "packages/dashboard/src/components/hooks/useMessages.test.ts",
+    "packages/dashboard/src/components/hooks/useMessages.ts",
+    "packages/dashboard/src/components/hooks/useWebSocket.test.ts",
+    "packages/dashboard/src/components/hooks/useWebSocket.ts",
+    "packages/dashboard/src/components/settings/SettingsPage.tsx",
+    "packages/dashboard/src/lib/api.ts",
+    "packages/dashboard/src/providers/AgentProvider.tsx",
+    "packages/dashboard/src/providers/CloudWorkspaceProvider.tsx",
+    "packages/dashboard/src/providers/SettingsProvider.tsx",
+    "packages/dashboard/src/providers/index.ts",
+    "packages/dashboard/src/types/index.ts"
+  ],
+  "commits": [
+    "fe5b7d2",
+    "17c9d1f",
+    "4ef474e",
+    "de7b349",
+    "b2382de",
+    "dc2049e",
+    "9dffdb7",
+    "bdca3b2",
+    "72aadb3",
+    "a9c36f9",
+    "34a5630",
+    "3133759",
+    "88a4d0c"
+  ]
+}
