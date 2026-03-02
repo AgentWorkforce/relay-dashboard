@@ -86,7 +86,7 @@ const MCP_NOISE_PATTERN = /<system-reminder>|Failed to resolve path|Unknown mess
 const UI_NOISE_PATTERN = /(?:\bshift\+tab\b|\besc to interrupt\b|to cycle|bypass permissions|shimmying|shimming|combobulat|orbiting|nebuliz|simmer|percolat|distill|forge|materializ|conjur|transmut|cataly|thinking to|working on|running on|connecting to)/i;
 const MCP_HELP_PATTERN = /relay_send\(/i;
 const TELEMETRY_NOISE_PATTERN =
-  /agent relay collects anonymous usage data|agent-relay telemetry|`agent-relay telemetry disable`|learn more:\s*https:\/\/agent-relay\.com\/telemetry/i;
+  /agent relay collects anonymous usage data|agent-relay telemetry|`agent-relay telemetry disable`|learn more:\s*https:\/\/agent-relay\.com\/telemetry|\[broker\]\s*run/i;
 const NETWORK_NOISE_PATTERN = /hyper_util::|posthog\.com|pooling idle connection|connected to \[/i;
 const TOOL_CLI_NOISE_PREFIX_PATTERN =
   /\b(?:by|byp|bypass|shift\+tab|esct|esctointerrupt|shim|shimmy|orbit|comb|combob|think|running|working|relaycast|relay_send|to:|text:|send_dm)\b/i;
