@@ -408,7 +408,12 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
   });
 
   app.get('/{*path}', (req: Request, res: Response) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/ws') || req.path.includes('.')) {
+    // WebSocket endpoints require upgrade - return 426 for regular HTTP requests
+    if (req.path === '/ws' || req.path.startsWith('/ws/')) {
+      res.status(426).json({ error: 'Upgrade Required', message: 'WebSocket upgrade required' });
+      return;
+    }
+    if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.includes('.')) {
       res.status(404).json({ error: 'Not found' });
       return;
     }
