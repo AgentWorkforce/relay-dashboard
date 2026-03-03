@@ -18,6 +18,7 @@ import {
   fetchAgents,
   fetchChannels,
   loadRelaycastConfig,
+  type RelaycastConfig,
 } from './relaycast-provider.js';
 import { createSendStrategy } from './lib/send-strategy.js';
 import type { SendStrategy } from './lib/send-strategy.js';
@@ -115,7 +116,14 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     mock = process.env.MOCK === 'true',
     corsOrigins = process.env.CORS_ORIGINS || '',
     requestTimeout = parseInt(process.env.REQUEST_TIMEOUT || '60000', 10),
+    relayApiKey: relayApiKeyOption,
   } = options;
+
+  // In-memory API key — highest priority, avoids any file I/O.
+  // Seeded from the option or RELAY_API_KEY env var, then updated dynamically
+  // via setRelayApiKey() when a workflow creates a new Relaycast workspace.
+  let inMemoryRelayApiKey: string | undefined =
+    relayApiKeyOption?.trim() || process.env.RELAY_API_KEY?.trim() || undefined;
 
   const resolvedDataDir = path.resolve(dataDir);
   if (!process.env.AGENT_RELAY_PROJECT) {
@@ -180,7 +188,19 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
 
   // --- Build shared context ---
 
-  const resolveRelaycastConfig = () => loadRelaycastConfig(dataDir);
+  const resolveRelaycastConfig = (): RelaycastConfig | null => {
+    // In-memory key (from option, env var, or dynamic update) takes priority over the file.
+    if (inMemoryRelayApiKey) {
+      const baseUrl = process.env.RELAYCAST_API_URL || 'https://api.relaycast.dev';
+      const projectDir = path.basename(path.resolve(dataDir, '..'));
+      return { apiKey: inMemoryRelayApiKey, baseUrl, projectIdentity: projectDir };
+    }
+    return loadRelaycastConfig(dataDir);
+  };
+
+  const setRelayApiKey = (apiKey: string): void => {
+    inMemoryRelayApiKey = apiKey.trim();
+  };
   const { getSpawnedAgents, getLocalAgentNames } = createSpawnedAgentsCaches({
     brokerProxyEnabled,
     relayUrl,
@@ -339,6 +359,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     relayUrl,
     brokerProxyEnabled,
     resolveRelaycastConfig,
+    setRelayApiKey,
     getRelaycastSnapshot,
     getRelaycastChannels,
     sendRelaycastMessage,
