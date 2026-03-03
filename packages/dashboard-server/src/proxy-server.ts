@@ -496,7 +496,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     });
   };
 
-  return { app, server, wss, close, mode };
+  return { app, server, wss, close, mode, setRelayApiKey };
 }
 
 /**
@@ -543,6 +543,34 @@ async function findAvailablePort(server: Server, preferredPort: number, maxAttem
 }
 
 /**
+ * Bootstrap Relaycast credentials from the broker health endpoint.
+ * The broker (v3.0.3+) includes the workspace API key in /health so the
+ * dashboard always uses the same Relaycast workspace as the broker.
+ */
+async function bootstrapRelayApiKeyFromBroker(
+  relayUrl: string,
+  setRelayApiKey: (key: string) => void,
+): Promise<void> {
+  // Retry a few times to allow the broker to fully start up.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const res = await fetch(`${relayUrl}/health`);
+      if (!res.ok) break;
+      const json = await res.json() as { workspaceKey?: string };
+      const key = typeof json.workspaceKey === 'string' ? json.workspaceKey.trim() : '';
+      if (key) {
+        setRelayApiKey(key);
+        console.log('[dashboard] Relaycast workspace key bootstrapped from broker');
+        return;
+      }
+    } catch {
+      // Broker not yet ready — wait and retry.
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
+/**
  * Start the dashboard server.
  */
 export async function startServer(options: DashboardServerOptions = {}): Promise<DashboardServer> {
@@ -561,6 +589,13 @@ export async function startServer(options: DashboardServerOptions = {}): Promise
     console.log(`[dashboard] Proxy mode enabled - broker URL ${normalizeRelayUrl(options.relayUrl ?? process.env.RELAY_URL)}`);
   } else {
     console.log('[dashboard] Standalone mode enabled - relaycast data only');
+  }
+
+  // Best-effort: fetch workspace key from the broker health endpoint so the
+  // dashboard uses the same Relaycast workspace as the broker (no relaycast.json needed).
+  const resolvedRelayUrl = normalizeRelayUrl(options.relayUrl ?? process.env.RELAY_URL);
+  if (resolvedRelayUrl && !options.mock) {
+    bootstrapRelayApiKeyFromBroker(resolvedRelayUrl, dashboard.setRelayApiKey).catch(() => {});
   }
 
   return dashboard;

@@ -99,6 +99,7 @@ export interface DashboardServer {
   wss: WebSocketServer;
   close: () => Promise<void>;
   mode: DashboardMode;
+  setRelayApiKey: (apiKey: string) => void;
 }
 
 /**
