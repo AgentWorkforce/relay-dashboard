@@ -543,18 +543,24 @@ async function findAvailablePort(server: Server, preferredPort: number, maxAttem
 }
 
 /**
- * Bootstrap Relaycast credentials from the broker health endpoint.
- * The broker (v3.0.3+) includes the workspace API key in /health so the
- * dashboard always uses the same Relaycast workspace as the broker.
+ * Bootstrap Relaycast credentials from the broker's authenticated /api/config
+ * endpoint.  The workspace key is on an authenticated route (not /health) so it
+ * is not exposed to unauthenticated callers.
  */
 async function bootstrapRelayApiKeyFromBroker(
   relayUrl: string,
   setRelayApiKey: (key: string) => void,
 ): Promise<void> {
+  const brokerApiKey = process.env.RELAY_BROKER_API_KEY?.trim();
+  const headers: Record<string, string> = {};
+  if (brokerApiKey) {
+    headers['x-api-key'] = brokerApiKey;
+  }
+
   // Retry a few times to allow the broker to fully start up.
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      const res = await fetch(`${relayUrl}/health`);
+      const res = await fetch(`${relayUrl}/api/config`, { headers });
       if (!res.ok) break;
       const json = await res.json() as { workspaceKey?: string };
       const key = typeof json.workspaceKey === 'string' ? json.workspaceKey.trim() : '';
