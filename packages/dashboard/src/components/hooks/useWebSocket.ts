@@ -13,7 +13,7 @@ import type { Agent, Message, Session, AgentSummary, FleetData } from '../../typ
 import { getWebSocketUrl } from '../../lib/config';
 
 /** Broker event payload forwarded by the dashboard server */
-interface BrokerEvent {
+export interface BrokerEvent {
   kind: string;
   name?: string;
   from?: string;

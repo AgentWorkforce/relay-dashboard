@@ -45,6 +45,7 @@ export interface SpawnedAgentSummary {
   model?: string;
   cwd?: string;
   pid?: number;
+  online?: boolean;
 }
 
 export interface SpawnedAgentNamesResult {

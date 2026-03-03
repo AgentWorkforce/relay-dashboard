@@ -25,6 +25,18 @@ describe('extractSpawnedAgentNames', () => {
     expect(result.agents[0].model).toBe('opus');
   });
 
+  it('extracts online state from payload booleans and status values', () => {
+    const result = extractSpawnedAgentNames([
+      { name: 'WorkerOnline', cli: 'claude', online: true },
+      { name: 'WorkerRunning', cli: 'codex', status: 'running' },
+      { name: 'WorkerBusy', cli: 'codex', status: '  Busy  ' },
+    ]);
+    expect(result.hasSpawnedList).toBe(true);
+    expect(result.agents.find((a) => a.name === 'WorkerOnline')?.online).toBe(true);
+    expect(result.agents.find((a) => a.name === 'WorkerRunning')?.online).toBe(true);
+    expect(result.agents.find((a) => a.name === 'WorkerBusy')?.online).toBe(true);
+  });
+
   it('extracts from nested data.agents', () => {
     const result = extractSpawnedAgentNames({
       data: {
@@ -160,6 +172,33 @@ describe('mergeBrokerSpawnedAgents', () => {
     expect(result[1].name).toBe('New');
     expect(result[1].status).toBe('offline');
     expect(result[1].isSpawned).toBe(true);
+  });
+
+  it('marks missing spawned agents online when process is alive', () => {
+    const agents = [makeAgent('Existing')];
+    const spawned = [{ name: 'Running', cli: 'codex', pid: 12345 }];
+    const result = mergeBrokerSpawnedAgents(agents, spawned);
+    expect(result[1].name).toBe('Running');
+    expect(result[1].status).toBe('online');
+    expect(result[1].isSpawned).toBe(true);
+  });
+
+  it('respects explicit offline status even when pid is present', () => {
+    const agents = [makeAgent('Existing')];
+    const spawned = [{ name: 'Stale', cli: 'codex', pid: 12345, online: false }];
+    const result = mergeBrokerSpawnedAgents(agents, spawned);
+    expect(result[1].name).toBe('Stale');
+    expect(result[1].status).toBe('offline');
+    expect(result[1].isSpawned).toBe(true);
+  });
+
+  it('upgrades existing offline relay agent to online when broker shows it running', () => {
+    const agents = [makeAgent('Worker', { status: 'offline' })];
+    const spawned = [{ name: 'Worker', cli: 'claude', pid: 1001 }];
+    const result = mergeBrokerSpawnedAgents(agents, spawned);
+    expect(result).toHaveLength(1);
+    expect(result[0].status).toBe('online');
+    expect(result[0].isSpawned).toBe(true);
   });
 
   it('preserves existing cli when not unknown', () => {

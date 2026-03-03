@@ -87,13 +87,16 @@ export function useMessages({
       recentMessages.map((m) => `${m.to}:${m.content.slice(0, 100)}`)
     );
 
-    // Remove optimistic messages that now exist in real messages
-    setOptimisticMessages((prev) =>
-      prev.filter((opt) => {
+    // Remove optimistic messages that now exist in real messages.
+    // Return previous state when nothing changed to avoid render loops
+    // when parent code provides a new `messages` array identity.
+    setOptimisticMessages((prev) => {
+      const next = prev.filter((opt) => {
         const fingerprint = `${opt.to}:${opt.content.slice(0, 100)}`;
         return !realFingerprints.has(fingerprint);
-      })
-    );
+      });
+      return next.length === prev.length ? prev : next;
+    });
   }, [messages, optimisticMessages.length]);
 
   // Combine real messages with optimistic messages, sorted by timestamp
