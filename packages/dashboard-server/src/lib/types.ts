@@ -112,7 +112,7 @@ export interface RouteContext {
   resolveRelaycastConfig: () => RelaycastConfig | null;
   getRelaycastSnapshot: () => Promise<DashboardSnapshot>;
   getRelaycastChannels: () => Promise<{ channels: DashboardChannel[]; archivedChannels: DashboardChannel[] }>;
-  sendRelaycastMessage: (params: { to: string; message: string; from?: string }) => Promise<
+  sendRelaycastMessage: (params: { to: string; message: string; from?: string; thread?: string }) => Promise<
     { success: true; messageId: string } | { success: false; status: number; error: string }
   >;
   getSpawnedAgents: () => Promise<{ names: Set<string> | null; agents: SpawnedAgentSummary[] | null }>;

@@ -78,6 +78,7 @@ export interface SendMessageInput {
   to: string;
   message: string;
   from?: string;
+  thread?: string;
   dataDir?: string;
 }
 

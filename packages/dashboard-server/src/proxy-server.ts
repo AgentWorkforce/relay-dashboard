@@ -55,6 +55,7 @@ import { registerChannelRoutes } from './routes/channels.js';
 import { registerBrokerProxyRoutes } from './routes/broker-proxy.js';
 import { registerMetricsRoutes } from './routes/metrics.js';
 import { registerReactionRoutes } from './routes/reactions.js';
+import { registerThreadReplyRoutes } from './routes/thread-replies.js';
 import { registerRelayConfigRoutes } from './routes/relay-config.js';
 import { registerRelaycastHistoryRoutes } from './routes/history-relaycast.js';
 
@@ -238,7 +239,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
   };
 
   const sendRelaycastMessage = async (
-    params: { to: string; message: string; from?: string },
+    params: { to: string; message: string; from?: string; thread?: string },
   ): Promise<{ success: true; messageId: string } | { success: false; status: number; error: string }> => {
     const sendTimeout = Math.max(requestTimeout - 5000, 10000);
     const sendStart = Date.now();
@@ -292,7 +293,12 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
             `[dashboard] /api/send request: to=${resolvedTarget}, from=${senderName}, relayUrl=${relayUrl}, timeoutMs=${sendTimeout}`,
           );
 
-          const outcome = await strategy.send({ to: resolvedTarget, message, from: senderName });
+          const outcome = await strategy.send({
+            to: resolvedTarget,
+            message,
+            from: senderName,
+            thread: params.thread,
+          });
           console.log(`[dashboard] /api/send completed in ${Date.now() - sendStart}ms with status=${outcome.success ? 200 : outcome.status}`);
 
           // Enrich "agent not found" errors with available agent names
@@ -360,6 +366,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     registerRelayConfigRoutes(app, ctx);
     registerChannelRoutes(app, ctx);
     registerReactionRoutes(app, ctx);
+    registerThreadReplyRoutes(app, ctx);
     registerMetricsRoutes(app, {
       teamDir: path.join(dataDir, 'team'),
       resolveWorkspaceId,

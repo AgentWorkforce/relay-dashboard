@@ -35,7 +35,7 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
     if (!config) {
       res.status(503).json({
         success: false,
-        error: `Relaycast credentials not found in ${path.join(ctx.dataDir, 'relaycast.json')}`,
+        error: "Relaycast credentials not configured. Set RELAY_API_KEY or create .agent-relay/relaycast.json",
       });
       return;
     }
