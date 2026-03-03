@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import type { Application } from 'express';
+import type { StorageAdapter, StoredMessage } from '@agent-relay/storage/adapter';
 
 interface Attachment {
   id: string;
@@ -57,6 +58,8 @@ export interface MessagingRouteDeps {
   attachmentRegistry: Map<string, Attachment>;
   attachmentsDir: string;
   broadcastData: () => Promise<void>;
+  storage?: StorageAdapter;
+  remapAgentName?: (name: string) => string;
 }
 
 /**
@@ -71,7 +74,153 @@ export function registerMessagingRoutes(app: Application, deps: MessagingRouteDe
     attachmentRegistry,
     attachmentsDir,
     broadcastData,
+    storage,
+    remapAgentName,
   } = deps;
+
+  const mapStoredMessage = (message: StoredMessage) => ({
+    id: message.id,
+    from: remapAgentName ? remapAgentName(message.from) : message.from,
+    to: remapAgentName ? remapAgentName(message.to) : message.to,
+    content: message.body,
+    timestamp: new Date(message.ts).toISOString(),
+    thread: message.thread,
+    replyCount: message.replyCount,
+  });
+
+  const parseBeforeCursor = (raw: unknown): number | undefined => {
+    if (typeof raw !== 'string' || raw.trim() === '') {
+      return undefined;
+    }
+    const asNumber = Number.parseInt(raw, 10);
+    if (Number.isFinite(asNumber)) {
+      return asNumber;
+    }
+    const asTime = Date.parse(raw);
+    return Number.isNaN(asTime) ? undefined : asTime;
+  };
+
+  const findParentMessage = async (id: string): Promise<StoredMessage | null> => {
+    if (!storage) {
+      return null;
+    }
+
+    if (typeof storage.getMessageById === 'function') {
+      const exact = await storage.getMessageById(id);
+      if (exact) {
+        return exact;
+      }
+    }
+
+    const candidates = await storage.getMessages({ limit: 2000, order: 'desc' });
+    return candidates.find((message) => message.id === id || message.id.startsWith(id)) ?? null;
+  };
+
+  const resolveReplyTarget = (parent: StoredMessage, senderName: string): string => {
+    const from = parent.from;
+    const to = parent.to;
+    const channelFromData =
+      typeof (parent.data as { channel?: unknown } | undefined)?.channel === 'string'
+        ? ((parent.data as { channel: string }).channel)
+        : undefined;
+
+    if (to.startsWith('#')) {
+      return to;
+    }
+    if (to === '*' && channelFromData && channelFromData.startsWith('#')) {
+      return channelFromData;
+    }
+    return from === senderName ? to : from;
+  };
+
+  // Thread replies (non-mock mode)
+  app.get('/api/messages/:id/replies', async (req, res) => {
+    if (!storage) {
+      return res.status(503).json({ ok: false, error: 'Storage not configured' });
+    }
+
+    const { id } = req.params;
+    const limitRaw = typeof req.query.limit === 'string' ? Number.parseInt(req.query.limit, 10) : 50;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 50;
+    const beforeTs = parseBeforeCursor(req.query.before);
+
+    try {
+      const parent = await findParentMessage(id);
+      if (!parent) {
+        return res.status(404).json({ ok: false, error: 'Message not found' });
+      }
+
+      const allReplies = await storage.getMessages({ thread: parent.id, order: 'asc' });
+      const filteredReplies = beforeTs ? allReplies.filter((message) => message.ts < beforeTs) : allReplies;
+      const replies = filteredReplies.length > limit ? filteredReplies.slice(-limit) : filteredReplies;
+
+      const hasMore = filteredReplies.length > replies.length;
+      const nextCursor = hasMore && replies.length > 0 ? new Date(replies[0].ts).toISOString() : undefined;
+
+      return res.json({
+        ok: true,
+        data: {
+          parent: {
+            ...mapStoredMessage(parent),
+            reply_count: allReplies.length,
+          },
+          replies: replies.map(mapStoredMessage),
+          nextCursor,
+        },
+      });
+    } catch (err) {
+      console.error(`[dashboard] Failed to load thread replies for ${id}:`, err);
+      return res.status(500).json({ ok: false, error: 'Failed to load thread replies' });
+    }
+  });
+
+  app.post('/api/messages/:id/replies', async (req, res) => {
+    if (!storage) {
+      return res.status(503).json({ ok: false, error: 'Storage not configured' });
+    }
+
+    const { id } = req.params;
+    const { text, from } = req.body || {};
+    const trimmedText = typeof text === 'string' ? text.trim() : '';
+
+    if (!trimmedText) {
+      return res.status(400).json({ ok: false, error: 'Missing "text" field' });
+    }
+
+    try {
+      const parent = await findParentMessage(id);
+      if (!parent) {
+        return res.status(404).json({ ok: false, error: 'Message not found' });
+      }
+
+      const senderName = typeof from === 'string' && from.trim() ? from.trim() : 'Dashboard';
+      const relayClient = await getRelayClient(senderName, 'user');
+      if (!relayClient || relayClient.state !== 'READY') {
+        return res.status(503).json({ ok: false, error: 'Relay adapter is not ready' });
+      }
+
+      const target = resolveReplyTarget(parent, senderName);
+      const sent = relayClient.sendMessage(target, trimmedText, 'message', undefined, parent.id);
+      if (!sent) {
+        return res.status(500).json({ ok: false, error: 'Failed to send reply' });
+      }
+
+      const reply = {
+        id: `pending-reply-${Date.now()}`,
+        from: senderName,
+        to: target,
+        content: trimmedText,
+        timestamp: new Date().toISOString(),
+        thread: parent.id,
+      };
+
+      broadcastData().catch((err) => console.error('[dashboard] Failed to broadcast after reply:', err));
+      return res.status(201).json({ ok: true, data: reply });
+    } catch (err) {
+      console.error(`[dashboard] Failed to post thread reply for ${id}:`, err);
+      return res.status(500).json({ ok: false, error: 'Failed to post reply' });
+    }
+  });
 
   // API endpoint to send messages.
   app.post('/api/send', async (req, res) => {
@@ -258,7 +407,6 @@ export function registerMessagingRoutes(app: Application, deps: MessagingRouteDe
     if (!attachment) {
       return res.status(404).json({ error: 'Attachment not found' });
     }
-
     return res.json({
       success: true,
       attachment: {
