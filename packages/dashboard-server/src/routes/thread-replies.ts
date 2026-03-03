@@ -147,21 +147,38 @@ export function registerThreadReplyRoutes(app: Express, ctx: RouteContext): void
       return;
     }
 
+    // `to` may be provided by the client as a fallback when the parent message
+    // isn't available in the current Relaycast workspace (e.g. message from a
+    // previous session that only lives in the broker WebSocket stream).
+    const fallbackTo = typeof req.body?.to === 'string' ? req.body.to.trim() : '';
+
     try {
       const allMessages = await fetchAllMessages(config);
       const parent = findParentMessage(allMessages, id);
-      if (!parent) {
+
+      if (!parent && !fallbackTo) {
         res.status(404).json({ ok: false, error: 'Message not found' });
         return;
       }
 
       const senderName = resolveSenderName(req.body?.from, config, projectName);
-      const target = resolveReplyTarget(parent, senderName);
+
+      let target: string;
+      let threadId: string;
+      if (parent) {
+        target = resolveReplyTarget(parent, senderName);
+        threadId = parent.id;
+      } else {
+        // Parent not in Relaycast (e.g. from previous session); use client-provided target.
+        target = fallbackTo;
+        threadId = id;
+      }
+
       const sendResult = await ctx.sendRelaycastMessage({
         to: target,
         message: text,
         from: senderName,
-        thread: parent.id,
+        thread: threadId,
       });
 
       if (!sendResult.success) {
@@ -177,7 +194,7 @@ export function registerThreadReplyRoutes(app: Express, ctx: RouteContext): void
           to: target,
           content: text,
           timestamp: new Date().toISOString(),
-          thread: parent.id,
+          thread: threadId,
         },
       });
     } catch (err) {

@@ -1102,11 +1102,14 @@ export const api = {
   async postReply(
     messageId: string,
     text: string,
+    to?: string,
   ): Promise<ApiResponse<Message>> {
     try {
+      const body: Record<string, string> = { text };
+      if (to) body['to'] = to;
       const response = await apiFetch(
         getApiUrl(`/api/messages/${encodeURIComponent(messageId)}/replies`),
-        { method: 'POST', body: JSON.stringify({ text }) },
+        { method: 'POST', body: JSON.stringify(body) },
       );
       const data = await response.json();
       if (response.ok) return { success: true, data: data.data ?? data };
