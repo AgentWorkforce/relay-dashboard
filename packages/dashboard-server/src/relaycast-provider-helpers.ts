@@ -46,6 +46,7 @@ export interface RelaycastClientLike {
 
 const readerClientCache = new Map<string, Promise<RelaycastClientLike>>();
 const writerClientCache = new Map<string, Promise<RelaycastClientLike>>();
+const agentTokenCache = new Map<string, Promise<{ token: string; name: string }>>();
 
 export function parseTimestamp(value: string | null | undefined): number | null {
   if (!value) return null;
@@ -288,6 +289,47 @@ export function getWriterClient(
     }),
     dataDir,
   );
+}
+
+/**
+ * Get (or register) an agent token for the dashboard identity.
+ * Reuses the same registration that getWriterClient would make, but
+ * returns the raw token string for use by the frontend SDK.
+ */
+export async function getDashboardAgentToken(
+  config: RelaycastConfig,
+  agentName: string,
+): Promise<{ token: string; name: string }> {
+  // If the config already has a token for this identity, use it directly
+  if (config.agentToken && config.agentName?.toLowerCase() === agentName.toLowerCase()) {
+    return { token: config.agentToken, name: config.agentName };
+  }
+
+  const cacheKey = `${config.baseUrl}|${config.apiKey}|${agentName}`;
+  const existing = agentTokenCache.get(cacheKey);
+  if (existing) {
+    return existing;
+  }
+
+  const tokenPromise = (async () => {
+    const relay = new RelayCast({
+      apiKey: config.apiKey,
+      baseUrl: config.baseUrl,
+    });
+    const response = await relay.registerOrRotate({
+      name: agentName,
+      type: 'human',
+    });
+    return { token: response.token, name: response.name ?? agentName };
+  })();
+
+  // Cache the promise; clear on failure so retries work
+  agentTokenCache.set(cacheKey, tokenPromise);
+  tokenPromise.catch(() => {
+    agentTokenCache.delete(cacheKey);
+  });
+
+  return tokenPromise;
 }
 
 function parseCliAndModel(

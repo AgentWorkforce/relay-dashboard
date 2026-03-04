@@ -4,7 +4,7 @@
   "task": {
     "title": "Remove legacy relay client and begin server.ts decomposition"
   },
-  "status": "active",
+  "status": "abandoned",
   "startedAt": "2026-02-24T09:12:07.241Z",
   "agents": [
     {
@@ -391,8 +391,15 @@
             "reasoning": "Keeps server runtime/static path unchanged while ensuring dashboard-server/out stays current after dashboard builds"
           },
           "significance": "high"
+        },
+        {
+          "ts": 1772645991280,
+          "type": "note",
+          "content": "Abandoned: Stale trajectory from previous session",
+          "significance": "high"
         }
-      ]
+      ],
+      "endedAt": "2026-03-04T17:39:51.280Z"
     }
   ],
   "commits": [],
@@ -402,5 +409,6 @@
   "_trace": {
     "startRef": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8",
     "endRef": "fe5b7d2ce863a19e210dfc58d0c0d444df91f9c8"
-  }
+  },
+  "completedAt": "2026-03-04T17:39:51.280Z"
 }

@@ -1,0 +1,65 @@
+{
+  "id": "traj_rn2cf74da1bo",
+  "version": 1,
+  "task": {
+    "title": "Fix: Auto-register dashboard agent to obtain agentToken for frontend SDK"
+  },
+  "status": "completed",
+  "startedAt": "2026-03-04T17:39:54.323Z",
+  "agents": [
+    {
+      "name": "default",
+      "role": "lead",
+      "joinedAt": "2026-03-04T17:40:01.141Z"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "chap_1o5fjaf8g978",
+      "title": "Work",
+      "agentName": "default",
+      "startedAt": "2026-03-04T17:40:01.141Z",
+      "events": [
+        {
+          "ts": 1772646001141,
+          "type": "decision",
+          "content": "Added getDashboardAgentToken() to relaycast-provider-helpers.ts instead of duplicating registration in relay-config.ts: Added getDashboardAgentToken() to relaycast-provider-helpers.ts instead of duplicating registration in relay-config.ts",
+          "raw": {
+            "question": "Added getDashboardAgentToken() to relaycast-provider-helpers.ts instead of duplicating registration in relay-config.ts",
+            "chosen": "Added getDashboardAgentToken() to relaycast-provider-helpers.ts instead of duplicating registration in relay-config.ts",
+            "alternatives": [],
+            "reasoning": "The dashboard already registers agents via getWriterClient -> createRelaycastClient -> registerOrRotate. Rather than duplicating that pattern in relay-config.ts with a direct @relaycast/sdk import, we added a shared getDashboardAgentToken() that uses the same RelayCast + registerOrRotate flow with promise-based caching (matching getCachedClient pattern). This keeps all SDK registration logic centralized in the helpers module."
+          },
+          "significance": "high"
+        },
+        {
+          "ts": 1772646006042,
+          "type": "decision",
+          "content": "Reader client intentionally bypasses SDK for read-only operations: Reader client intentionally bypasses SDK for read-only operations",
+          "raw": {
+            "question": "Reader client intentionally bypasses SDK for read-only operations",
+            "chosen": "Reader client intentionally bypasses SDK for read-only operations",
+            "alternatives": [],
+            "reasoning": "Audit confirmed getReaderClient() uses direct fetch() to /v1/* endpoints by design — avoids agent registration overhead (POST /v1/agents) for read-only data fetching. Only write operations (send, reply, DM) need the SDK with agent tokens."
+          },
+          "significance": "high"
+        }
+      ],
+      "endedAt": "2026-03-04T17:40:13.402Z"
+    }
+  ],
+  "commits": [],
+  "filesChanged": [],
+  "projectId": "/Users/khaliqgant/Projects/agent-workforce/relay-dashboard",
+  "tags": [],
+  "_trace": {
+    "startRef": "9dc0f4f93da6695c888730d58260f22dd3a6a69d",
+    "endRef": "9dc0f4f93da6695c888730d58260f22dd3a6a69d"
+  },
+  "completedAt": "2026-03-04T17:40:13.402Z",
+  "retrospective": {
+    "summary": "When bootstrapRelayApiKeyFromBroker provides only an apiKey (no agentToken), GET /api/relay-config returned 503, leaving the frontend SDK disabled and forcing all writes through REST fallback (causing 404s on thread replies). Fix: relay-config.ts now calls getDashboardAgentToken() — a new shared helper in relaycast-provider-helpers.ts that uses the same RelayCast.registerOrRotate() pattern as getWriterClient, with promise-based caching. Files changed: relay-config.ts (auto-register on missing token), relaycast-provider-helpers.ts (new exported getDashboardAgentToken + agentTokenCache). All 207 tests pass.",
+    "approach": "Standard approach",
+    "confidence": 0.9
+  }
+}

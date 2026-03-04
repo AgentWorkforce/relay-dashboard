@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import path from 'path';
 import type { Express, Request, Response } from 'express';
 import type { RouteContext } from '../lib/types.js';
+import { getDashboardAgentToken } from '../relaycast-provider-helpers.js';
 
 export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void {
   // Allow the workflow runner (or any local caller) to push a Relaycast API key
@@ -41,7 +42,7 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
     res.json({ ok: true });
   });
 
-  app.get('/api/relay-config', (req: Request, res: Response) => {
+  app.get('/api/relay-config', async (req: Request, res: Response) => {
     // In cloud deployments (WORKSPACE_TOKEN set), require a valid token.
     // Skip auth check in standalone mode (local development).
     const expectedToken = process.env.WORKSPACE_TOKEN;
@@ -77,20 +78,29 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
       return;
     }
 
-    if (!config.agentToken) {
-      res.status(503).json({
-        success: false,
-        error: 'Relaycast agent token is missing from relaycast.json',
-      });
-      return;
+    let agentToken = config.agentToken;
+    let agentName = config.agentName ?? path.basename(path.resolve(ctx.dataDir, '..'));
+
+    if (!agentToken) {
+      try {
+        const registered = await getDashboardAgentToken(config, agentName);
+        agentToken = registered.token;
+        agentName = registered.name;
+      } catch (err) {
+        res.status(503).json({
+          success: false,
+          error: `Failed to auto-register dashboard agent: ${err instanceof Error ? err.message : String(err)}`,
+        });
+        return;
+      }
     }
 
     res.json({
       success: true,
       baseUrl: config.baseUrl,
       apiKey: config.apiKey,
-      agentToken: config.agentToken,
-      agentName: config.agentName ?? path.basename(path.resolve(ctx.dataDir, '..')),
+      agentToken,
+      agentName,
     });
   });
 }
