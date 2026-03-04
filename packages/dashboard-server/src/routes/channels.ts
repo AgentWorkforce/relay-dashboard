@@ -160,6 +160,9 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
 
   const handleRelaycastSend = async (req: Request, res: Response): Promise<void> => {
     const { to, from } = req.body ?? {};
+    const thread = typeof req.body?.thread === 'string' && req.body.thread.trim()
+      ? req.body.thread.trim()
+      : undefined;
     const messageValue = req.body?.message ?? req.body?.text ?? req.body?.body ?? req.body?.content;
     const message = typeof messageValue === 'string' ? messageValue.trim() : '';
     const requestStartedAt = Date.now();
@@ -177,6 +180,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
       to: to.trim(),
       message,
       from: typeof from === 'string' ? from : undefined,
+      thread,
     });
 
     if (!result.success) {
@@ -221,7 +225,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     if (!config) {
       res.status(503).json({
         success: false,
-        error: `Relaycast credentials not found in ${path.join(ctx.dataDir, 'relaycast.json')}`,
+        error: "Relaycast credentials not configured. Set RELAY_API_KEY or create .agent-relay/relaycast.json",
       });
       return;
     }
@@ -284,7 +288,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     if (!config) {
       res.status(503).json({
         success: false,
-        error: `Relaycast credentials not found in ${path.join(ctx.dataDir, 'relaycast.json')}`,
+        error: "Relaycast credentials not configured. Set RELAY_API_KEY or create .agent-relay/relaycast.json",
       });
       return;
     }
@@ -326,7 +330,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     if (!config) {
       res.status(503).json({
         success: false,
-        error: `Relaycast credentials not found in ${path.join(ctx.dataDir, 'relaycast.json')}`,
+        error: "Relaycast credentials not configured. Set RELAY_API_KEY or create .agent-relay/relaycast.json",
       });
       return;
     }
@@ -377,7 +381,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     if (!config) {
       res.status(503).json({
         success: false,
-        error: `Relaycast credentials not found in ${path.join(ctx.dataDir, 'relaycast.json')}`,
+        error: "Relaycast credentials not configured. Set RELAY_API_KEY or create .agent-relay/relaycast.json",
       });
       return;
     }
@@ -423,7 +427,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     if (!config) {
       res.status(503).json({
         success: false,
-        error: `Relaycast credentials not found in ${path.join(ctx.dataDir, 'relaycast.json')}`,
+        error: "Relaycast credentials not configured. Set RELAY_API_KEY or create .agent-relay/relaycast.json",
       });
       return;
     }

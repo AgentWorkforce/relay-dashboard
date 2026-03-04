@@ -391,6 +391,30 @@ describe('Dashboard Server', () => {
       expect(typeof data.error).toBe('string');
     });
 
+    it('registers thread reply routes when relaycast credentials are missing', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const getResponse = await fetch(`http://localhost:${port}/api/messages/msg-1/replies`);
+      const getData = await getResponse.json();
+      expect(getResponse.status).toBe(503);
+      expect(getData.ok).toBe(false);
+      expect(typeof getData.error).toBe('string');
+
+      const postResponse = await fetch(`http://localhost:${port}/api/messages/msg-1/replies`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'hello' }),
+      });
+      const postData = await postResponse.json();
+      expect(postResponse.status).toBe(503);
+      expect(postData.ok).toBe(false);
+      expect(typeof postData.error).toBe('string');
+    });
+
     it('should list local worker logs in standalone mode', async () => {
       const address = server.server.address();
       if (!address || typeof address === 'string') {
@@ -678,5 +702,34 @@ describe('Proxy Send Routing', () => {
       message: 'hello from proxy mode',
     });
     expect(typeof brokerPayload?.from).toBe('string');
+  });
+
+  it('forwards thread id through /api/send in proxy mode', async () => {
+    const address = dashboard.server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Server address not available');
+    }
+    const port = address.port;
+
+    const response = await fetch(`http://localhost:${port}/api/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: 'Lead',
+        message: 'threaded hello',
+        from: 'Dashboard',
+        thread: 'msg-parent-123',
+      }),
+    });
+    const data = await response.json();
+
+    expect(response.ok).toBe(true);
+    expect(data.success).toBe(true);
+    expect(data.messageId).toBe('http_evt_proxy_send');
+    expect(brokerPayload).toMatchObject({
+      to: 'Lead',
+      message: 'threaded hello',
+      thread: 'msg-parent-123',
+    });
   });
 });

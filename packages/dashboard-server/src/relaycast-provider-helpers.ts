@@ -37,6 +37,7 @@ export interface RelaycastClientLike {
     invite(channel: string, agent: string): Promise<unknown>;
   };
   send(channel: string, text: string): Promise<unknown>;
+  reply(messageId: string, text: string): Promise<unknown>;
   dm(agent: string, text: string): Promise<unknown>;
   dms: {
     conversations(): Promise<unknown>;
@@ -236,6 +237,7 @@ export function getReaderClient(config: RelaycastConfig): Promise<RelaycastClien
       invite: () => Promise.reject(new Error('Reader client cannot invite to channels')),
     },
     send: () => Promise.reject(new Error('Reader client cannot send messages')),
+    reply: () => Promise.reject(new Error('Reader client cannot send thread replies')),
     dm: () => Promise.reject(new Error('Reader client cannot send DMs')),
     dms: {
       conversations: () => httpClient.get('/v1/dm/conversations'),

@@ -45,6 +45,7 @@ export interface SpawnedAgentSummary {
   model?: string;
   cwd?: string;
   pid?: number;
+  online?: boolean;
 }
 
 export interface SpawnedAgentNamesResult {
@@ -80,6 +81,8 @@ export interface DashboardServerOptions {
   staticDir?: string;
   /** Data directory containing relaycast.json credentials */
   dataDir?: string;
+  /** Relaycast API key — overrides relaycast.json and RELAY_API_KEY env var */
+  relayApiKey?: string;
   /** Enable verbose logging */
   verbose?: boolean;
   /** Run in mock mode (no relay broker required) */
@@ -96,6 +99,7 @@ export interface DashboardServer {
   wss: WebSocketServer;
   close: () => Promise<void>;
   mode: DashboardMode;
+  setRelayApiKey: (apiKey: string) => void;
 }
 
 /**
@@ -109,9 +113,10 @@ export interface RouteContext {
   relayUrl: string | undefined;
   brokerProxyEnabled: boolean;
   resolveRelaycastConfig: () => RelaycastConfig | null;
+  setRelayApiKey: (apiKey: string) => void;
   getRelaycastSnapshot: () => Promise<DashboardSnapshot>;
   getRelaycastChannels: () => Promise<{ channels: DashboardChannel[]; archivedChannels: DashboardChannel[] }>;
-  sendRelaycastMessage: (params: { to: string; message: string; from?: string }) => Promise<
+  sendRelaycastMessage: (params: { to: string; message: string; from?: string; thread?: string }) => Promise<
     { success: true; messageId: string } | { success: false; status: number; error: string }
   >;
   getSpawnedAgents: () => Promise<{ names: Set<string> | null; agents: SpawnedAgentSummary[] | null }>;

@@ -4,6 +4,43 @@ import type { Express, Request, Response } from 'express';
 import type { RouteContext } from '../lib/types.js';
 
 export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void {
+  // Allow the workflow runner (or any local caller) to push a Relaycast API key
+  // into the dashboard without writing any files.
+  // In cloud deployments (WORKSPACE_TOKEN set), require a valid token.
+  app.post('/api/relay-config', (req: Request, res: Response) => {
+    const expectedToken = process.env.WORKSPACE_TOKEN;
+    if (expectedToken && ctx.mode !== 'standalone') {
+      const authHeader = req.headers.authorization;
+      const token = authHeader?.startsWith('Bearer ')
+        ? authHeader.substring(7)
+        : null;
+
+      if (!token) {
+        res.status(401).json({ error: 'Unauthorized - missing workspace token' });
+        return;
+      }
+
+      const tokenBuffer = Buffer.from(token);
+      const expectedBuffer = Buffer.from(expectedToken);
+      const isValidToken =
+        tokenBuffer.length === expectedBuffer.length &&
+        crypto.timingSafeEqual(tokenBuffer, expectedBuffer);
+
+      if (!isValidToken) {
+        res.status(401).json({ error: 'Unauthorized - invalid workspace token' });
+        return;
+      }
+    }
+
+    const apiKey = typeof req.body?.apiKey === 'string' ? req.body.apiKey.trim() : '';
+    if (!apiKey) {
+      res.status(400).json({ ok: false, error: 'Missing "apiKey" field' });
+      return;
+    }
+    ctx.setRelayApiKey(apiKey);
+    res.json({ ok: true });
+  });
+
   app.get('/api/relay-config', (req: Request, res: Response) => {
     // In cloud deployments (WORKSPACE_TOKEN set), require a valid token.
     // Skip auth check in standalone mode (local development).
@@ -35,7 +72,7 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
     if (!config) {
       res.status(503).json({
         success: false,
-        error: `Relaycast credentials not found in ${path.join(ctx.dataDir, 'relaycast.json')}`,
+        error: "Relaycast credentials not configured. Set RELAY_API_KEY or create .agent-relay/relaycast.json",
       });
       return;
     }

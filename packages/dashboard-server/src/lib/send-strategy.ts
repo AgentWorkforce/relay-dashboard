@@ -32,6 +32,7 @@ export interface SendRequest {
   to: string;
   message: string;
   from: string;
+  thread?: string;
 }
 
 export interface SendResult {
@@ -73,6 +74,7 @@ export class BrokerSendStrategy implements SendStrategy {
           to: request.to,
           message: request.message,
           from: request.from,
+          thread: request.thread,
         }),
       });
 
@@ -133,6 +135,7 @@ export class DirectSendStrategy implements SendStrategy {
         to: request.to,
         message: request.message,
         from: request.from,
+        thread: request.thread,
         dataDir: this.dataDir,
       });
       return {

@@ -339,6 +339,8 @@ export async function startDashboard(
     attachmentRegistry,
     attachmentsDir,
     broadcastData,
+    storage,
+    remapAgentName,
   });
 
   // Expose broadcastLogOutput for PTY wrappers to call.

@@ -109,7 +109,7 @@ export function handleStandaloneLogWebSocket(
     syncOffsetToEnd();
   };
 
-  if (!fs.existsSync(logFile) && !isKnownLocalAgent) {
+  if (!fs.existsSync(logFile) && knownLocalAgents !== null && !isKnownLocalAgent) {
     ws.send(JSON.stringify({
       type: 'error',
       agent: agentName,

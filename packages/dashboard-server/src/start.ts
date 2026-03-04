@@ -161,6 +161,7 @@ async function main() {
     staticDir: cliOptions.staticDir ?? process.env.STATIC_DIR ?? DEFAULT_STATIC_DIR,
     verbose: cliOptions.verbose ?? process.env.VERBOSE === 'true',
     mock: cliOptions.mock ?? process.env.MOCK === 'true',
+    relayApiKey: process.env.RELAY_API_KEY,
   });
 }
 

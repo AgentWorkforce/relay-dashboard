@@ -71,6 +71,10 @@ export function extractSpawnedAgentNames(payload: unknown): SpawnedAgentNamesRes
       model: existing.model ?? candidate.model,
       cwd: existing.cwd ?? candidate.cwd,
       pid: existing.pid ?? candidate.pid,
+      online:
+        existing.online === true || candidate.online === true
+          ? true
+          : (existing.online ?? candidate.online),
     });
   };
 
@@ -111,6 +115,11 @@ export function extractSpawnedAgentNames(payload: unknown): SpawnedAgentNamesRes
     const pid = typeof candidate.pid === 'number' && Number.isFinite(candidate.pid)
       ? candidate.pid
       : undefined;
+    const online = typeof candidate.online === 'boolean'
+      ? candidate.online
+      : (typeof candidate.status === 'string'
+          ? ['online', 'running', 'active', 'busy'].includes(candidate.status.trim().toLowerCase())
+          : undefined);
 
     upsertAgent({
       name: trimmedName,
@@ -118,6 +127,7 @@ export function extractSpawnedAgentNames(payload: unknown): SpawnedAgentNamesRes
       model: parsed.model,
       cwd,
       pid,
+      online,
     });
   }
 
@@ -177,6 +187,11 @@ export function mergeBrokerSpawnedAgents(
       continue;
     }
 
+    const spawnedOnline = spawnedAgent.online === true
+      ? true
+      : spawnedAgent.online === false
+        ? false
+        : (typeof spawnedAgent.pid === 'number' && Number.isFinite(spawnedAgent.pid) && spawnedAgent.pid > 0);
     const normalizedCli = spawnedAgent.cli.trim() ? spawnedAgent.cli : 'unknown';
     const existingIndex = agentIndexByName.get(normalizedName);
     if (existingIndex !== undefined) {
@@ -187,6 +202,9 @@ export function mergeBrokerSpawnedAgents(
         cli: existingCli !== 'unknown' ? existingCli : normalizedCli,
         model: existing.model ?? spawnedAgent.model,
         cwd: existing.cwd ?? spawnedAgent.cwd,
+        status: spawnedOnline
+          ? ((existing.status ?? 'offline').toLowerCase() === 'busy' ? 'busy' : 'online')
+          : existing.status,
         isSpawned: true,
       };
       continue;
@@ -197,7 +215,7 @@ export function mergeBrokerSpawnedAgents(
       role: 'agent',
       cli: normalizedCli,
       messageCount: 0,
-      status: 'offline',
+      status: spawnedOnline ? 'online' : 'offline',
       lastSeen: new Date().toISOString(),
       isSpawned: true,
       model: spawnedAgent.model,

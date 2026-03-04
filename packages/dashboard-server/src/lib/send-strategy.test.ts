@@ -132,6 +132,26 @@ describe('BrokerSendStrategy', () => {
       error: 'Broker send failed with status 503',
     });
   });
+
+  it('includes thread id when provided', async () => {
+    const fetchSpy = mockFetch(200, JSON.stringify({ event_id: 'evt_thread' }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const strategy = new BrokerSendStrategy('http://broker:4000');
+    const result = await strategy.send({ ...baseRequest, thread: 'msg-123' });
+
+    expect(result).toEqual({ success: true, messageId: 'evt_thread' });
+    expect(fetchSpy).toHaveBeenCalledWith('http://broker:4000/api/send', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        to: baseRequest.to,
+        message: baseRequest.message,
+        from: baseRequest.from,
+        thread: 'msg-123',
+      }),
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -182,6 +202,22 @@ describe('DirectSendStrategy', () => {
       success: false,
       status: 502,
       error: 'Failed to send message',
+    });
+  });
+
+  it('passes thread id to relaycast-provider when provided', async () => {
+    mockSendMessage.mockResolvedValue({ messageId: 'rc_thread_789' });
+
+    const strategy = new DirectSendStrategy(dummyConfig, '/data');
+    const result = await strategy.send({ ...baseRequest, thread: 'msg-456' });
+
+    expect(result).toEqual({ success: true, messageId: 'rc_thread_789' });
+    expect(mockSendMessage).toHaveBeenCalledWith(dummyConfig, {
+      to: baseRequest.to,
+      message: baseRequest.message,
+      from: baseRequest.from,
+      thread: 'msg-456',
+      dataDir: '/data',
     });
   });
 });

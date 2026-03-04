@@ -146,14 +146,16 @@ export function useThread({ threadId, fallbackMessages }: UseThreadOptions): Use
           // Fall through to REST fallback.
         }
       }
-      const result = await api.postReply(threadId, text);
+      // Try to find target channel from fallback messages (broker WebSocket events have real `to`)
+      const fallbackTo = fallbackMessages?.find((m) => m.id === threadId)?.to ?? parentMessage?.to;
+      const result = await api.postReply(threadId, text, fallbackTo);
       if (result.success && result.data) {
         setRestReplies((prev) => [...prev, result.data!]);
         return true;
       }
       return false;
     },
-    [threadId, relayConfigured, relayReply],
+    [threadId, relayConfigured, relayReply, fallbackMessages, parentMessage],
   );
 
   const addReply = useCallback((reply: Message) => {

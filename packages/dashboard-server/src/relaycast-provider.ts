@@ -77,30 +77,44 @@ export type {
 } from './relaycast-provider-types.js';
 
 /**
- * Try to load Relaycast credentials from `<dataDir>/relaycast.json`.
- * Returns null if the file doesn't exist or is invalid.
+ * Try to load Relaycast credentials.
+ *
+ * Resolution order:
+ * 1. `<dataDir>/relaycast.json` — written by `agent-relay init` / workflow runner
+ * 2. `RELAY_API_KEY` environment variable — set when launching the dashboard
+ *    alongside a live workflow (e.g. `RELAY_API_KEY=rk_live_... agent-relay dashboard`)
+ *
+ * Returns null only if neither source provides a valid API key.
  */
 export function loadRelaycastConfig(dataDir: string): RelaycastConfig | null {
+  const baseUrl = process.env.RELAYCAST_API_URL || DEFAULT_RELAYCAST_BASE_URL;
+  const projectDir = path.basename(path.resolve(dataDir, '..'));
+
+  // 1. File-based credentials (written by workflow runner / agent-relay init)
   const credPath = path.join(dataDir, 'relaycast.json');
-  if (!fs.existsSync(credPath)) {
-    return null;
+  if (fs.existsSync(credPath)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(credPath, 'utf-8'));
+      const apiKey = typeof raw.api_key === 'string' ? raw.api_key.trim() : '';
+      if (apiKey) {
+        const agentName = raw.agent_name as string | undefined;
+        const agentToken = raw.agent_token as string | undefined;
+        const projectIdentity = (projectDir || agentName || '').trim();
+        return { apiKey, baseUrl, agentName, agentToken, projectIdentity };
+      }
+    } catch {
+      // fall through to env var
+    }
   }
 
-  try {
-    const raw = JSON.parse(fs.readFileSync(credPath, 'utf-8'));
-    const apiKey = raw.api_key as string | undefined;
-    if (!apiKey) {
-      return null;
-    }
-    const agentName = raw.agent_name as string | undefined;
-    const agentToken = raw.agent_token as string | undefined;
-    const baseUrl = process.env.RELAYCAST_API_URL || DEFAULT_RELAYCAST_BASE_URL;
-    const projectDir = path.basename(path.resolve(dataDir, '..'));
-    const projectIdentity = (projectDir || agentName || '').trim();
-    return { apiKey, baseUrl, agentName, agentToken, projectIdentity };
-  } catch {
-    return null;
+  // 2. Environment variable fallback — no file needed
+  const envApiKey = process.env.RELAY_API_KEY?.trim();
+  if (envApiKey) {
+    const projectIdentity = projectDir.trim();
+    return { apiKey: envApiKey, baseUrl, projectIdentity };
   }
+
+  return null;
 }
 
 /**
@@ -289,6 +303,7 @@ export async function fetchDashboardSnapshot(config: RelaycastConfig): Promise<D
 export async function sendMessage(config: RelaycastConfig, input: SendMessageInput): Promise<SendMessageResult> {
   const target = normalizeTarget(input.to);
   const message = input.message.trim();
+  const threadId = typeof input.thread === 'string' ? input.thread.trim() : '';
   if (!target || !message) {
     throw new Error('Missing required fields: to, message');
   }
@@ -297,7 +312,9 @@ export async function sendMessage(config: RelaycastConfig, input: SendMessageInp
   const relaycast = await getWriterClient(config, senderName, input.dataDir);
 
   let sendResult: unknown;
-  if (target.startsWith('#')) {
+  if (threadId) {
+    sendResult = await relaycast.reply(threadId, message);
+  } else if (target.startsWith('#')) {
     sendResult = await relaycast.send(target.slice(1), message);
   } else {
     sendResult = await relaycast.dm(target, message);

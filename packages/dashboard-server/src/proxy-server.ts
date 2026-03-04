@@ -18,6 +18,7 @@ import {
   fetchAgents,
   fetchChannels,
   loadRelaycastConfig,
+  type RelaycastConfig,
 } from './relaycast-provider.js';
 import { createSendStrategy } from './lib/send-strategy.js';
 import type { SendStrategy } from './lib/send-strategy.js';
@@ -55,6 +56,7 @@ import { registerChannelRoutes } from './routes/channels.js';
 import { registerBrokerProxyRoutes } from './routes/broker-proxy.js';
 import { registerMetricsRoutes } from './routes/metrics.js';
 import { registerReactionRoutes } from './routes/reactions.js';
+import { registerThreadReplyRoutes } from './routes/thread-replies.js';
 import { registerRelayConfigRoutes } from './routes/relay-config.js';
 import { registerRelaycastHistoryRoutes } from './routes/history-relaycast.js';
 
@@ -114,7 +116,14 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     mock = process.env.MOCK === 'true',
     corsOrigins = process.env.CORS_ORIGINS || '',
     requestTimeout = parseInt(process.env.REQUEST_TIMEOUT || '60000', 10),
+    relayApiKey: relayApiKeyOption,
   } = options;
+
+  // In-memory API key — highest priority, avoids any file I/O.
+  // Seeded from the option or RELAY_API_KEY env var, then updated dynamically
+  // via setRelayApiKey() when a workflow creates a new Relaycast workspace.
+  let inMemoryRelayApiKey: string | undefined =
+    relayApiKeyOption?.trim() || process.env.RELAY_API_KEY?.trim() || undefined;
 
   const resolvedDataDir = path.resolve(dataDir);
   if (!process.env.AGENT_RELAY_PROJECT) {
@@ -179,7 +188,19 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
 
   // --- Build shared context ---
 
-  const resolveRelaycastConfig = () => loadRelaycastConfig(dataDir);
+  const resolveRelaycastConfig = (): RelaycastConfig | null => {
+    // In-memory key (from option, env var, or dynamic update) takes priority over the file.
+    if (inMemoryRelayApiKey) {
+      const baseUrl = process.env.RELAYCAST_API_URL || 'https://api.relaycast.dev';
+      const projectDir = path.basename(path.resolve(dataDir, '..'));
+      return { apiKey: inMemoryRelayApiKey, baseUrl, projectIdentity: projectDir };
+    }
+    return loadRelaycastConfig(dataDir);
+  };
+
+  const setRelayApiKey = (apiKey: string): void => {
+    inMemoryRelayApiKey = apiKey.trim();
+  };
   const { getSpawnedAgents, getLocalAgentNames } = createSpawnedAgentsCaches({
     brokerProxyEnabled,
     relayUrl,
@@ -238,7 +259,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
   };
 
   const sendRelaycastMessage = async (
-    params: { to: string; message: string; from?: string },
+    params: { to: string; message: string; from?: string; thread?: string },
   ): Promise<{ success: true; messageId: string } | { success: false; status: number; error: string }> => {
     const sendTimeout = Math.max(requestTimeout - 5000, 10000);
     const sendStart = Date.now();
@@ -292,7 +313,12 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
             `[dashboard] /api/send request: to=${resolvedTarget}, from=${senderName}, relayUrl=${relayUrl}, timeoutMs=${sendTimeout}`,
           );
 
-          const outcome = await strategy.send({ to: resolvedTarget, message, from: senderName });
+          const outcome = await strategy.send({
+            to: resolvedTarget,
+            message,
+            from: senderName,
+            thread: params.thread,
+          });
           console.log(`[dashboard] /api/send completed in ${Date.now() - sendStart}ms with status=${outcome.success ? 200 : outcome.status}`);
 
           // Enrich "agent not found" errors with available agent names
@@ -333,6 +359,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     relayUrl,
     brokerProxyEnabled,
     resolveRelaycastConfig,
+    setRelayApiKey,
     getRelaycastSnapshot,
     getRelaycastChannels,
     sendRelaycastMessage,
@@ -360,6 +387,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     registerRelayConfigRoutes(app, ctx);
     registerChannelRoutes(app, ctx);
     registerReactionRoutes(app, ctx);
+    registerThreadReplyRoutes(app, ctx);
     registerMetricsRoutes(app, {
       teamDir: path.join(dataDir, 'team'),
       resolveWorkspaceId,
@@ -468,7 +496,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     });
   };
 
-  return { app, server, wss, close, mode };
+  return { app, server, wss, close, mode, setRelayApiKey };
 }
 
 /**
@@ -515,6 +543,40 @@ async function findAvailablePort(server: Server, preferredPort: number, maxAttem
 }
 
 /**
+ * Bootstrap Relaycast credentials from the broker's authenticated /api/config
+ * endpoint.  The workspace key is on an authenticated route (not /health) so it
+ * is not exposed to unauthenticated callers.
+ */
+async function bootstrapRelayApiKeyFromBroker(
+  relayUrl: string,
+  setRelayApiKey: (key: string) => void,
+): Promise<void> {
+  const brokerApiKey = process.env.RELAY_BROKER_API_KEY?.trim();
+  const headers: Record<string, string> = {};
+  if (brokerApiKey) {
+    headers['x-api-key'] = brokerApiKey;
+  }
+
+  // Retry a few times to allow the broker to fully start up.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const res = await fetch(`${relayUrl}/api/config`, { headers });
+      if (!res.ok) break;
+      const json = await res.json() as { workspaceKey?: string };
+      const key = typeof json.workspaceKey === 'string' ? json.workspaceKey.trim() : '';
+      if (key) {
+        setRelayApiKey(key);
+        console.log('[dashboard] Relaycast workspace key bootstrapped from broker');
+        return;
+      }
+    } catch {
+      // Broker not yet ready — wait and retry.
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
+/**
  * Start the dashboard server.
  */
 export async function startServer(options: DashboardServerOptions = {}): Promise<DashboardServer> {
@@ -533,6 +595,13 @@ export async function startServer(options: DashboardServerOptions = {}): Promise
     console.log(`[dashboard] Proxy mode enabled - broker URL ${normalizeRelayUrl(options.relayUrl ?? process.env.RELAY_URL)}`);
   } else {
     console.log('[dashboard] Standalone mode enabled - relaycast data only');
+  }
+
+  // Best-effort: fetch workspace key from the broker health endpoint so the
+  // dashboard uses the same Relaycast workspace as the broker (no relaycast.json needed).
+  const resolvedRelayUrl = normalizeRelayUrl(options.relayUrl ?? process.env.RELAY_URL);
+  if (resolvedRelayUrl && !options.mock) {
+    bootstrapRelayApiKeyFromBroker(resolvedRelayUrl, dashboard.setRelayApiKey).catch(() => {});
   }
 
   return dashboard;
