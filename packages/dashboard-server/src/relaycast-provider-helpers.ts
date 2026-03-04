@@ -346,34 +346,8 @@ export async function getDashboardAgentToken(
     return { token: config.agentToken, name: config.agentName };
   }
 
-  // Use SDK's createRelaycastClient if available (allows test mocking)
-  const sdkCreateClient = (agentRelaySdk as Record<string, unknown>).createRelaycastClient;
-  if (typeof sdkCreateClient === 'function') {
-    // Go through the SDK path to ensure mocks/wrappers are respected.
-    // Create a writer client (which caches) and populate the registration cache
-    // with the same identity so both frontend token and server client share it.
-    const key = registrationCacheKey(config.baseUrl, config.apiKey, agentName);
-    const existing = registrationCache.get(key);
-    if (existing) return existing;
-
-    const regPromise = (async () => {
-      const client = await getCachedClient(
-        writerClientCache,
-        config,
-        agentName,
-        'human',
-      );
-      // Extract token from the SDK-created client if exposed
-      const clientAny = client as unknown as Record<string, unknown>;
-      const token = (typeof clientAny.token === 'string' ? clientAny.token : '') || '';
-      return { token, name: agentName };
-    })();
-    registrationCache.set(key, regPromise);
-    regPromise.catch(() => registrationCache.delete(key));
-    return regPromise;
-  }
-
-  // Fallback: use shared registration cache (same cache as createRelaycastClient)
+  // Use shared registration cache (same cache as createRelaycastClient)
+  // to get a proper token via RelayCast.registerOrRotate.
   return registerAgentToken({
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
