@@ -46,6 +46,48 @@ export interface RelaycastClientLike {
 
 const readerClientCache = new Map<string, Promise<RelaycastClientLike>>();
 const writerClientCache = new Map<string, Promise<RelaycastClientLike>>();
+/**
+ * Shared registration cache keyed by baseUrl|apiKey|agentName.
+ * Used by both createRelaycastClient and getDashboardAgentToken to avoid
+ * double registerOrRotate calls that could rotate/invalidate tokens.
+ */
+const registrationCache = new Map<string, Promise<{ token: string; name: string }>>();
+
+function registrationCacheKey(baseUrl: string | undefined, apiKey: string, agentName: string): string {
+  return `${baseUrl ?? ''}|${apiKey}|${agentName.toLowerCase()}`;
+}
+
+/**
+ * Register (or retrieve cached) agent token via registerOrRotate.
+ * Shared by createRelaycastClient and getDashboardAgentToken to ensure
+ * a single registration per agent identity.
+ */
+async function registerAgentToken(options: {
+  apiKey: string;
+  baseUrl?: string;
+  agentName: string;
+  agentType: RelaycastRegistrationType;
+}): Promise<{ token: string; name: string }> {
+  const key = registrationCacheKey(options.baseUrl, options.apiKey, options.agentName);
+  const existing = registrationCache.get(key);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    const relay = new RelayCast({
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+    });
+    const response = await relay.registerOrRotate({
+      name: options.agentName,
+      type: options.agentType,
+    });
+    return { token: response.token, name: response.name ?? options.agentName };
+  })();
+
+  registrationCache.set(key, promise);
+  promise.catch(() => registrationCache.delete(key));
+  return promise;
+}
 
 export function parseTimestamp(value: string | null | undefined): number | null {
   if (!value) return null;
@@ -120,20 +162,19 @@ async function createRelaycastClient(options: {
     return sdkCreateClient(options) as Promise<RelaycastClientLike>;
   }
 
-  // Fallback: local implementation
+  // Fallback: local implementation using shared registration cache
+  const { token } = await registerAgentToken({
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+    agentName: options.agentName,
+    agentType: options.agentType,
+  });
+
   const relay = new RelayCast({
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
   });
-
-  // Register or get the agent identity
-  const response = await relay.registerOrRotate({
-    name: options.agentName,
-    type: options.agentType,
-  });
-
-  // Return an AgentClient using the agent token
-  return relay.as(response.token) as unknown as RelaycastClientLike;
+  return relay.as(token) as unknown as RelaycastClientLike;
 }
 
 function senderRegistrationType(agentName: string, identityConfig: IdentityConfig): RelaycastRegistrationType {
@@ -288,6 +329,31 @@ export function getWriterClient(
     }),
     dataDir,
   );
+}
+
+/**
+ * Get (or register) an agent token for the dashboard identity.
+ * Uses the same SDK override pattern and shared registration cache as
+ * createRelaycastClient to ensure consistent test mocking and avoid
+ * double registerOrRotate calls that could invalidate tokens.
+ */
+export async function getDashboardAgentToken(
+  config: RelaycastConfig,
+  agentName: string,
+): Promise<{ token: string; name: string }> {
+  // If the config already has a token for this identity, use it directly
+  if (config.agentToken && config.agentName?.toLowerCase() === agentName.toLowerCase()) {
+    return { token: config.agentToken, name: config.agentName };
+  }
+
+  // Use shared registration cache (same cache as createRelaycastClient)
+  // to get a proper token via RelayCast.registerOrRotate.
+  return registerAgentToken({
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    agentName,
+    agentType: 'human',
+  });
 }
 
 function parseCliAndModel(
