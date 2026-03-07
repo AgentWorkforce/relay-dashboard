@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import path from 'path';
 import type { Express, Request, Response } from 'express';
 import type { RouteContext } from '../lib/types.js';
-import { getDashboardAgentToken } from '../relaycast-provider-helpers.js';
+import { getDashboardAgentToken, getWriterClient } from '../relaycast-provider-helpers.js';
 
 export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void {
   // Allow the workflow runner (or any local caller) to push a Relaycast API key
@@ -95,12 +95,27 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
       }
     }
 
+    // Best-effort: ensure the dashboard agent has joined default channels so the
+    // client-side @relaycast/react hooks (which auth with the agent token) can
+    // read channel messages. New agents auto-join #general on registration, but
+    // token rotation via registerOrRotate does not re-join.
+    // Fire-and-forget to avoid adding latency to the config response.
+    const defaultChannels = ['general'];
+    getWriterClient(config, agentName, ctx.dataDir)
+      .then(async (writer) => {
+        for (const channel of defaultChannels) {
+          await writer.channels.join(channel).catch(() => {});
+        }
+      })
+      .catch(() => {});
+
     res.json({
       success: true,
       baseUrl: config.baseUrl,
       apiKey: config.apiKey,
       agentToken,
       agentName,
+      channels: defaultChannels,
     });
   });
 }

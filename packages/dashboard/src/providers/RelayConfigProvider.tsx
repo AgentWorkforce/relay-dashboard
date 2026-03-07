@@ -9,6 +9,7 @@ interface RelayConfigResponse {
   apiKey?: string;
   agentToken?: string;
   agentName?: string | null;
+  channels?: string[];
 }
 
 export interface RelayConfigProviderProps {
@@ -30,6 +31,9 @@ const RelayConfigStatusContext = createContext<RelayConfigStatus>({
 export function useRelayConfigStatus(): RelayConfigStatus {
   return useContext(RelayConfigStatusContext);
 }
+
+/** Default channels the dashboard agent should subscribe to via WebSocket */
+const DEFAULT_CHANNELS = ['general'];
 
 export function RelayConfigProvider({ children }: RelayConfigProviderProps) {
   const [config, setConfig] = useState<RelayConfigResponse | null>(null);
@@ -79,12 +83,25 @@ export function RelayConfigProvider({ children }: RelayConfigProviderProps) {
     };
   }, [configured, config]);
 
+  // Channels to auto-subscribe on WebSocket connect/reconnect.
+  // This ensures the dashboard receives real-time messages even after
+  // WebSocket reconnects (useMessages effect deps don't re-trigger on reconnect).
+  const channels = useMemo(() => {
+    if (!configured) return undefined;
+    const serverChannels = config?.channels;
+    if (Array.isArray(serverChannels) && serverChannels.length > 0) {
+      return serverChannels;
+    }
+    return DEFAULT_CHANNELS;
+  }, [configured, config?.channels]);
+
   return (
     <RelayConfigStatusContext.Provider value={{ configured, loading: !loaded, agentName: config?.agentName ?? null }}>
       <RelayProvider
         baseUrl={providerConfig.baseUrl}
         apiKey={providerConfig.apiKey}
         agentToken={providerConfig.agentToken}
+        channels={channels}
       >
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         {children as any}

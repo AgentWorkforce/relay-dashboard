@@ -156,9 +156,18 @@ export function SendProvider({ children, localMessages, localUsername }: SendPro
   }, [localMessages, selectedChannelId, effectiveActiveWorkspaceId, currentUser?.displayName, relayAgentName]);
 
   const effectiveChannelMessages = useMemo(() => {
-    const sourceMessages = usingRelayChannelMessages
-      ? relayMappedChannelMessages
-      : (channelMessages.length > 0 ? channelMessages : localChannelMessages);
+    if (usingRelayChannelMessages) {
+      // Prefer relay SDK messages; fall back to server-fetched messages when
+      // the relay hook returns empty (e.g. agent hasn't joined the channel yet).
+      if (relayMappedChannelMessages.length > 0) {
+        return sortChannelMessagesChronologically(relayMappedChannelMessages);
+      }
+      if (channelMessages.length > 0) {
+        return sortChannelMessagesChronologically(channelMessages);
+      }
+      return [];
+    }
+    const sourceMessages = channelMessages.length > 0 ? channelMessages : localChannelMessages;
     return sortChannelMessagesChronologically(sourceMessages);
   }, [usingRelayChannelMessages, relayMappedChannelMessages, channelMessages, localChannelMessages]);
 
@@ -252,7 +261,12 @@ export function SendProvider({ children, localMessages, localUsername }: SendPro
     if (isWorkspaceFeaturesEnabled && !effectiveActiveWorkspaceId) return;
 
     if (relayConfigured && selectedChannelId.startsWith('#')) {
-      setChannelMessages(relayMappedChannelMessages);
+      // When the relay SDK has messages, use them directly.
+      // Otherwise, keep any server-fetched messages we already have — do NOT
+      // overwrite them with the empty relay array on every re-render.
+      if (relayMappedChannelMessages.length > 0) {
+        setChannelMessages(relayMappedChannelMessages);
+      }
       setHasMoreMessages(false);
       setChannelUnreadState(undefined);
       setChannelsList(prev =>
@@ -260,6 +274,26 @@ export function SendProvider({ children, localMessages, localUsername }: SendPro
           c.id === selectedChannelId ? { ...c, unreadCount: 0, hasMentions: false } : c
         )
       );
+
+      // Fallback: when the relay SDK hook returns empty (e.g. dashboard agent
+      // hasn't joined the channel), fetch from the server API which uses the
+      // workspace API key and has full read access to all channels.
+      if (relayMappedChannelMessages.length === 0 && !relayMessagesState.loading && !fetchedChannelsRef.current.has(selectedChannelId)) {
+        const channelToFetch = selectedChannelId;
+        fetchedChannelsRef.current.add(channelToFetch);
+        (async () => {
+          try {
+            const { getMessages } = await import('../components/channels');
+            const response = await getMessages(effectiveActiveWorkspaceId || 'local', channelToFetch, { limit: 200 });
+            const sortedMessages = sortChannelMessagesChronologically(response.messages);
+            setChannelMessageMap(prev => ({ ...prev, [channelToFetch]: sortedMessages }));
+            setChannelMessages(sortedMessages);
+          } catch (err) {
+            console.error('Failed to fetch channel messages fallback:', err);
+            fetchedChannelsRef.current.delete(channelToFetch);
+          }
+        })();
+      }
       return;
     }
 
