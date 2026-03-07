@@ -99,22 +99,15 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
     // client-side @relaycast/react hooks (which auth with the agent token) can
     // read channel messages. New agents auto-join #general on registration, but
     // token rotation via registerOrRotate does not re-join.
+    // Fire-and-forget to avoid adding latency to the config response.
     const defaultChannels = ['general'];
-    const joinedChannels: string[] = [];
-    try {
-      const writer = await getWriterClient(config, agentName, ctx.dataDir);
-      for (const channel of defaultChannels) {
-        try {
-          await writer.channels.join(channel);
-          joinedChannels.push(channel);
-        } catch {
-          // Channel may not exist yet or agent is already a member — both are fine.
-          joinedChannels.push(channel);
+    getWriterClient(config, agentName, ctx.dataDir)
+      .then(async (writer) => {
+        for (const channel of defaultChannels) {
+          await writer.channels.join(channel).catch(() => {});
         }
-      }
-    } catch {
-      // Non-fatal: the server API fallback will still work.
-    }
+      })
+      .catch(() => {});
 
     res.json({
       success: true,
@@ -122,7 +115,7 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
       apiKey: config.apiKey,
       agentToken,
       agentName,
-      channels: joinedChannels.length > 0 ? joinedChannels : defaultChannels,
+      channels: defaultChannels,
     });
   });
 }
