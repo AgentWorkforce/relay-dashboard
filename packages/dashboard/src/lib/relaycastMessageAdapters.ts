@@ -12,6 +12,30 @@ type RelayDmConversationLike = {
   participants: unknown[];
 };
 
+export function getRelayDmParticipantName(participant: unknown): string | null {
+  if (typeof participant === 'string') {
+    return normalizeRelayIdentity(participant);
+  }
+
+  if (participant === null || typeof participant !== 'object') {
+    return null;
+  }
+
+  const record = participant as Record<string, unknown>;
+  const rawName = (
+    record.agent_name
+    ?? record.agentName
+    ?? record.name
+    ?? record.username
+  );
+
+  if (typeof rawName !== 'string') {
+    return null;
+  }
+
+  return normalizeRelayIdentity(rawName);
+}
+
 function normalizeRelayIdentity(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return '';
@@ -39,8 +63,7 @@ function resolveDmRecipient(
   const senderKey = normalizeRelayIdentity(sender).toLowerCase();
 
   for (const participant of participants) {
-    if (typeof participant !== 'string') continue;
-    const normalized = normalizeRelayIdentity(participant);
+    const normalized = getRelayDmParticipantName(participant);
     if (!normalized) continue;
     if (normalized.toLowerCase() !== senderKey) {
       return normalized;
@@ -48,8 +71,8 @@ function resolveDmRecipient(
   }
 
   for (const participant of participants) {
-    if (typeof participant !== 'string') continue;
-    const normalized = normalizeRelayIdentity(participant);
+    const normalized = getRelayDmParticipantName(participant);
+    if (!normalized) continue;
     if (normalized) {
       return normalized;
     }
