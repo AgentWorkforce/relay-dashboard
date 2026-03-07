@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../types';
-import { normalizeRelayDmMessageTargets } from './relaycastMessageAdapters.js';
+import { getRelayDmParticipantName, normalizeRelayDmMessageTargets } from './relaycastMessageAdapters.js';
 
 function setRelayUsername(value?: string): void {
   const storage = (globalThis as { localStorage?: Storage }).localStorage;
@@ -91,6 +91,35 @@ describe('normalizeRelayDmMessageTargets', () => {
     ]);
 
     expect(normalized[0]?.to).toBe('Natty');
+  });
+
+  it('maps dm_* targets to object participants using agent_name', () => {
+    const messages: Message[] = [
+      {
+        id: 'msg-2a',
+        from: 'Natty',
+        to: 'dm_7b62c72644b9316e7e10a992',
+        content: 'hello',
+        timestamp: '2026-02-24T12:00:06.000Z',
+      },
+    ];
+
+    const normalized = normalizeRelayDmMessageTargets(messages, [
+      {
+        id: 'dm_7b62c72644b9316e7e10a992',
+        participants: [{ agent_name: 'Natty' }, { agent_name: 'test-broker-new' }],
+      },
+    ]);
+
+    expect(normalized[0]?.to).toBe('test-broker-new');
+  });
+
+  it('normalizes participant names using getRelayDmParticipantName', () => {
+    expect(getRelayDmParticipantName({ agent_name: 'Lead', name: 'ignored' })).toBe('Lead');
+    expect(getRelayDmParticipantName({ agentName: 'Codex-Worker' })).toBe('Codex-Worker');
+    expect(getRelayDmParticipantName('Test-Broker')).toBe('Test-Broker');
+    expect(getRelayDmParticipantName({ username: 'human-user' })).toBe('human-user');
+    expect(getRelayDmParticipantName(123)).toBeNull();
   });
 
   it('leaves non-dm and unknown dm targets unchanged', () => {

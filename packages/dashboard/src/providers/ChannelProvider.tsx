@@ -118,9 +118,20 @@ export function ChannelProvider({ children }: ChannelProviderProps) {
 
   // Relay channel state
   const relayChannelsState = useRelayChannels();
+  const relayChannelsLoading = relayChannelsState.loading;
+  const relayChannelsRaw = relayChannelsState.channels;
+
+  // Stabilize the mapped channels array — only recompute when the serialized
+  // channel list actually changes (avoids infinite re-render loops from new
+  // array references returned by the relay hook on every render).
+  const relayChannelsKey = useMemo(
+    () => JSON.stringify(relayChannelsRaw.map(c => c.name + ':' + (c.topic ?? '') + ':' + (c.isArchived ?? false) + ':' + (c.memberCount ?? 0))),
+    [relayChannelsRaw],
+  );
   const relayMappedChannels = useMemo(
-    () => relayChannelsState.channels.map(mapRelayChannelToDashboard),
-    [relayChannelsState.channels],
+    () => relayChannelsRaw.map(mapRelayChannelToDashboard),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [relayChannelsKey],
   );
 
   // Channel list state
@@ -225,7 +236,7 @@ export function ChannelProvider({ children }: ChannelProviderProps) {
       const activeChannels = relayMappedChannels.filter((channel) => channel.status !== 'archived');
       const archivedChannels = relayMappedChannels.filter((channel) => channel.status === 'archived');
       setChannelListsFromResponse({ channels: activeChannels, archivedChannels });
-      setIsChannelsLoading(relayChannelsState.loading);
+      setIsChannelsLoading(relayChannelsLoading);
       return;
     }
 
@@ -253,7 +264,7 @@ export function ChannelProvider({ children }: ChannelProviderProps) {
     fetchChannels();
   }, [
     relayConfigured,
-    relayChannelsState,
+    relayChannelsLoading,
     relayMappedChannels,
     effectiveActiveWorkspaceId,
     isWorkspaceFeaturesEnabled,

@@ -78,7 +78,7 @@ export function ChannelChat({
 
   const isDm = channel.startsWith('dm:');
   const channelDisplay = isDm
-    ? channel.split(':').slice(1).filter(u => u !== currentUser).join(', ')
+    ? channel.split(':').slice(1).filter(u => u !== currentUser).join(' ↔ ')
     : channel;
 
   // Convert online user presence to HumanUser format for mentions
