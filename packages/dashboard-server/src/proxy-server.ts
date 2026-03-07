@@ -382,6 +382,13 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       console.log('[dashboard] Running in STANDALONE mode - relaycast only (read-only broker surface)');
     }
 
+    // Log Relaycast workspace key so users can view messages at relaycast.dev
+    const startupConfig = resolveRelaycastConfig();
+    if (startupConfig?.apiKey) {
+      console.log(`[dashboard] Relaycast workspace key: ${startupConfig.apiKey}`);
+      console.log('[dashboard] View messages at https://app.relaycast.dev');
+    }
+
     registerAgentRoutes(app, ctx);
     registerDataRoutes(app, ctx);
     registerRelayConfigRoutes(app, ctx);
@@ -566,7 +573,8 @@ async function bootstrapRelayApiKeyFromBroker(
       const key = typeof json.workspaceKey === 'string' ? json.workspaceKey.trim() : '';
       if (key) {
         setRelayApiKey(key);
-        console.log('[dashboard] Relaycast workspace key bootstrapped from broker');
+        console.log(`[dashboard] Relaycast workspace key: ${key}`);
+        console.log('[dashboard] View messages at https://app.relaycast.dev');
         return;
       }
     } catch {
