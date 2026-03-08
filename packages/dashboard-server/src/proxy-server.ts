@@ -386,7 +386,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     const startupConfig = resolveRelaycastConfig();
     if (startupConfig?.apiKey) {
       console.log(`[dashboard] Relaycast workspace key: ${startupConfig.apiKey}`);
-      console.log('[dashboard] View messages at https://app.relaycast.dev');
+      console.log('[dashboard] View messages at https://agentrelay.dev/observer');
     }
 
     registerAgentRoutes(app, ctx);
@@ -574,7 +574,7 @@ async function bootstrapRelayApiKeyFromBroker(
       if (key) {
         setRelayApiKey(key);
         console.log(`[dashboard] Relaycast workspace key: ${key}`);
-        console.log('[dashboard] View messages at https://app.relaycast.dev');
+        console.log('[dashboard] View messages at https://agentrelay.dev/observer');
         return;
       }
     } catch {
