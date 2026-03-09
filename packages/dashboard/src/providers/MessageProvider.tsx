@@ -25,6 +25,7 @@ import { useRelayConfigStatus } from './RelayConfigProvider';
 import { isDashboardVariant } from '../lib/identity';
 import {
   normalizeRelayDmMessageTargets,
+  getRelayDmParticipantName,
 } from '../lib/relaycastMessageAdapters';
 import { playNotificationSound } from './SettingsProvider';
 import { useSettings } from './SettingsProvider';
@@ -470,7 +471,7 @@ function MessageProviderInner({ children, data, rawData: _rawData, enableReactio
       const currentUserName = currentUser?.displayName.toLowerCase();
       for (const conversation of relayDMsState.conversations) {
         for (const participant of conversation.participants) {
-          const name = typeof participant === 'string' ? participant : participant.agentName;
+          const name = getRelayDmParticipantName(participant);
           if (!name) continue;
           const lowered = name.toLowerCase();
           if (currentUserName && lowered === currentUserName) continue;
@@ -508,12 +509,12 @@ function MessageProviderInner({ children, data, rawData: _rawData, enableReactio
         if (!conversation.unreadCount) continue;
 
         const match = conversation.participants.find((p) => {
-          const name = typeof p === 'string' ? p : p.agentName;
+          const name = getRelayDmParticipantName(p);
           if (!name) return false;
           const lowered = name.toLowerCase();
           return lowered !== currentUserName && !agentNames.has(lowered);
         });
-        const participantName = match ? (typeof match === 'string' ? match : match.agentName) : null;
+        const participantName = match ? getRelayDmParticipantName(match) : null;
 
         if (participantName) {
           counts[participantName] = (counts[participantName] || 0) + conversation.unreadCount;

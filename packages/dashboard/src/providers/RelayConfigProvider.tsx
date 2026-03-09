@@ -84,8 +84,6 @@ export function RelayConfigProvider({ children }: RelayConfigProviderProps) {
   }, [configured, config]);
 
   // Channels to auto-subscribe on WebSocket connect/reconnect.
-  // This ensures the dashboard receives real-time messages even after
-  // WebSocket reconnects (useMessages effect deps don't re-trigger on reconnect).
   const channels = useMemo(() => {
     if (!configured) return undefined;
     const serverChannels = config?.channels;

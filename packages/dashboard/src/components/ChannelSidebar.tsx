@@ -388,12 +388,12 @@ function ChannelItem({ channel, displayName, isSelected, unreadCount, onSelect, 
 
 /**
  * Format DM channel name for display.
- * dm:alice:bob -> "alice, bob" (excluding current user if known)
+ * dm:alice:bob -> "alice ↔ bob"
  */
 function formatDmName(channel: string): string {
   if (!channel.startsWith('dm:')) return channel;
   const parts = channel.split(':').slice(1);
-  return parts.join(', ');
+  return parts.join(' ↔ ');
 }
 
 export default ChannelSidebar;

@@ -1,72 +1,191 @@
 /**
  * BUG 4 — Inter-agent DMs show in Relaycast but not in dashboard
  *
- * ROOT CAUSES (two issues):
- *
- *   1. PRIMARY: packages/dashboard-server/src/proxy-server.ts:204-207
- *      getRelaycastSnapshot() returns `messages: []` — it calls fetchAgents()
- *      but NEVER calls fetchAllMessages(). The frontend reads data?.messages
- *      from the snapshot, which is always empty in proxy/cloud mode.
- *      Channel messages work through a separate path (@relaycast/react useMessages
- *      hook) but DMs have no equivalent direct-fetch SDK path.
- *
- *   2. SECONDARY: packages/dashboard/src/providers/MessageProvider.tsx:334
- *      The direct_message WebSocket event handler has an early return when
- *      Relaycast is configured: `if (relayRealtimeEnabledRef.current) return;`
- *      This discards ALL real-time DM events, so even if a broker pushes a
- *      DM event, it never reaches the dashboard's message store.
- *
- *   3. CLIENT-SIDE: packages/dashboard/src/components/DirectMessageView.tsx:63-69
- *      Even if DMs were fetched, the participant filter anchors on currentHuman.
- *      Agent-to-agent DMs (where neither party is the human user) get filtered out.
- *
- * FIX:
- *   1. In proxy-server.ts: Call fetchAllMessages(config) in getRelaycastSnapshot
- *      to include DM messages in the snapshot
- *   2. In MessageProvider.tsx: Remove or gate the early return for direct_message
- *      events when Relaycast is configured
- *   3. In DirectMessageView.tsx: Support viewing agent-to-agent DMs without
- *      requiring a currentHuman anchor
- *
- * Reproduction: Two agents DM each other via Relaycast, then check dashboard DM view
+ * Regression checks for the fixed dashboard visibility path:
+ * 1) non-broker DM conversations should be discoverable from threaded messages
+ * 2) DM participant names should render with ↔ separators
+ * 3) object-form participant payloads should resolve to readable names
  */
 
 import { describe, it, expect } from 'vitest';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import ChannelSidebar from '../../packages/dashboard/src/components/ChannelSidebar';
+import { ChannelChat } from '../../packages/dashboard/src/components/ChannelChat';
+import type { Message } from '../../packages/dashboard/src/types/index.js';
+import {
+  getRelayDmParticipantName,
+  normalizeRelayDmMessageTargets,
+} from '../../packages/dashboard/src/lib/relaycastMessageAdapters.js';
 
-describe('BUG 4 — DirectMessageView filtering', () => {
-  it('should show agent-to-agent DMs when both agents are visible', () => {
-    // Simulates the filtering logic from DirectMessageView.tsx:63-69
-    const messages = [
-      { id: '1', from: 'agent-a', to: 'agent-b', content: 'Hello from A', timestamp: new Date().toISOString() },
-      { id: '2', from: 'agent-b', to: 'agent-a', content: 'Hello from B', timestamp: new Date().toISOString() },
-      { id: '3', from: 'human-user', to: 'agent-a', content: 'Hi A', timestamp: new Date().toISOString() },
-    ];
+const DASHBOARD_PORT = process.env.DASHBOARD_PORT || '4040';
+const BASE = `http://localhost:${DASHBOARD_PORT}`;
 
-    const currentHuman = { name: 'human-user', isHuman: true };
+function normalizeThreadInfos(messages: Message[]) {
+  const messageIds = new Set(messages.map((m) => m.id));
+  const threadMap = new Map<string, Message[]>();
 
-    // Current behavior: participants only includes human + selected agents
-    // dmParticipantAgents would derive 'agent-a' from message 3, but NOT 'agent-b'
-    const participants = new Set([currentHuman.name, 'agent-a']);
+  for (const msg of messages) {
+    if (!msg.thread) continue;
+    const entries = threadMap.get(msg.thread) || [];
+    entries.push(msg);
+    threadMap.set(msg.thread, entries);
+  }
 
-    const visibleMessages = messages.filter(
-      (msg) => msg.from && msg.to && participants.has(msg.from) && participants.has(msg.to)
+  const threads = [] as Array<{
+    id: string;
+    name: string;
+    lastMessage: Message;
+    messageCount: number;
+    unreadCount: number;
+    participants: string[];
+  }>;
+
+  for (const [threadId, threadMsgs] of threadMap.entries()) {
+    const sorted = [...threadMsgs].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
     );
 
-    // BUG: Only message 3 (human -> agent-a) is visible
-    // Messages 1 and 2 (agent-a <-> agent-b) are filtered out
-    // because agent-b is NOT in the participants set
-    expect(visibleMessages).toHaveLength(1); // Current broken behavior
-    // EXPECTED: visibleMessages should include all 3 messages
-    // expect(visibleMessages).toHaveLength(3);
+    const participants = [...new Set(threadMsgs.flatMap((m) => [m.from, m.to]))].filter(
+      (p) => p !== '*',
+    );
+
+    let name = threadId;
+    if (messageIds.has(threadId)) {
+      const originalMsg = messages.find((m) => m.id === threadId);
+      if (originalMsg) {
+        const firstLine = originalMsg.content.split('\n')[0];
+        name = firstLine.length > 30 ? firstLine.substring(0, 30) + '...' : firstLine;
+      }
+    }
+
+    threads.push({
+      id: threadId,
+      name,
+      lastMessage: sorted[0]!,
+      messageCount: threadMsgs.length,
+      unreadCount: 0,
+      participants,
+    });
+  }
+
+  return threads.sort(
+    (a, b) => new Date(b.lastMessage.timestamp).getTime() - new Date(a.lastMessage.timestamp).getTime(),
+  );
+}
+
+async function sendDashboardMessage({
+  from,
+  to,
+  content,
+  thread,
+}: {
+  from?: string;
+  to: string;
+  content: string;
+  thread?: string;
+}): Promise<string> {
+  const res = await fetch(`${BASE}/api/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      to,
+      from,
+      message: content,
+      thread,
+    }),
   });
 
-  it('should handle null currentHuman for agent-to-agent DM view', () => {
-    // DirectMessageView.tsx:125 returns null when currentHuman is null
-    const currentHuman = null;
+  expect(res.status).toBe(200);
+  const payload = await res.json();
+  expect(payload).toHaveProperty('messageId');
+  return payload.messageId as string;
+}
 
-    // BUG: Component returns null early, showing nothing
-    expect(currentHuman).toBeNull();
-    // FIX: Should support viewing agent-to-agent DM conversations
-    // without requiring a currentHuman
+describe('BUG 4 — Inter-agent DM visibility in dashboard threads', () => {
+  it('should include a non-broker DM thread in derived thread list data', async () => {
+    const threadRootId = `dm-b4-${Date.now()}`;
+
+    await sendDashboardMessage({
+      from: 'agent-lead',
+      to: 'agent-codex',
+      thread: threadRootId,
+      content: 'Can we coordinate next step?',
+    });
+
+    await sendDashboardMessage({
+      from: 'agent-codex',
+      to: 'agent-lead',
+      thread: threadRootId,
+      content: 'Absolutely, I can help with that.',
+    });
+
+    const dataRes = await fetch(`${BASE}/api/data`);
+    expect(dataRes.status).toBe(200);
+
+    const payload = await dataRes.json();
+    const messages = Array.isArray(payload.messages)
+      ? payload.messages as Message[]
+      : [];
+
+    const threadInfos = normalizeThreadInfos(messages);
+    const dmThread = threadInfos.find((thread) => thread.id === threadRootId);
+
+    expect(dmThread).toBeDefined();
+    expect(dmThread?.participants).toEqual(expect.arrayContaining(['agent-lead', 'agent-codex']));
+    expect(dmThread?.messageCount).toBe(2);
+  });
+
+  it('should render DM participant labels with the ↔ separator', () => {
+    const sidebarHtml = renderToStaticMarkup(React.createElement(ChannelSidebar, {
+      channels: ['dm:agent-lead:agent-codex'],
+      selectedChannel: 'dm:agent-lead:agent-codex',
+      onSelectChannel: () => {},
+      onJoinChannel: () => {},
+      onLeaveChannel: () => {},
+      unreadCounts: {
+        'dm:agent-lead:agent-codex': 1,
+      },
+    }));
+    const chatHtml = renderToStaticMarkup(
+      React.createElement(ChannelChat, {
+        channel: 'dm:agent-lead:agent-codex',
+        messages: [],
+        currentUser: 'agent-lead',
+        onSendMessage: () => Promise.resolve(true),
+      })
+    );
+
+    expect(sidebarHtml).toContain('agent-lead ↔ agent-codex');
+    expect(chatHtml).toContain('Start a conversation with agent-codex');
+  });
+
+  it('should resolve object-form DM participants to the opposite human-readable names', () => {
+    const messages: Message[] = [
+      {
+        id: 'msg-obj-1',
+        from: 'agent-lead',
+        to: 'dm_obj_participants',
+        content: 'Object-form participant payload test',
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    const resolved = normalizeRelayDmMessageTargets(messages, [
+      {
+        id: 'dm_obj_participants',
+        participants: [
+          { agent_name: 'agent-lead' },
+          { agentName: 'agent-codex' },
+          { name: 'Ignored Alias' },
+          { username: 'agent-observer' },
+        ],
+      },
+    ]);
+
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]).toBeDefined();
+    expect(resolved[0]?.to).toBe('agent-codex');
+    expect(getRelayDmParticipantName({ agentName: 'agent-codex' })).toBe('agent-codex');
   });
 });
