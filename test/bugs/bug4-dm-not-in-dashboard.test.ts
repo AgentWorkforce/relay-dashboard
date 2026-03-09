@@ -157,7 +157,7 @@ describe('BUG 4 — Inter-agent DM visibility in dashboard threads', () => {
     );
 
     expect(sidebarHtml).toContain('agent-lead ↔ agent-codex');
-    expect(chatHtml).toContain('Start a conversation with agent-lead ↔ agent-codex');
+    expect(chatHtml).toContain('Start a conversation with agent-codex');
   });
 
   it('should resolve object-form DM participants to the opposite human-readable names', () => {

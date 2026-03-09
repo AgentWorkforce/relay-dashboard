@@ -73,9 +73,7 @@ function resolveDmRecipient(
   for (const participant of participants) {
     const normalized = getRelayDmParticipantName(participant);
     if (!normalized) continue;
-    if (normalized) {
-      return normalized;
-    }
+    return normalized;
   }
 
   return null;
