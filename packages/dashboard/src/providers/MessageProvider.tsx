@@ -442,7 +442,7 @@ function MessageProviderInner({ children, data, rawData: _rawData, enableReactio
   const { visibleMessages: dedupedVisibleMessages, participantAgents: dmParticipantAgents } = useDirectMessage({
     currentHuman,
     currentUserName: currentUser?.displayName ?? null,
-    messages,
+    messages: currentHuman ? normalizedRelayMessages : messages,
     agents,
     selectedDmAgents,
     removedDmAgents,
