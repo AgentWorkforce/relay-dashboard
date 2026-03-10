@@ -12,13 +12,11 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { Message } from '../types';
 import type { HumanUser } from '../components/MentionAutocomplete';
-import {
-  useDMs as useRelayDMs,
-} from '@relaycast/react';
 import { useMessages as useMessagesHook } from '../components/hooks/useMessages';
 import { useThread } from '../components/hooks/useThread';
 import { usePresence, type UserPresence } from '../components/hooks/usePresence';
 import { useDirectMessage } from '../components/hooks/useDirectMessage';
+import { useAllDMs } from '../components/hooks/useAllDMs';
 import { useCloudWorkspace } from './CloudWorkspaceProvider';
 import { useAgentContext } from './AgentProvider';
 import { useRelayConfigStatus } from './RelayConfigProvider';
@@ -378,14 +376,14 @@ function MessageProviderInner({ children, data, rawData: _rawData, enableReactio
   // Relay DMs and message normalization
   // ---------------------------------------------------------------------------
 
-  const relayDMsState = useRelayDMs();
+  const allDMsState = useAllDMs();
   const normalizedRelayMessages = useMemo(() => {
     const sourceMessages = data?.messages ?? [];
-    if (!relayConfigured || relayDMsState.conversations.length === 0) {
+    if (!relayConfigured || allDMsState.conversations.length === 0) {
       return sourceMessages;
     }
-    return normalizeRelayDmMessageTargets(sourceMessages, relayDMsState.conversations);
-  }, [data?.messages, relayConfigured, relayDMsState.conversations]);
+    return normalizeRelayDmMessageTargets(sourceMessages, allDMsState.conversations);
+  }, [data?.messages, relayConfigured, allDMsState.conversations]);
 
   // ---------------------------------------------------------------------------
   // Core message hook
@@ -442,7 +440,7 @@ function MessageProviderInner({ children, data, rawData: _rawData, enableReactio
   const { visibleMessages: dedupedVisibleMessages, participantAgents: dmParticipantAgents } = useDirectMessage({
     currentHuman,
     currentUserName: currentUser?.displayName ?? null,
-    messages,
+    messages: currentHuman ? normalizedRelayMessages : messages,
     agents,
     selectedDmAgents,
     removedDmAgents,
@@ -467,9 +465,9 @@ function MessageProviderInner({ children, data, rawData: _rawData, enableReactio
       });
     }
 
-    if (relayConfigured && relayDMsState.conversations.length > 0) {
+    if (relayConfigured && allDMsState.conversations.length > 0) {
       const currentUserName = currentUser?.displayName.toLowerCase();
-      for (const conversation of relayDMsState.conversations) {
+      for (const conversation of allDMsState.conversations) {
         for (const participant of conversation.participants) {
           const name = getRelayDmParticipantName(participant);
           if (!name) continue;
@@ -491,7 +489,7 @@ function MessageProviderInner({ children, data, rawData: _rawData, enableReactio
     }
 
     return Array.from(seenUsers.values());
-  }, [normalizedRelayMessages, agents, currentUser, relayDMsState.conversations, relayConfigured, relayAgentName]);
+  }, [normalizedRelayMessages, agents, currentUser, allDMsState.conversations, relayConfigured, relayAgentName]);
 
   // ---------------------------------------------------------------------------
   // Human unread counts
@@ -500,12 +498,12 @@ function MessageProviderInner({ children, data, rawData: _rawData, enableReactio
   const humanUnreadCounts = useMemo(() => {
     if (!currentUser) return {};
 
-    if (relayConfigured && relayDMsState.conversations.length > 0) {
+    if (relayConfigured && allDMsState.conversations.length > 0) {
       const counts: Record<string, number> = {};
       const currentUserName = currentUser.displayName.toLowerCase();
       const agentNames = new Set(agents.filter((a) => !a.isHuman).map((a) => a.name.toLowerCase()));
 
-      for (const conversation of relayDMsState.conversations) {
+      for (const conversation of allDMsState.conversations) {
         if (!conversation.unreadCount) continue;
 
         const match = conversation.participants.find((p) => {
@@ -546,7 +544,7 @@ function MessageProviderInner({ children, data, rawData: _rawData, enableReactio
     }
 
     return counts;
-  }, [combinedAgents, currentUser, normalizedRelayMessages, dmSeenAt, relayDMsState.conversations, agents, relayConfigured]);
+  }, [combinedAgents, currentUser, normalizedRelayMessages, dmSeenAt, allDMsState.conversations, agents, relayConfigured]);
 
   const markDmSeen = useCallback((username: string) => {
     setDmSeenAt((prev) => {
@@ -839,16 +837,16 @@ function MessageProviderInnerWithSend({ children, data, rawData, enableReactions
   // Since SendProvider only needs them for local (non-cloud) channel message rendering,
   // we derive them here at this level too.
   const { configured: relayConfigured } = useRelayConfigStatus();
-  const relayDMsState = useRelayDMs();
+  const allDMsState = useAllDMs();
   const { currentUser } = useCloudWorkspace();
 
   const normalizedRelayMessages = useMemo(() => {
     const sourceMessages = data?.messages ?? [];
-    if (!relayConfigured || relayDMsState.conversations.length === 0) {
+    if (!relayConfigured || allDMsState.conversations.length === 0) {
       return sourceMessages;
     }
-    return normalizeRelayDmMessageTargets(sourceMessages, relayDMsState.conversations);
-  }, [data?.messages, relayConfigured, relayDMsState.conversations]);
+    return normalizeRelayDmMessageTargets(sourceMessages, allDMsState.conversations);
+  }, [data?.messages, relayConfigured, allDMsState.conversations]);
 
   const [localUsername] = useState<string | null>(
     typeof window !== 'undefined' ? localStorage.getItem('relay_username') : null

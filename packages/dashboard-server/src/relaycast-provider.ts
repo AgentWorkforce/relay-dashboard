@@ -6,6 +6,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { RelayCast } from '@relaycast/sdk';
 import { extractMessageId } from './lib/message-id.js';
 import type {
   AgentStatus,
@@ -169,15 +170,21 @@ export async function fetchChannelMessages(
       { limit: String(limit) },
     );
 
+    // Handle both snake_case (raw API) and camelCase (SDK-processed) field names
+    const getCreatedAt = (m: RelaycastMessage) => {
+      const mAny = m as Record<string, unknown>;
+      return (mAny.createdAt ?? m.created_at) as string | undefined;
+    };
+
     if (typeof options.before === 'number' && Number.isFinite(options.before)) {
       const beforeTs = options.before;
       messages = messages.filter((msg: RelaycastMessage) => {
-        const ts = parseTimestamp(msg.created_at);
+        const ts = parseTimestamp(getCreatedAt(msg));
         return ts !== null && ts < beforeTs;
       });
     }
 
-    messages.sort((a: RelaycastMessage, b: RelaycastMessage) => (parseTimestamp(a.created_at) ?? 0) - (parseTimestamp(b.created_at) ?? 0));
+    messages.sort((a: RelaycastMessage, b: RelaycastMessage) => (parseTimestamp(getCreatedAt(a)) ?? 0) - (parseTimestamp(getCreatedAt(b)) ?? 0));
     return messages;
   } catch (err) {
     console.warn(`[relaycast-provider] Failed to fetch channel messages for #${channelName}:`, (err as Error).message);
@@ -194,11 +201,39 @@ export async function fetchChannelMembers(config: RelaycastConfig, _channel: str
   return fetchAgents(config);
 }
 
+/**
+ * Create (or return cached) workspace-level RelayCast client for fetching all
+ * DM conversations. Uses the API key directly (not an agent token) so it can
+ * see ALL conversations in the workspace.
+ */
+const workspaceClientCache = new Map<string, RelayCast>();
+
+function getWorkspaceClient(config: RelaycastConfig): RelayCast {
+  const key = `${config.baseUrl}|${config.apiKey}`;
+  const cached = workspaceClientCache.get(key);
+  if (cached) return cached;
+
+  const client = new RelayCast({
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+  });
+  workspaceClientCache.set(key, client);
+  return client;
+}
+
 async function fetchDmConversations(config: RelaycastConfig): Promise<RelaycastDmConversation[]> {
   try {
-    const reader = await getReaderClient(config);
-    const conversations = await reader.dms.conversations() as RelaycastDmConversation[];
-    return Array.isArray(conversations) ? conversations : [];
+    // Use workspace-level API to fetch ALL DM conversations, not just the
+    // dashboard-reader's conversations. This ensures agent-to-agent DMs
+    // (e.g., IssueReviewer → fixer-530) are visible in the dashboard.
+    const relay = getWorkspaceClient(config);
+    const conversations = await relay.allDmConversations();
+    // WorkspaceDmConversation shape differs from RelaycastDmConversation
+    // (string[] participants vs object[], camelCase vs snake_case).
+    // fetchAllDirectMessages handles both formats in participant extraction.
+    return Array.isArray(conversations)
+      ? conversations as unknown as RelaycastDmConversation[]
+      : [];
   } catch (err) {
     console.warn('[relaycast-provider] Failed to fetch DM conversations:', (err as Error).message);
     return [];
@@ -214,13 +249,27 @@ async function fetchDmConversationMessages(
   if (!trimmedId) return [];
 
   try {
-    const reader = await getReaderClient(config);
-    const messages = await reader.client.get<RelaycastMessage[]>(
-      `/v1/dm/conversations/${encodeURIComponent(trimmedId)}/messages`,
-      { limit: String(getMessageLimit(limit)) },
-    );
+    // Use workspace-level API for DM message fetching to ensure visibility
+    // of all conversations regardless of dashboard-reader participation.
+    const relay = getWorkspaceClient(config);
+    const rawMessages = await relay.dmMessages(trimmedId, { limit: getMessageLimit(limit) });
 
-    if (!Array.isArray(messages)) return [];
+    if (!Array.isArray(rawMessages)) return [];
+    // Map WorkspaceDmMessage (camelCase) to RelaycastMessage shape.
+    // The SDK type is narrow, so cast to access optional fields that may
+    // exist on the raw API response (threadId, replyCount, reactions).
+    const messages: RelaycastMessage[] = rawMessages.map((m) => {
+      const raw = m as Record<string, unknown>;
+      return {
+        id: m.id,
+        agent_name: m.agentName,
+        text: m.text,
+        created_at: m.createdAt,
+        thread_id: raw.threadId ?? raw.thread_id ?? undefined,
+        reply_count: raw.replyCount ?? raw.reply_count ?? 0,
+        reactions: raw.reactions ?? [],
+      } as RelaycastMessage;
+    });
     messages.sort((a, b) => (parseTimestamp(a.created_at) ?? 0) - (parseTimestamp(b.created_at) ?? 0));
     return messages;
   } catch (err) {
@@ -245,7 +294,11 @@ async function fetchAllDirectMessages(config: RelaycastConfig): Promise<Message[
       const participants = Array.isArray(conversation.participants)
         ? conversation.participants
           .map((participant) => {
-            const name = typeof participant === 'string' ? participant : participant.agent_name;
+            // Handle both snake_case (raw API) and camelCase (SDK-processed) field names
+            const pAny = participant as Record<string, unknown>;
+            const name = typeof participant === 'string'
+              ? participant
+              : ((pAny.agentName ?? pAny.agent_name ?? '') as string);
             return resolveIdentity(name, identityConfig);
           })
           .filter((participant): participant is string => Boolean(participant))
