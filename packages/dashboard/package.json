@@ -14,6 +14,7 @@
       "import": "./dist/index.js"
     },
     "./components/*": "./src/components/*.tsx",
+    "./components/log-viewer": "./src/components/log-viewer/index.ts",
     "./hooks/*": "./src/components/hooks/*.ts",
     "./lib/*": "./src/lib/*.ts",
     "./types": "./src/types/index.ts",
