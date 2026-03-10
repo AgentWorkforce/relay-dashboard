@@ -169,15 +169,21 @@ export async function fetchChannelMessages(
       { limit: String(limit) },
     );
 
+    // Handle both snake_case (raw API) and camelCase (SDK-processed) field names
+    const getCreatedAt = (m: RelaycastMessage) => {
+      const mAny = m as Record<string, unknown>;
+      return (mAny.createdAt ?? m.created_at) as string | undefined;
+    };
+
     if (typeof options.before === 'number' && Number.isFinite(options.before)) {
       const beforeTs = options.before;
       messages = messages.filter((msg: RelaycastMessage) => {
-        const ts = parseTimestamp(msg.created_at);
+        const ts = parseTimestamp(getCreatedAt(msg));
         return ts !== null && ts < beforeTs;
       });
     }
 
-    messages.sort((a: RelaycastMessage, b: RelaycastMessage) => (parseTimestamp(a.created_at) ?? 0) - (parseTimestamp(b.created_at) ?? 0));
+    messages.sort((a: RelaycastMessage, b: RelaycastMessage) => (parseTimestamp(getCreatedAt(a)) ?? 0) - (parseTimestamp(getCreatedAt(b)) ?? 0));
     return messages;
   } catch (err) {
     console.warn(`[relaycast-provider] Failed to fetch channel messages for #${channelName}:`, (err as Error).message);
@@ -215,13 +221,25 @@ async function fetchDmConversationMessages(
 
   try {
     const reader = await getReaderClient(config);
-    const messages = await reader.client.get<RelaycastMessage[]>(
-      `/v1/dm/conversations/${encodeURIComponent(trimmedId)}/messages`,
-      { limit: String(getMessageLimit(limit)) },
-    );
+    // Use the SDK's dms.messages() method for consistent type handling
+    const sdkReader = reader as { dms: { messages?: (id: string, opts?: { limit?: number }) => Promise<unknown[]> } };
+    let messages: RelaycastMessage[];
+    if (typeof sdkReader.dms.messages === 'function') {
+      messages = await sdkReader.dms.messages(trimmedId, { limit: getMessageLimit(limit) }) as RelaycastMessage[];
+    } else {
+      messages = await reader.client.get<RelaycastMessage[]>(
+        `/v1/dm/conversations/${encodeURIComponent(trimmedId)}/messages`,
+        { limit: String(getMessageLimit(limit)) },
+      );
+    }
 
     if (!Array.isArray(messages)) return [];
-    messages.sort((a, b) => (parseTimestamp(a.created_at) ?? 0) - (parseTimestamp(b.created_at) ?? 0));
+    // Handle both snake_case (raw API) and camelCase (SDK-processed) field names
+    const getCreatedAt = (m: RelaycastMessage) => {
+      const mAny = m as Record<string, unknown>;
+      return (mAny.createdAt ?? m.created_at) as string | undefined;
+    };
+    messages.sort((a, b) => (parseTimestamp(getCreatedAt(a)) ?? 0) - (parseTimestamp(getCreatedAt(b)) ?? 0));
     return messages;
   } catch (err) {
     console.warn(
@@ -245,7 +263,11 @@ async function fetchAllDirectMessages(config: RelaycastConfig): Promise<Message[
       const participants = Array.isArray(conversation.participants)
         ? conversation.participants
           .map((participant) => {
-            const name = typeof participant === 'string' ? participant : participant.agent_name;
+            // Handle both snake_case (raw API) and camelCase (SDK-processed) field names
+            const pAny = participant as Record<string, unknown>;
+            const name = typeof participant === 'string'
+              ? participant
+              : ((pAny.agentName ?? pAny.agent_name ?? '') as string);
             return resolveIdentity(name, identityConfig);
           })
           .filter((participant): participant is string => Boolean(participant))

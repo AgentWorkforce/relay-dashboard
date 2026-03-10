@@ -220,74 +220,10 @@ async function getCachedClient(
 }
 
 export function getReaderClient(config: RelaycastConfig): Promise<RelaycastClientLike> {
-  // Use SDK's createRelaycastClient if available (for test mocking)
-  const sdkCreateClient = (agentRelaySdk as Record<string, unknown>).createRelaycastClient;
-  if (typeof sdkCreateClient === 'function') {
-    return getCachedClient(readerClientCache, config, DASHBOARD_READER_NAME, 'human');
-  }
-
-  // For reader operations, use a simple fetch-based client without agent registration.
-  // This avoids requiring POST /v1/agents for read-only data fetching.
-  const key = `reader:${config.baseUrl}|${config.apiKey}`;
-  const existing = readerClientCache.get(key);
-  if (existing) {
-    return existing;
-  }
-
-  const baseUrl = config.baseUrl || 'https://api.relaycast.dev';
-
-  // Simple HTTP client that makes direct fetch calls
-  const httpClient = {
-    async get<T>(urlPath: string, query?: Record<string, string>): Promise<T> {
-      const url = new URL(urlPath, baseUrl);
-      if (query) {
-        for (const [k, v] of Object.entries(query)) {
-          url.searchParams.set(k, v);
-        }
-      }
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${config.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      const json = await response.json() as { ok?: boolean; data?: T };
-      // Unwrap standard Relaycast response format
-      if (json && typeof json === 'object' && 'data' in json) {
-        return json.data as T;
-      }
-      return json as T;
-    },
-  };
-
-  // Create a minimal RelaycastClientLike wrapper for read operations
-  const readerWrapper: RelaycastClientLike = {
-    client: httpClient,
-    channels: {
-      list: async (opts) => {
-        const query: Record<string, string> = {};
-        if (opts?.include_archived || opts?.includeArchived) {
-          query.include_archived = 'true';
-        }
-        return httpClient.get('/v1/channels', query);
-      },
-      create: () => Promise.reject(new Error('Reader client cannot create channels')),
-      join: () => Promise.reject(new Error('Reader client cannot join channels')),
-      leave: () => Promise.reject(new Error('Reader client cannot leave channels')),
-      invite: () => Promise.reject(new Error('Reader client cannot invite to channels')),
-    },
-    send: () => Promise.reject(new Error('Reader client cannot send messages')),
-    reply: () => Promise.reject(new Error('Reader client cannot send thread replies')),
-    dm: () => Promise.reject(new Error('Reader client cannot send DMs')),
-    dms: {
-      conversations: () => httpClient.get('/v1/dm/conversations'),
-    },
-  };
-
-  const clientPromise = Promise.resolve(readerWrapper);
-  readerClientCache.set(key, clientPromise);
-  return clientPromise;
+  // Always use a proper SDK agent client for read operations.
+  // This ensures DM conversations, channels, and messages are fetched through
+  // the SDK with proper agent authentication and consistent type normalization.
+  return getCachedClient(readerClientCache, config, DASHBOARD_READER_NAME, 'human');
 }
 
 export function getWriterClient(

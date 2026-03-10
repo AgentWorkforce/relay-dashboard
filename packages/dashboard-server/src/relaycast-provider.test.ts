@@ -36,78 +36,68 @@ describe('relaycast-provider fetchAllMessages', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.doUnmock('@agent-relay/sdk');
   });
 
   it('includes DM conversation messages and maps broker identity to Dashboard', async () => {
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const url = getRequestUrl(input);
-      const pathname = url.pathname;
-
-      if (pathname === '/v1/agents') {
-        return makeJsonResponse({
-          ok: true,
-          data: [],
-        });
-      }
-
-      if (pathname === '/v1/channels') {
-        return makeJsonResponse({
-          ok: true,
-          data: [{
-            id: 'ch_1',
-            name: 'general',
-            topic: null,
-            member_count: 1,
-            created_at: '2026-02-23T10:00:00.000Z',
-            is_archived: false,
-          }],
-        });
-      }
-
-      if (pathname === '/v1/channels/general/messages') {
-        return makeJsonResponse({
-          ok: true,
-          data: [{
-            id: 'ch_msg_1',
-            agent_name: 'Lead',
-            text: 'Channel update',
-            created_at: '2026-02-23T10:00:00.000Z',
-          }],
-        });
-      }
-
-      if (pathname === '/v1/dm/conversations/all' || pathname === '/v1/dm/conversations') {
-        return makeJsonResponse({
-          ok: true,
-          data: [{
-            id: 'dm_1',
-            participants: ['broker-951762d5', 'Lead'],
-            last_message: {
-              text: 'Done',
-              agent_name: 'Lead',
-              created_at: '2026-02-23T10:01:00.000Z',
-            },
-            message_count: 1,
-          }],
-        });
-      }
-
-      if (pathname === '/v1/dm/conversations/dm_1/messages') {
-        return makeJsonResponse({
-          ok: true,
-          data: [{
-            id: 'dm_msg_1',
-            agent_name: 'Lead',
+    const createRelaycastClient = vi.fn(async () => ({
+      client: {
+        get: vi.fn(async (path: string) => {
+          if (path.includes('/v1/channels') && !path.includes('/messages')) {
+            return [{
+              id: 'ch_1',
+              name: 'general',
+              topic: null,
+              memberCount: 1,
+              createdAt: '2026-02-23T10:00:00.000Z',
+              isArchived: false,
+            }];
+          }
+          if (path.includes('/v1/channels/general/messages')) {
+            return [{
+              id: 'ch_msg_1',
+              agentName: 'Lead',
+              text: 'Channel update',
+              createdAt: '2026-02-23T10:00:00.000Z',
+            }];
+          }
+          return [];
+        }),
+      },
+      channels: {
+        list: vi.fn(async () => [{
+          id: 'ch_1',
+          name: 'general',
+          topic: null,
+          memberCount: 1,
+          createdAt: '2026-02-23T10:00:00.000Z',
+          isArchived: false,
+        }]),
+      },
+      dms: {
+        conversations: vi.fn(async () => [{
+          id: 'dm_1',
+          participants: [{ agentName: 'broker-951762d5' }, { agentName: 'Lead' }],
+          lastMessage: {
             text: 'Done',
-            created_at: '2026-02-23T10:01:00.000Z',
-          }],
-        });
-      }
+            agentName: 'Lead',
+            createdAt: '2026-02-23T10:01:00.000Z',
+          },
+          messageCount: 1,
+        }]),
+        messages: vi.fn(async () => [{
+          id: 'dm_msg_1',
+          agentName: 'Lead',
+          text: 'Done',
+          createdAt: '2026-02-23T10:01:00.000Z',
+        }]),
+      },
+      send: vi.fn(),
+    }));
 
-      throw new Error(`Unexpected fetch path: ${pathname}`);
-    });
-
-    vi.stubGlobal('fetch', fetchMock);
+    vi.doMock('@agent-relay/sdk', () => ({
+      createRelaycastClient,
+    }));
 
     const { fetchAllMessages } = await import('./relaycast-provider.js');
     const messages = await fetchAllMessages(CONFIG);
@@ -129,57 +119,40 @@ describe('relaycast-provider fetchAllMessages', () => {
   it('fetches DM history for each refresh when using SDK readers', async () => {
     let dmHistoryFetches = 0;
 
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const url = getRequestUrl(input);
-      const pathname = url.pathname;
-
-      if (pathname === '/v1/agents') {
-        return makeJsonResponse({
-          ok: true,
-          data: [],
-        });
-      }
-
-      if (pathname === '/v1/channels') {
-        return makeJsonResponse({
-          ok: true,
-          data: [],
-        });
-      }
-
-      if (pathname === '/v1/dm/conversations/all' || pathname === '/v1/dm/conversations') {
-        return makeJsonResponse({
-          ok: true,
-          data: [{
-            id: 'dm_1',
-            participants: ['Dashboard', 'Lead'],
-            last_message: {
-              text: 'Ping',
-              agent_name: 'Lead',
-              created_at: '2026-02-23T10:01:00.000Z',
-            },
-            message_count: 1,
-          }],
-        });
-      }
-
-      if (pathname === '/v1/dm/conversations/dm_1/messages') {
-        dmHistoryFetches += 1;
-        return makeJsonResponse({
-          ok: true,
-          data: [{
-            id: 'dm_msg_1',
-            agent_name: 'Lead',
+    const createRelaycastClient = vi.fn(async () => ({
+      client: {
+        get: vi.fn(async () => []),
+      },
+      channels: {
+        list: vi.fn(async () => []),
+      },
+      dms: {
+        conversations: vi.fn(async () => [{
+          id: 'dm_1',
+          participants: [{ agentName: 'Dashboard' }, { agentName: 'Lead' }],
+          lastMessage: {
             text: 'Ping',
-            created_at: '2026-02-23T10:01:00.000Z',
-          }],
-        });
-      }
+            agentName: 'Lead',
+            createdAt: '2026-02-23T10:01:00.000Z',
+          },
+          messageCount: 1,
+        }]),
+        messages: vi.fn(async () => {
+          dmHistoryFetches += 1;
+          return [{
+            id: 'dm_msg_1',
+            agentName: 'Lead',
+            text: 'Ping',
+            createdAt: '2026-02-23T10:01:00.000Z',
+          }];
+        }),
+      },
+      send: vi.fn(),
+    }));
 
-      throw new Error(`Unexpected fetch path: ${pathname}`);
-    });
-
-    vi.stubGlobal('fetch', fetchMock);
+    vi.doMock('@agent-relay/sdk', () => ({
+      createRelaycastClient,
+    }));
 
     const { fetchAllMessages } = await import('./relaycast-provider.js');
     await fetchAllMessages(CONFIG);
@@ -189,51 +162,34 @@ describe('relaycast-provider fetchAllMessages', () => {
   });
 
   it('returns no DM messages when DM history endpoint fails', async () => {
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const url = getRequestUrl(input);
-      const pathname = url.pathname;
+    const createRelaycastClient = vi.fn(async () => ({
+      client: {
+        get: vi.fn(async () => []),
+      },
+      channels: {
+        list: vi.fn(async () => []),
+      },
+      dms: {
+        conversations: vi.fn(async () => [{
+          id: 'dm_1',
+          participants: [{ agentName: 'Dashboard' }, { agentName: 'Lead' }],
+          lastMessage: {
+            text: 'Fallback DM',
+            agentName: 'Lead',
+            createdAt: '2026-02-23T10:05:00.000Z',
+          },
+          messageCount: 1,
+        }]),
+        messages: vi.fn(async () => {
+          throw new Error('history unavailable');
+        }),
+      },
+      send: vi.fn(),
+    }));
 
-      if (pathname === '/v1/agents') {
-        return makeJsonResponse({
-          ok: true,
-          data: [],
-        });
-      }
-
-      if (pathname === '/v1/channels') {
-        return makeJsonResponse({
-          ok: true,
-          data: [],
-        });
-      }
-
-      if (pathname === '/v1/dm/conversations/all' || pathname === '/v1/dm/conversations') {
-        return makeJsonResponse({
-          ok: true,
-          data: [{
-            id: 'dm_1',
-            participants: ['Dashboard', 'Lead'],
-            last_message: {
-              text: 'Fallback DM',
-              agent_name: 'Lead',
-              created_at: '2026-02-23T10:05:00.000Z',
-            },
-            message_count: 1,
-          }],
-        });
-      }
-
-      if (pathname === '/v1/dm/conversations/dm_1/messages') {
-        return makeJsonResponse({
-          ok: false,
-          error: { message: 'history unavailable' },
-        }, 500);
-      }
-
-      throw new Error(`Unexpected fetch path: ${pathname}`);
-    });
-
-    vi.stubGlobal('fetch', fetchMock);
+    vi.doMock('@agent-relay/sdk', () => ({
+      createRelaycastClient,
+    }));
 
     const { fetchAllMessages } = await import('./relaycast-provider.js');
     const messages = await fetchAllMessages(CONFIG);
@@ -285,56 +241,41 @@ describe('relaycast-provider broker identity detection', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.doUnmock('@agent-relay/sdk');
   });
 
   async function fetchDmTarget(participants: string[]): Promise<string> {
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const url = getRequestUrl(input);
-      const pathname = url.pathname;
-
-      if (pathname === '/v1/agents') {
-        return makeJsonResponse({
-          ok: true,
-          data: [],
-        });
-      }
-
-      if (pathname === '/v1/channels') {
-        return makeJsonResponse({ ok: true, data: [] });
-      }
-
-      if (pathname === '/v1/dm/conversations/all' || pathname === '/v1/dm/conversations') {
-        return makeJsonResponse({
-          ok: true,
-          data: [{
-            id: 'dm_1',
-            participants,
-            last_message: {
-              text: 'Done',
-              agent_name: 'Lead',
-              created_at: '2026-02-23T10:01:00.000Z',
-            },
-            message_count: 1,
-          }],
-        });
-      }
-
-      if (pathname === '/v1/dm/conversations/dm_1/messages') {
-        return makeJsonResponse({
-          ok: true,
-          data: [{
-            id: 'dm_msg_1',
-            agent_name: 'Lead',
+    const createRelaycastClient = vi.fn(async () => ({
+      client: {
+        get: vi.fn(async () => []),
+      },
+      channels: {
+        list: vi.fn(async () => []),
+      },
+      dms: {
+        conversations: vi.fn(async () => [{
+          id: 'dm_1',
+          participants: participants.map((name) => ({ agentName: name })),
+          lastMessage: {
             text: 'Done',
-            created_at: '2026-02-23T10:01:00.000Z',
-          }],
-        });
-      }
+            agentName: 'Lead',
+            createdAt: '2026-02-23T10:01:00.000Z',
+          },
+          messageCount: 1,
+        }]),
+        messages: vi.fn(async () => [{
+          id: 'dm_msg_1',
+          agentName: 'Lead',
+          text: 'Done',
+          createdAt: '2026-02-23T10:01:00.000Z',
+        }]),
+      },
+      send: vi.fn(),
+    }));
 
-      throw new Error(`Unexpected fetch path: ${pathname}`);
-    });
-
-    vi.stubGlobal('fetch', fetchMock);
+    vi.doMock('@agent-relay/sdk', () => ({
+      createRelaycastClient,
+    }));
 
     const { fetchAllMessages } = await import('./relaycast-provider.js');
     const messages = await fetchAllMessages(CONFIG);
