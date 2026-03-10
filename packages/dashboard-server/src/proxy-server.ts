@@ -124,6 +124,10 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
   // via setRelayApiKey() when a workflow creates a new Relaycast workspace.
   let inMemoryRelayApiKey: string | undefined =
     relayApiKeyOption?.trim() || process.env.RELAY_API_KEY?.trim() || undefined;
+  // Cached agent token/name from the last successful registerOrRotate call.
+  // Prevents repeated token rotations that invalidate the frontend WS connection.
+  let inMemoryAgentToken: string | undefined;
+  let inMemoryAgentName: string | undefined;
 
   const resolvedDataDir = path.resolve(dataDir);
   if (!process.env.AGENT_RELAY_PROJECT) {
@@ -193,13 +197,30 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     if (inMemoryRelayApiKey) {
       const baseUrl = process.env.RELAYCAST_API_URL || 'https://api.relaycast.dev';
       const projectDir = path.basename(path.resolve(dataDir, '..'));
-      return { apiKey: inMemoryRelayApiKey, baseUrl, projectIdentity: projectDir };
+      return {
+        apiKey: inMemoryRelayApiKey,
+        baseUrl,
+        projectIdentity: projectDir,
+        agentToken: inMemoryAgentToken,
+        agentName: inMemoryAgentName,
+      };
     }
     return loadRelaycastConfig(dataDir);
   };
 
   const setRelayApiKey = (apiKey: string): void => {
-    inMemoryRelayApiKey = apiKey.trim();
+    const trimmed = apiKey.trim();
+    if (trimmed !== inMemoryRelayApiKey) {
+      // New workspace key — clear cached agent identity so a fresh
+      // registerOrRotate happens on the next relay-config request.
+      inMemoryAgentToken = undefined;
+      inMemoryAgentName = undefined;
+    }
+    inMemoryRelayApiKey = trimmed;
+  };
+  const setRelayAgentIdentity = (token: string, name: string): void => {
+    inMemoryAgentToken = token;
+    inMemoryAgentName = name;
   };
   const { getSpawnedAgents, getLocalAgentNames } = createSpawnedAgentsCaches({
     brokerProxyEnabled,
@@ -360,6 +381,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     brokerProxyEnabled,
     resolveRelaycastConfig,
     setRelayApiKey,
+    setRelayAgentIdentity,
     getRelaycastSnapshot,
     getRelaycastChannels,
     sendRelaycastMessage,

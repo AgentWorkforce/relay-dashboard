@@ -86,6 +86,9 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
         const registered = await getDashboardAgentToken(config, agentName);
         agentToken = registered.token;
         agentName = registered.name;
+        // Persist the token so subsequent calls reuse it instead of rotating
+        // (which would invalidate the frontend's WebSocket connection).
+        ctx.setRelayAgentIdentity(agentToken, agentName);
       } catch (err) {
         res.status(503).json({
           success: false,
@@ -101,7 +104,8 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
     // token rotation via registerOrRotate does not re-join.
     // Fire-and-forget to avoid adding latency to the config response.
     const defaultChannels = ['general'];
-    getWriterClient(config, agentName, ctx.dataDir)
+    const configWithToken: typeof config = { ...config, agentToken, agentName };
+    getWriterClient(configWithToken, agentName, ctx.dataDir)
       .then(async (writer) => {
         for (const channel of defaultChannels) {
           await writer.channels.join(channel).catch(() => {});
