@@ -47,10 +47,15 @@ export function useDirectMessage({
       if (selectedDmAgents.includes(from) && agentNameSet.has(to)) derived.add(to);
       if (selectedDmAgents.includes(to) && agentNameSet.has(from)) derived.add(from);
       // Include agents from DM messages (non-channel messages) so agent-to-agent
-      // DMs are visible in the DM view
+      // DMs are visible in the DM view — but only if the message involves the
+      // current human or an already-selected DM agent to avoid cross-conversation leakage.
       if (!to.startsWith('#')) {
-        if (agentNameSet.has(from)) derived.add(from);
-        if (agentNameSet.has(to)) derived.add(to);
+        const involvesHuman = (from === humanName || to === humanName);
+        const involvesSelected = selectedDmAgents.includes(from) || selectedDmAgents.includes(to);
+        if (involvesHuman || involvesSelected) {
+          if (agentNameSet.has(from)) derived.add(from);
+          if (agentNameSet.has(to)) derived.add(to);
+        }
       }
     }
 

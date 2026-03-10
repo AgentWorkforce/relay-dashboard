@@ -202,15 +202,23 @@ export async function fetchChannelMembers(config: RelaycastConfig, _channel: str
 }
 
 /**
- * Create a workspace-level RelayCast client for fetching all DM conversations.
- * Uses the API key directly (not an agent token) so it can see ALL conversations
- * in the workspace, not just those the dashboard-reader participates in.
+ * Create (or return cached) workspace-level RelayCast client for fetching all
+ * DM conversations. Uses the API key directly (not an agent token) so it can
+ * see ALL conversations in the workspace.
  */
+const workspaceClientCache = new Map<string, RelayCast>();
+
 function getWorkspaceClient(config: RelaycastConfig): RelayCast {
-  return new RelayCast({
+  const key = `${config.baseUrl}|${config.apiKey}`;
+  const cached = workspaceClientCache.get(key);
+  if (cached) return cached;
+
+  const client = new RelayCast({
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
   });
+  workspaceClientCache.set(key, client);
+  return client;
 }
 
 async function fetchDmConversations(config: RelaycastConfig): Promise<RelaycastDmConversation[]> {
@@ -247,13 +255,21 @@ async function fetchDmConversationMessages(
     const rawMessages = await relay.dmMessages(trimmedId, { limit: getMessageLimit(limit) });
 
     if (!Array.isArray(rawMessages)) return [];
-    // Map WorkspaceDmMessage (camelCase) to RelaycastMessage shape
-    const messages: RelaycastMessage[] = rawMessages.map((m) => ({
-      id: m.id,
-      agent_name: m.agentName,
-      text: m.text,
-      created_at: m.createdAt,
-    } as RelaycastMessage));
+    // Map WorkspaceDmMessage (camelCase) to RelaycastMessage shape.
+    // The SDK type is narrow, so cast to access optional fields that may
+    // exist on the raw API response (threadId, replyCount, reactions).
+    const messages: RelaycastMessage[] = rawMessages.map((m) => {
+      const raw = m as Record<string, unknown>;
+      return {
+        id: m.id,
+        agent_name: m.agentName,
+        text: m.text,
+        created_at: m.createdAt,
+        thread_id: raw.threadId ?? raw.thread_id ?? undefined,
+        reply_count: raw.replyCount ?? raw.reply_count ?? 0,
+        reactions: raw.reactions ?? [],
+      } as RelaycastMessage;
+    });
     messages.sort((a, b) => (parseTimestamp(a.created_at) ?? 0) - (parseTimestamp(b.created_at) ?? 0));
     return messages;
   } catch (err) {
