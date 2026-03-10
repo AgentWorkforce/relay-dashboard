@@ -58,8 +58,6 @@ export interface SidebarProps {
   onActivitySelect?: () => void;
   /** Channels for the collapsible channels section */
   channels?: SidebarChannel[];
-  /** DM channels for the collapsible DM section */
-  dmChannels?: SidebarChannel[];
   /** Archived channels for the collapsible archived section */
   archivedChannels?: SidebarChannel[];
   /** Currently selected channel ID */
@@ -118,7 +116,6 @@ export function Sidebar({
   activityUnreadCount = 0,
   onActivitySelect,
   channels = [],
-  dmChannels = [],
   archivedChannels = [],
   selectedChannelId,
   onChannelSelect,
@@ -206,11 +203,6 @@ export function Sidebar({
   const hasArchivedChannels = archivedChannels.length > 0;
   const [isArchivedCollapsed, setIsArchivedCollapsed] = useState(true);
   const [openChannelMenuId, setOpenChannelMenuId] = useState<string | null>(null);
-
-  // DM channels
-  const hasDmChannels = dmChannels.length > 0;
-  const totalDmUnread = dmChannels.reduce((sum, c) => sum + c.unreadCount, 0);
-  const [isDmCollapsed, setIsDmCollapsed] = useState(false);
 
   // Close menus when channel selection changes
   useEffect(() => {
@@ -490,53 +482,6 @@ export function Sidebar({
                       </button>
                     )}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* DM Channels Section */}
-        {hasDmChannels && (
-          <div className="mt-1 border-t border-border-subtle">
-            <button
-              className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-text-muted uppercase tracking-wide hover:bg-bg-hover transition-colors"
-              onClick={() => setIsDmCollapsed(!isDmCollapsed)}
-            >
-              <span className="flex items-center gap-2">
-                <AtIcon />
-                Direct Messages
-                {totalDmUnread > 0 && (
-                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-cyan/20 text-accent-cyan">
-                    {totalDmUnread}
-                  </span>
-                )}
-              </span>
-              <ChevronIcon className={`transition-transform ${isDmCollapsed ? '' : 'rotate-180'}`} />
-            </button>
-            {!isDmCollapsed && (
-              <div className="px-2 pb-2 space-y-0.5 max-h-40 md:max-h-none overflow-y-auto">
-                {dmChannels.map(channel => (
-                  <button
-                    key={channel.id}
-                    onClick={() => onChannelSelect?.(channel)}
-                    className={`
-                      w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-sm transition-colors
-                      ${selectedChannelId === channel.id
-                        ? 'bg-accent-cyan/10 text-text-primary'
-                        : 'hover:bg-bg-hover text-text-secondary hover:text-text-primary'}
-                    `}
-                  >
-                    <span className="text-text-muted">@</span>
-                    <span className={`flex-1 truncate ${channel.unreadCount > 0 ? 'font-semibold text-text-primary' : ''}`}>
-                      {channel.name}
-                    </span>
-                    {channel.unreadCount > 0 && (
-                      <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center bg-accent-cyan/20 text-accent-cyan">
-                        {channel.unreadCount}
-                      </span>
-                    )}
-                  </button>
                 ))}
               </div>
             )}
@@ -846,15 +791,6 @@ function HashIcon() {
       <line x1="4" y1="15" x2="20" y2="15" />
       <line x1="10" y1="3" x2="8" y2="21" />
       <line x1="16" y1="3" x2="14" y2="21" />
-    </svg>
-  );
-}
-
-function AtIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="4" />
-      <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
     </svg>
   );
 }

@@ -10,7 +10,6 @@ import React, { createContext, useContext, useCallback, useMemo, useRef, useEffe
 import {
   useMessages as useRelayMessages,
   useSendMessage as useRelaySendMessage,
-  useSendDM as useRelaySendDM,
   useReaction as useRelayReaction,
   useAgent as useRelayAgent,
   sortMessagesChronologically,
@@ -115,7 +114,6 @@ export function SendProvider({ children, localMessages, localUsername }: SendPro
   const relaySelectedChannelName = selectedChannelId?.startsWith('#') ? selectedChannelId.slice(1) : 'general';
   const relayMessagesState = useRelayMessages(relaySelectedChannelName);
   const relaySendMessageState = useRelaySendMessage();
-  const relaySendDMState = useRelaySendDM();
   const relayReactionState = useRelayReaction();
   const relayAgent = useRelayAgent();
 
@@ -137,19 +135,8 @@ export function SendProvider({ children, localMessages, localUsername }: SendPro
     if (effectiveActiveWorkspaceId || !selectedChannelId) return [];
     const ACTIVITY_FEED_ID = '__activity__';
 
-    // For DM channels (dm:Alice:Bob), extract participants and match on from/to
-    const isDmChannel = selectedChannelId.startsWith('dm:');
-    const dmParticipants = isDmChannel
-      ? new Set(selectedChannelId.split(':').slice(1).map(p => p.toLowerCase()))
-      : null;
-
     const filtered = localMessages.filter(m => {
       if (selectedChannelId === ACTIVITY_FEED_ID) return false;
-      if (isDmChannel && dmParticipants) {
-        const fromLower = m.from?.toLowerCase();
-        const toLower = m.to?.toLowerCase();
-        return fromLower && toLower && dmParticipants.has(fromLower) && dmParticipants.has(toLower);
-      }
       if (m.to === selectedChannelId) return true;
       if (m.channel === selectedChannelId) return true;
       if (m.thread === selectedChannelId) return true;
@@ -168,8 +155,6 @@ export function SendProvider({ children, localMessages, localUsername }: SendPro
     }));
   }, [localMessages, selectedChannelId, effectiveActiveWorkspaceId, currentUser?.displayName, relayAgentName]);
 
-  const usingRelayDmMessages = Boolean(relayConfigured && selectedChannelId?.startsWith('dm:'));
-
   const effectiveChannelMessages = useMemo(() => {
     if (usingRelayChannelMessages) {
       // Prefer relay SDK messages; fall back to server-fetched messages when
@@ -182,19 +167,9 @@ export function SendProvider({ children, localMessages, localUsername }: SendPro
       }
       return [];
     }
-    if (usingRelayDmMessages) {
-      // DM channels: use channelMessages (populated from WS events or localMessages)
-      if (channelMessages.length > 0) {
-        return sortChannelMessagesChronologically(channelMessages);
-      }
-      if (localChannelMessages.length > 0) {
-        return sortChannelMessagesChronologically(localChannelMessages);
-      }
-      return [];
-    }
     const sourceMessages = channelMessages.length > 0 ? channelMessages : localChannelMessages;
     return sortChannelMessagesChronologically(sourceMessages);
-  }, [usingRelayChannelMessages, usingRelayDmMessages, relayMappedChannelMessages, channelMessages, localChannelMessages]);
+  }, [usingRelayChannelMessages, relayMappedChannelMessages, channelMessages, localChannelMessages]);
 
   useEffect(() => {
     relayRealtimeEnabledRef.current = relayConfigured;
@@ -322,28 +297,6 @@ export function SendProvider({ children, localMessages, localUsername }: SendPro
       return;
     }
 
-    // DM channels in relay mode: use messages from channelMessageMap (populated
-    // by WebSocket events) or fall through to localChannelMessages (from /api/data)
-    if (relayConfigured && selectedChannelId.startsWith('dm:')) {
-      const existing = sortChannelMessagesChronologically(channelMessageMap[selectedChannelId] ?? []);
-      if (existing.length > 0) {
-        setChannelMessages(existing);
-      } else if (localChannelMessages.length > 0) {
-        setChannelMessages(localChannelMessages);
-        setChannelMessageMap(prev => ({ ...prev, [selectedChannelId]: localChannelMessages }));
-      } else {
-        setChannelMessages([]);
-      }
-      setHasMoreMessages(false);
-      setChannelUnreadState(undefined);
-      setChannelsList(prev =>
-        prev.map(c =>
-          c.id === selectedChannelId ? { ...c, unreadCount: 0, hasMentions: false } : c
-        )
-      );
-      return;
-    }
-
     const existing = sortChannelMessagesChronologically(channelMessageMap[selectedChannelId] ?? []);
     if (existing.length > 0) {
       setChannelMessages(existing);
@@ -384,7 +337,6 @@ export function SendProvider({ children, localMessages, localUsername }: SendPro
     relayMessagesState,
     relayMappedChannelMessages,
     channelMessageMap,
-    localChannelMessages,
     isWorkspaceFeaturesEnabled,
     setChannelsList,
   ]);
@@ -414,22 +366,12 @@ export function SendProvider({ children, localMessages, localUsername }: SendPro
 
     try {
       const relayEligible = relayConfigured && selectedChannelId.startsWith('#');
-      const relayDmEligible = relayConfigured && selectedChannelId.startsWith('dm:');
       const hasAttachments = Boolean(attachmentIds && attachmentIds.length > 0);
       const relayThreadReplyEligible = threadId
         ? relayMappedChannelMessages.some((message) => message.id === threadId)
         : false;
 
-      if (relayDmEligible && !hasAttachments && !threadId) {
-        // Extract the other participant from dm:Alice:Bob channel ID
-        const parts = selectedChannelId.split(':').slice(1);
-        const otherParticipant = parts.find(
-          p => p.toLowerCase() !== senderName.toLowerCase()
-        ) ?? parts[0];
-        if (otherParticipant) {
-          await relaySendDMState.send(otherParticipant, content);
-        }
-      } else if (relayEligible && !hasAttachments) {
+      if (relayEligible && !hasAttachments) {
         if (threadId && relayThreadReplyEligible) {
           await relayAgent.reply(threadId, content);
         } else if (!threadId) {
@@ -462,7 +404,6 @@ export function SendProvider({ children, localMessages, localUsername }: SendPro
     relayMappedChannelMessages,
     relayAgent,
     relaySendMessageState.send,
-    relaySendDMState.send,
     localUsername,
     relayAgentName,
   ]);

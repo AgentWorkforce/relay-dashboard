@@ -9,12 +9,10 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   useChannels as useRelayChannels,
-  useDMs as useRelayDMs,
 } from '@relaycast/react';
 import { useCloudWorkspace } from './CloudWorkspaceProvider';
 import { useRelayConfigStatus } from './RelayConfigProvider';
 import { getCsrfToken } from '../lib/api';
-import { getRelayDmParticipantName } from '../lib/relaycastMessageAdapters';
 import {
   listChannels,
   getChannelMembers,
@@ -46,41 +44,6 @@ function mapRelayChannelToDashboard(channel: RelaycastChannel): Channel {
     unreadCount: 0,
     hasMentions: false,
     isDm: false,
-  };
-}
-
-type RelayDmConversation = ReturnType<typeof useRelayDMs>['conversations'][number];
-
-function mapRelayDmConversationToDashboard(
-  conversation: RelayDmConversation,
-  currentUserName?: string,
-): Channel | null {
-  const participantNames: string[] = [];
-  for (const p of conversation.participants) {
-    const name = getRelayDmParticipantName(p);
-    if (name) participantNames.push(name);
-  }
-  if (participantNames.length < 2) return null;
-
-  const sorted = [...participantNames].sort((a, b) => a.localeCompare(b));
-  const channelId = `dm:${sorted.join(':')}`;
-
-  // Display name = other participant(s), excluding the current user
-  const currentLower = currentUserName?.toLowerCase();
-  const others = participantNames.filter(n => n.toLowerCase() !== currentLower);
-  const displayName = others.length > 0 ? others.join(', ') : participantNames.join(', ');
-
-  return {
-    id: channelId,
-    name: displayName,
-    visibility: 'private',
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    createdBy: 'relay',
-    memberCount: participantNames.length,
-    unreadCount: conversation.unreadCount ?? 0,
-    hasMentions: false,
-    isDm: true,
   };
 }
 
@@ -150,12 +113,11 @@ export interface ChannelProviderProps {
 }
 
 export function ChannelProvider({ children }: ChannelProviderProps) {
-  const { effectiveActiveWorkspaceId, isWorkspaceFeaturesEnabled, currentUser } = useCloudWorkspace();
+  const { effectiveActiveWorkspaceId, isWorkspaceFeaturesEnabled } = useCloudWorkspace();
   const { configured: relayConfigured } = useRelayConfigStatus();
 
   // Relay channel state
   const relayChannelsState = useRelayChannels();
-  const relayDMsState = useRelayDMs();
   const relayChannelsLoading = relayChannelsState.loading;
   const relayChannelsRaw = relayChannelsState.channels;
 
@@ -171,19 +133,6 @@ export function ChannelProvider({ children }: ChannelProviderProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [relayChannelsKey],
   );
-
-  // DM channels synthesized from relay DM conversations
-  const relayDmChannelsKey = useMemo(
-    () => JSON.stringify(relayDMsState.conversations.map(c => c.id + ':' + (c.unreadCount ?? 0))),
-    [relayDMsState.conversations],
-  );
-  const relayDmChannels = useMemo(() => {
-    if (!relayConfigured || relayDMsState.conversations.length === 0) return [];
-    return relayDMsState.conversations
-      .map(c => mapRelayDmConversationToDashboard(c, currentUser?.displayName))
-      .filter((c): c is Channel => c !== null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [relayDmChannelsKey, relayConfigured, currentUser?.displayName]);
 
   // Channel list state
   const [channelsList, setChannelsList] = useState<Channel[]>([]);
@@ -287,20 +236,6 @@ export function ChannelProvider({ children }: ChannelProviderProps) {
       const activeChannels = relayMappedChannels.filter((channel) => channel.status !== 'archived');
       const archivedChannels = relayMappedChannels.filter((channel) => channel.status === 'archived');
       setChannelListsFromResponse({ channels: activeChannels, archivedChannels });
-      // Merge DM channels into the list (deduplicating by id)
-      if (relayDmChannels.length > 0) {
-        setChannelsList(prev => {
-          const existingIds = new Set(prev.map(c => c.id));
-          const newDms = relayDmChannels.filter(dm => !existingIds.has(dm.id));
-          // Also update unread counts for existing DM channels
-          const updatedPrev = prev.map(c => {
-            if (!c.isDm) return c;
-            const freshDm = relayDmChannels.find(dm => dm.id === c.id);
-            return freshDm ? { ...c, unreadCount: freshDm.unreadCount } : c;
-          });
-          return newDms.length > 0 ? [...updatedPrev, ...newDms] : updatedPrev;
-        });
-      }
       setIsChannelsLoading(relayChannelsLoading);
       return;
     }
@@ -331,7 +266,6 @@ export function ChannelProvider({ children }: ChannelProviderProps) {
     relayConfigured,
     relayChannelsLoading,
     relayMappedChannels,
-    relayDmChannels,
     effectiveActiveWorkspaceId,
     isWorkspaceFeaturesEnabled,
     defaultChannels,

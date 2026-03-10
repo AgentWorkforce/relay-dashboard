@@ -676,9 +676,6 @@ function AppShell({
           channels={channelsList
             .filter(c => !c.isDm && !c.id.startsWith('dm:'))
             .map(c => ({ id: c.id, name: c.name, unreadCount: c.unreadCount, hasMentions: c.hasMentions }))}
-          dmChannels={channelsList
-            .filter(c => c.isDm || c.id.startsWith('dm:'))
-            .map(c => ({ id: c.id, name: c.name, unreadCount: c.unreadCount, hasMentions: c.hasMentions }))}
           archivedChannels={archivedChannelsList
             .filter(c => !c.isDm && !c.id.startsWith('dm:'))
             .map(c => ({ id: c.id, name: c.name, unreadCount: c.unreadCount ?? 0, hasMentions: c.hasMentions }))}
