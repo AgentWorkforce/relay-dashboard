@@ -10,7 +10,8 @@
 export { LogViewer, default as LogViewerDefault } from "../LogViewer";
 export type { LogViewerProps, LogViewerMode } from "../LogViewer";
 
-export { default as AgentLogPreview } from "../AgentLogPreview";
+export { AgentLogPreview } from "../AgentLogPreview";
+export type { AgentLogPreviewProps } from "../AgentLogPreview";
 
 export {
   sanitizeLogContent,
