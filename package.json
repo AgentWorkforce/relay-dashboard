@@ -42,7 +42,7 @@
   },
   "dependencies": {
     "@agent-relay/bridge": "^2.3.14",
-    "@agent-relay/utils": "^3.1.18",
+    "@agent-relay/utils": "^3.1.22",
     "@agent-relay/wrapper": "^2.3.14",
     "yaml": "^2.8.2"
   }
