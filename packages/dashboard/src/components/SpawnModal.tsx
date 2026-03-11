@@ -233,6 +233,7 @@ export function SpawnModal({
   const [shadowSpeakOn, setShadowSpeakOn] = useState<SpeakOnTrigger[]>(['EXPLICIT_ASK']);
   const [localError, setLocalError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const prevIsOpenRef = useRef(false);
 
   // Build effective command, always including model flag for Claude, Cursor, and Codex
   const effectiveCommand = useMemo(() => {
@@ -277,8 +278,13 @@ export function SpawnModal({
     return `${prefix}-${num}`;
   }, [selectedTemplate, existingAgents]);
 
+  // Full form reset: only runs when modal is freshly opened (isOpen transitions false -> true)
   useEffect(() => {
-    if (isOpen) {
+    const wasOpen = prevIsOpenRef.current;
+    prevIsOpenRef.current = isOpen;
+
+    // Only reset form when modal opens, not on every dependency change while open
+    if (isOpen && !wasOpen) {
       // Determine default template based on settings
       // In cloud mode, also skip templates whose provider isn't connected
       const isTemplateAvailable = (t: typeof AGENT_TEMPLATES[number]) => {
