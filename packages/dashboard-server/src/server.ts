@@ -40,6 +40,7 @@ import { registerMetricsRoutes } from './routes/metrics.js';
 import { registerChannelsIntegratedRoutes } from './routes/channels-integrated.js';
 import { registerSystemRoutes } from './routes/system.js';
 import { registerUiRoutes } from './routes/ui.js';
+import { registerModelsRoutes } from './routes/models.js';
 import {
   getBindHost,
   isAgentOnline as checkAgentOnline,
@@ -478,6 +479,7 @@ export async function startDashboard(
   });
 
   registerSettingsRoutes(app);
+  registerModelsRoutes(app);
 
   const decisions = state.decisions as Map<string, Decision>;
   registerDecisionsRoutes(app, {
