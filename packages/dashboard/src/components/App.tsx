@@ -162,7 +162,7 @@ function AppShell({
   enableReactions,
   wsEventHandlerRef,
 }: AppShellProps) {
-  const { modelOptions } = useModelOptions();
+  const { modelOptions, defaultModels: registryDefaultModels } = useModelOptions();
   const { settings, updateSettings } = useSettings();
   const {
     cloudUser,
@@ -1007,6 +1007,7 @@ function AppShell({
           return BACKEND_TO_FRONTEND_MAP[p.provider] ?? p.provider;
         })}
         modelOptions={modelOptions}
+        registryDefaultModels={registryDefaultModels}
       />
 
       <AddWorkspaceModal
@@ -1197,6 +1198,7 @@ function AppShell({
           activeWorkspaceId={effectiveActiveWorkspaceId}
           onReposChanged={refetchWorkspaceRepos}
           modelOptions={modelOptions}
+          registryDefaultModels={registryDefaultModels}
         />
       )}
 

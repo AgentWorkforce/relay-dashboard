@@ -36,6 +36,8 @@ export interface SettingsPageProps {
   modelOptions?: {
     [cli: string]: ModelOption[];
   };
+  /** Default model per CLI from cli-registry.yaml (fetched from /api/models) */
+  registryDefaultModels?: Record<string, string>;
 }
 
 interface WorkspaceSummary {
@@ -74,6 +76,7 @@ export function SettingsPage({
   onUpdateSettings,
   activeWorkspaceId,
   modelOptions,
+  registryDefaultModels,
 }: SettingsPageProps) {
   const config = useDashboardConfig();
   const { features, api, settingsSlots } = config;
@@ -407,7 +410,7 @@ export function SettingsPage({
                           description={`Default model when spawning ${label} agents`}
                         >
                           <select
-                            value={settings.agentDefaults?.defaultModels?.[id] ?? models[0]?.value ?? ''}
+                            value={settings.agentDefaults?.defaultModels?.[id] ?? registryDefaultModels?.[id] ?? models[0]?.value ?? ''}
                             onChange={(e) => updateSettings((prev) => ({
                               ...prev,
                               agentDefaults: {

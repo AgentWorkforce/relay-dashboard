@@ -18,8 +18,13 @@ function isModelOption(item: unknown): item is ModelOption {
  * Fetches model options from the server (sourced from cli-registry.yaml via codegen).
  * Returns model options keyed by lowercase CLI name (e.g., claude, codex, gemini, opencode, droid).
  */
+export interface DefaultModelsMap {
+  [cli: string]: string;
+}
+
 export function useModelOptions() {
   const [modelOptions, setModelOptions] = useState<ModelOptionsMap>({});
+  const [defaultModels, setDefaultModels] = useState<DefaultModelsMap>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -42,6 +47,10 @@ export function useModelOptions() {
         }
         setModelOptions(normalized);
       }
+
+      if (data.defaultModels && typeof data.defaultModels === 'object') {
+        setDefaultModels(data.defaultModels as DefaultModelsMap);
+      }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
       const error = err instanceof Error ? err : new Error(String(err));
@@ -58,5 +67,5 @@ export function useModelOptions() {
     return () => controller.abort();
   }, [fetchModels]);
 
-  return { modelOptions, isLoading, error, refetch: fetchModels };
+  return { modelOptions, defaultModels, isLoading, error, refetch: fetchModels };
 }

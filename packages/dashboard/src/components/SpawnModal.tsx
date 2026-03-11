@@ -60,6 +60,8 @@ export interface SpawnModalProps {
   modelOptions?: {
     [cli: string]: ModelOption[];
   };
+  /** Default model per CLI from cli-registry.yaml (fetched from /api/models) */
+  registryDefaultModels?: Record<string, string>;
 }
 
 export interface ModelOption {
@@ -159,6 +161,7 @@ export function SpawnModal({
   activeRepoId,
   connectedProviders,
   modelOptions,
+  registryDefaultModels,
 }: SpawnModalProps) {
   const { features } = useDashboardConfig();
   const hasWorkspaceFeature = features.workspaces;
@@ -171,9 +174,10 @@ export function SpawnModal({
 
   const getDefaultModelForCli = useCallback((cli: string): string => {
     return agentDefaults?.defaultModels?.[cli]
+      ?? registryDefaultModels?.[cli]
       ?? getModelsForCli(cli)[0]?.value
       ?? '';
-  }, [agentDefaults, getModelsForCli]);
+  }, [agentDefaults, registryDefaultModels, getModelsForCli]);
 
   const [selectedTemplate, setSelectedTemplate] = useState(AGENT_TEMPLATES[0]);
   const [name, setName] = useState('');
