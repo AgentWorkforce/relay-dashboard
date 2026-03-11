@@ -8,6 +8,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import type { Message, SendMessageRequest } from '../../types';
 import { api } from '../../lib/api';
+import { isDashboardVariant } from '../../lib/identity';
 
 export interface UseMessagesOptions {
   messages: Message[];
@@ -66,9 +67,37 @@ export function useMessages({
 
   // Effective sender name for the current user (used for filtering own messages).
   // Read localStorage directly as a fallback so we never display "Dashboard".
+  const storedProjectIdentity = typeof window !== 'undefined'
+    ? localStorage.getItem('relay_username')
+    : null;
   const effectiveSenderName = senderName
-    || (typeof window !== 'undefined' ? localStorage.getItem('relay_username') : null)
+    || storedProjectIdentity
     || 'You';
+
+  const viewerIdentityKeys = useMemo(() => {
+    const keys = new Set<string>();
+    const add = (value?: string | null) => {
+      const normalized = value?.trim().toLowerCase();
+      if (normalized) {
+        keys.add(normalized);
+      }
+    };
+
+    add(effectiveSenderName);
+
+    const senderKey = senderName?.trim().toLowerCase() ?? '';
+    const projectKey = storedProjectIdentity?.trim().toLowerCase() ?? '';
+    const shouldIncludeDashboardAliases = !senderKey
+      || isDashboardVariant(senderName ?? '')
+      || (projectKey.length > 0 && senderKey === projectKey);
+
+    if (shouldIncludeDashboardAliases) {
+      add('Dashboard');
+      add('human:dashboard');
+    }
+
+    return keys;
+  }, [effectiveSenderName, senderName, storedProjectIdentity]);
 
   // Optimistic messages: shown immediately before server confirms
   // These have status='sending' and a temp ID prefixed with 'optimistic-'
@@ -123,13 +152,38 @@ export function useMessages({
       return !messageIds.has(m.thread);
     });
 
+    const isChannelMessage = (message: Message) => {
+      return Boolean(message.channel) || message.to.startsWith('#');
+    };
+
+    const isBroadcastMessage = (message: Message) => {
+      return message.isBroadcast || message.to === '*';
+    };
+
+    const involvesViewerIdentity = (message: Message) => {
+      return viewerIdentityKeys.has(message.from.toLowerCase())
+        || viewerIdentityKeys.has(message.to.toLowerCase());
+    };
+
     if (currentChannel === 'general') {
-      return mainViewMessages;
+      return mainViewMessages.filter((message) => {
+        if (isChannelMessage(message)) return false;
+        if (isBroadcastMessage(message)) return true;
+        return involvesViewerIdentity(message);
+      });
     }
+
     return mainViewMessages.filter(
-      (m) => m.from === currentChannel || m.to === currentChannel
+      (message) => {
+        if (message.from !== currentChannel && message.to !== currentChannel) {
+          return false;
+        }
+        if (isChannelMessage(message)) return false;
+        if (isBroadcastMessage(message)) return true;
+        return involvesViewerIdentity(message);
+      }
     );
-  }, [allMessages, currentChannel]);
+  }, [allMessages, currentChannel, viewerIdentityKeys]);
 
   // Get messages for a specific thread
   const threadMessages = useCallback(

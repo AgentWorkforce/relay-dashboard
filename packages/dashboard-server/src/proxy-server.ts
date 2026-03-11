@@ -16,6 +16,7 @@ import { fileURLToPath } from 'url';
 import { registerMockRoutes } from './mocks/routes.js';
 import {
   fetchAgents,
+  fetchAllMessages,
   fetchChannels,
   loadRelaycastConfig,
   type RelaycastConfig,
@@ -235,8 +236,9 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       return { ...EMPTY_DASHBOARD_SNAPSHOT };
     }
 
-    const [agents, spawnedAgents, localAgentNames] = await Promise.all([
+    const [agents, messages, spawnedAgents, localAgentNames] = await Promise.all([
       fetchAgents(config),
+      fetchAllMessages(config),
       brokerProxyEnabled ? getSpawnedAgents() : Promise.resolve({ names: null, agents: null }),
       brokerProxyEnabled ? Promise.resolve(null) : Promise.resolve(getLocalAgentNames()),
     ]);
@@ -246,7 +248,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     return {
       agents: mergedAgents,
       users: [],
-      messages: [],
+      messages,
       activity: [],
       sessions: [],
       summaries: [],
