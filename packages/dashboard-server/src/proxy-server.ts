@@ -60,6 +60,7 @@ import { registerReactionRoutes } from './routes/reactions.js';
 import { registerThreadReplyRoutes } from './routes/thread-replies.js';
 import { registerRelayConfigRoutes } from './routes/relay-config.js';
 import { registerRelaycastHistoryRoutes } from './routes/history-relaycast.js';
+import { registerModelsRoutes } from './routes/models.js';
 
 export type { DashboardServerOptions, DashboardServer } from './lib/types.js';
 
@@ -424,6 +425,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       resolveWorkspaceId,
     });
     registerRelaycastHistoryRoutes(app, ctx);
+    registerModelsRoutes(app);
     registerBrokerProxyRoutes(app, ctx);
   }
 
