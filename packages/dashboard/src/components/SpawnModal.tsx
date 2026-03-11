@@ -9,53 +9,10 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useDashboardConfig } from '../adapters';
 
 /**
- * Model options inlined from @agent-relay/config (cli-registry.yaml).
- * Inlined to avoid importing Node.js dependencies into the browser bundle.
+ * Model options are fetched from the server (/api/models) which sources them
+ * from @agent-relay/config (generated from cli-registry.yaml via codegen).
+ * The modelOptions prop is the primary source of model data.
  */
-const RegistryModelOptions = {
-  Claude: [
-    { value: 'sonnet', label: 'Sonnet' },
-    { value: 'opus', label: 'Opus' },
-    { value: 'haiku', label: 'Haiku' },
-  ],
-  Codex: [
-    { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex — Frontier agentic coding model' },
-    { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex — Latest frontier agentic coding model' },
-    { value: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark — Ultra-fast coding model' },
-    { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max — Deep and fast reasoning' },
-    { value: 'gpt-5.2', label: 'GPT-5.2 — Frontier model, knowledge & reasoning' },
-    { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini — Cheaper, faster' },
-  ],
-  Gemini: [
-    { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
-    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-    { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-  ],
-  Cursor: [
-    { value: 'opus-4.5-thinking', label: 'Claude 4.5 Opus (Thinking)' },
-    { value: 'opus-4.5', label: 'Claude 4.5 Opus' },
-    { value: 'sonnet-4.5', label: 'Claude 4.5 Sonnet' },
-    { value: 'sonnet-4.5-thinking', label: 'Claude 4.5 Sonnet (Thinking)' },
-    { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
-    { value: 'gpt-5.2-codex-high', label: 'GPT-5.2 Codex High' },
-    { value: 'gpt-5.2-codex-low', label: 'GPT-5.2 Codex Low' },
-    { value: 'gpt-5.2-codex-xhigh', label: 'GPT-5.2 Codex Extra High' },
-    { value: 'gpt-5.2-codex-fast', label: 'GPT-5.2 Codex Fast' },
-    { value: 'gpt-5.2-codex-high-fast', label: 'GPT-5.2 Codex High Fast' },
-    { value: 'gpt-5.2-codex-low-fast', label: 'GPT-5.2 Codex Low Fast' },
-    { value: 'gpt-5.2-codex-xhigh-fast', label: 'GPT-5.2 Codex Extra High Fast' },
-    { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
-    { value: 'gpt-5.1-codex-max-high', label: 'GPT-5.1 Codex Max High' },
-    { value: 'gpt-5.2', label: 'GPT-5.2' },
-    { value: 'gpt-5.2-high', label: 'GPT-5.2 High' },
-    { value: 'gpt-5.1-high', label: 'GPT-5.1 High' },
-    { value: 'gemini-3-pro', label: 'Gemini 3 Pro' },
-    { value: 'gemini-3-flash', label: 'Gemini 3 Flash' },
-    { value: 'composer-1', label: 'Composer 1' },
-    { value: 'grok', label: 'Grok' },
-  ],
-};
 import { getAgentColor, getAgentInitials } from '../lib/colors';
 
 export type SpeakOnTrigger = 'SESSION_END' | 'CODE_WRITTEN' | 'REVIEW_REQUEST' | 'EXPLICIT_ASK' | 'ALL_MESSAGES';
@@ -91,12 +48,7 @@ export interface SpawnModalProps {
   /** Agent defaults from settings */
   agentDefaults?: {
     defaultCliType: string | null;
-    defaultModels: {
-      claude: string;
-      cursor: string;
-      codex: string;
-      gemini: string;
-    };
+    defaultModels: Record<string, string>;
   };
   /** Available workspace repos (cloud mode) */
   repos?: Array<{ id: string; githubFullName: string }>;
@@ -104,13 +56,12 @@ export interface SpawnModalProps {
   activeRepoId?: string;
   /** Connected provider IDs (cloud mode) - used to disable unconnected providers */
   connectedProviders?: string[];
-  /** Model options per agent type — provided by the host app */
+  /** Model options per agent type — provided by the host app (fetched from /api/models) */
   modelOptions?: {
-    claude?: ModelOption[];
-    cursor?: ModelOption[];
-    codex?: ModelOption[];
-    gemini?: ModelOption[];
+    [cli: string]: ModelOption[];
   };
+  /** Default model per CLI from cli-registry.yaml (fetched from /api/models) */
+  registryDefaultModels?: Record<string, string>;
 }
 
 export interface ModelOption {
@@ -120,15 +71,19 @@ export interface ModelOption {
 
 const EMPTY_MODEL_OPTIONS: ModelOption[] = [];
 
-/** Built-in model options sourced from @agent-relay/config (cli-registry.yaml) */
-export const DEFAULT_MODEL_OPTIONS: Record<string, ModelOption[]> = {
-  claude: RegistryModelOptions.Claude,
-  cursor: RegistryModelOptions.Cursor,
-  codex: RegistryModelOptions.Codex,
-  gemini: RegistryModelOptions.Gemini,
-};
 
-const AGENT_TEMPLATES = [
+interface AgentTemplate {
+  id: string;
+  name: string;
+  command: string;
+  description: string;
+  icon: string;
+  providerId: string | null;
+  supportsModelSelection?: boolean;
+  comingSoon?: boolean;
+}
+
+const AGENT_TEMPLATES: AgentTemplate[] = [
   {
     id: 'claude',
     name: 'Claude',
@@ -163,7 +118,7 @@ const AGENT_TEMPLATES = [
     description: 'OpenCode AI agent',
     icon: '🔷',
     providerId: 'opencode',
-    comingSoon: true, // Not yet fully tested
+    supportsModelSelection: true,
   },
   {
     id: 'droid',
@@ -172,7 +127,7 @@ const AGENT_TEMPLATES = [
     description: 'Factory Droid agent',
     icon: '🤖',
     providerId: 'droid',
-    comingSoon: true, // Not yet fully tested
+    supportsModelSelection: true,
   },
   {
     id: 'cursor',
@@ -206,23 +161,28 @@ export function SpawnModal({
   activeRepoId,
   connectedProviders,
   modelOptions,
+  registryDefaultModels,
 }: SpawnModalProps) {
   const { features } = useDashboardConfig();
   const hasWorkspaceFeature = features.workspaces;
   const canUseWorkspaceRepoSelection = hasWorkspaceFeature && !!repos?.length;
 
-  const claudeModels = modelOptions?.claude ?? DEFAULT_MODEL_OPTIONS.claude ?? EMPTY_MODEL_OPTIONS;
-  const cursorModels = modelOptions?.cursor ?? DEFAULT_MODEL_OPTIONS.cursor ?? EMPTY_MODEL_OPTIONS;
-  const codexModels = modelOptions?.codex ?? DEFAULT_MODEL_OPTIONS.codex ?? EMPTY_MODEL_OPTIONS;
-  const geminiModels = modelOptions?.gemini ?? DEFAULT_MODEL_OPTIONS.gemini ?? EMPTY_MODEL_OPTIONS;
+  /** Resolve model options for a CLI from the modelOptions prop */
+  const getModelsForCli = useCallback((cli: string): ModelOption[] => {
+    return modelOptions?.[cli] ?? EMPTY_MODEL_OPTIONS;
+  }, [modelOptions]);
+
+  const getDefaultModelForCli = useCallback((cli: string): string => {
+    return agentDefaults?.defaultModels?.[cli]
+      ?? registryDefaultModels?.[cli]
+      ?? getModelsForCli(cli)[0]?.value
+      ?? '';
+  }, [agentDefaults, registryDefaultModels, getModelsForCli]);
 
   const [selectedTemplate, setSelectedTemplate] = useState(AGENT_TEMPLATES[0]);
   const [name, setName] = useState('');
   const [customCommand, setCustomCommand] = useState('');
-  const [selectedModel, setSelectedModel] = useState(agentDefaults?.defaultModels?.claude ?? claudeModels[0]?.value ?? '');
-  const [selectedCursorModel, setSelectedCursorModel] = useState(agentDefaults?.defaultModels?.cursor ?? cursorModels[0]?.value ?? '');
-  const [selectedCodexModel, setSelectedCodexModel] = useState(agentDefaults?.defaultModels?.codex ?? codexModels[0]?.value ?? '');
-  const [selectedGeminiModel, setSelectedGeminiModel] = useState(agentDefaults?.defaultModels?.gemini ?? geminiModels[0]?.value ?? '');
+  const [selectedModels, setSelectedModels] = useState<Record<string, string>>({});
   const [cwd, setCwd] = useState('');
   const [selectedRepoId, setSelectedRepoId] = useState<string | undefined>(activeRepoId);
   const [team, setTeam] = useState('');
@@ -233,30 +193,31 @@ export function SpawnModal({
   const [shadowSpeakOn, setShadowSpeakOn] = useState<SpeakOnTrigger[]>(['EXPLICIT_ASK']);
   const [localError, setLocalError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const prevIsOpenRef = useRef(false);
 
-  // Build effective command, always including model flag for Claude, Cursor, and Codex
+  /** Get selected model for the current template */
+  const getSelectedModel = useCallback((cli: string): string => {
+    return selectedModels[cli] ?? getDefaultModelForCli(cli);
+  }, [selectedModels, getDefaultModelForCli]);
+
+  const setModelForCli = useCallback((cli: string, model: string) => {
+    setSelectedModels(prev => ({ ...prev, [cli]: model }));
+  }, []);
+
+  // Build effective command, always including model flag for CLIs with model selection
   const effectiveCommand = useMemo(() => {
     if (selectedTemplate.id === 'custom') {
       return customCommand;
     }
-    // For Claude, always append model flag
-    if (selectedTemplate.id === 'claude') {
-      return `${selectedTemplate.command} --model ${selectedModel}`;
-    }
-    // For Cursor, always append model flag
-    if (selectedTemplate.id === 'cursor') {
-      return `${selectedTemplate.command} --model ${selectedCursorModel}`;
-    }
-    // For Codex, always append model flag
-    if (selectedTemplate.id === 'codex') {
-      return `${selectedTemplate.command} --model ${selectedCodexModel}`;
-    }
-    // For Gemini, always append model flag
-    if (selectedTemplate.id === 'gemini') {
-      return `${selectedTemplate.command} --model ${selectedGeminiModel}`;
+    const template = AGENT_TEMPLATES.find(t => t.id === selectedTemplate.id);
+    if (template?.supportsModelSelection) {
+      const model = getSelectedModel(selectedTemplate.id);
+      if (model) {
+        return `${selectedTemplate.command} --model ${model}`;
+      }
     }
     return selectedTemplate.command;
-  }, [selectedTemplate, customCommand, selectedModel, selectedCursorModel, selectedCodexModel, selectedGeminiModel]);
+  }, [selectedTemplate, customCommand, getSelectedModel]);
 
   const shadowMode = useMemo(() => deriveShadowMode(effectiveCommand), [effectiveCommand]);
 
@@ -277,8 +238,14 @@ export function SpawnModal({
     return `${prefix}-${num}`;
   }, [selectedTemplate, existingAgents]);
 
+  // Full form reset: only runs when modal is freshly opened (isOpen transitions false -> true)
+  // This prevents form state from being reset when modelOptions loads asynchronously while the modal is open
   useEffect(() => {
-    if (isOpen) {
+    const wasOpen = prevIsOpenRef.current;
+    prevIsOpenRef.current = isOpen;
+
+    // Only reset form when modal opens, not on every dependency change while open
+    if (isOpen && !wasOpen) {
       // Determine default template based on settings
       // In cloud mode, also skip templates whose provider isn't connected
       const isTemplateAvailable = (t: typeof AGENT_TEMPLATES[number]) => {
@@ -296,10 +263,14 @@ export function SpawnModal({
       setSelectedTemplate(defaultTemplate);
       setName('');
       setCustomCommand('');
-      setSelectedModel(agentDefaults?.defaultModels?.claude ?? claudeModels[0]?.value ?? '');
-      setSelectedCursorModel(agentDefaults?.defaultModels?.cursor ?? cursorModels[0]?.value ?? '');
-      setSelectedCodexModel(agentDefaults?.defaultModels?.codex ?? codexModels[0]?.value ?? '');
-      setSelectedGeminiModel(agentDefaults?.defaultModels?.gemini ?? geminiModels[0]?.value ?? '');
+      // Reset all model selections to defaults
+      const initialModels: Record<string, string> = {};
+      for (const t of AGENT_TEMPLATES) {
+        if (t.supportsModelSelection) {
+          initialModels[t.id] = getDefaultModelForCli(t.id);
+        }
+      }
+      setSelectedModels(initialModels);
       setCwd('');
       setSelectedRepoId(activeRepoId);
       setTeam('');
@@ -311,7 +282,7 @@ export function SpawnModal({
       setLocalError(null);
       setTimeout(() => nameInputRef.current?.focus(), 100);
     }
-  }, [isOpen, agentDefaults, activeRepoId, repos, connectedProviders, hasWorkspaceFeature, claudeModels, cursorModels, codexModels, geminiModels]);
+  }, [isOpen, agentDefaults, activeRepoId, repos, connectedProviders, hasWorkspaceFeature, getDefaultModelForCli]);
 
   const validateName = useCallback(
     (value: string): string | null => {
@@ -489,86 +460,20 @@ export function SpawnModal({
             </div>
           </div>
 
-          {/* Model Selection (Claude only) */}
-          {selectedTemplate.id === 'claude' && (
+          {/* Model Selection — shown for any template with supportsModelSelection and available models */}
+          {selectedTemplate.supportsModelSelection && getModelsForCli(selectedTemplate.id).length > 0 && (
             <div className="mb-5">
-              <label className="block text-sm font-semibold text-text-primary mb-2" htmlFor="claude-model">
+              <label className="block text-sm font-semibold text-text-primary mb-2" htmlFor={`${selectedTemplate.id}-model`}>
                 Model
               </label>
               <select
-                id="claude-model"
+                id={`${selectedTemplate.id}-model`}
                 className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
+                value={getSelectedModel(selectedTemplate.id)}
+                onChange={(e) => setModelForCli(selectedTemplate.id, e.target.value)}
                 disabled={isSpawning}
               >
-                {claudeModels.map((model) => (
-                  <option key={model.value} value={model.value}>
-                    {model.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Model Selection (Cursor only) */}
-          {selectedTemplate.id === 'cursor' && (
-            <div className="mb-5">
-              <label className="block text-sm font-semibold text-text-primary mb-2" htmlFor="cursor-model">
-                Model
-              </label>
-              <select
-                id="cursor-model"
-                className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
-                value={selectedCursorModel}
-                onChange={(e) => setSelectedCursorModel(e.target.value)}
-                disabled={isSpawning}
-              >
-                {cursorModels.map((model) => (
-                  <option key={model.value} value={model.value}>
-                    {model.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Model Selection (Codex only) */}
-          {selectedTemplate.id === 'codex' && (
-            <div className="mb-5">
-              <label className="block text-sm font-semibold text-text-primary mb-2" htmlFor="codex-model">
-                Model
-              </label>
-              <select
-                id="codex-model"
-                className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
-                value={selectedCodexModel}
-                onChange={(e) => setSelectedCodexModel(e.target.value)}
-                disabled={isSpawning}
-              >
-                {codexModels.map((model) => (
-                  <option key={model.value} value={model.value}>
-                    {model.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Model Selection (Gemini only) */}
-          {selectedTemplate.id === 'gemini' && (
-            <div className="mb-5">
-              <label className="block text-sm font-semibold text-text-primary mb-2" htmlFor="gemini-model">
-                Model
-              </label>
-              <select
-                id="gemini-model"
-                className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary transition-colors duration-150 focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
-                value={selectedGeminiModel}
-                onChange={(e) => setSelectedGeminiModel(e.target.value)}
-                disabled={isSpawning}
-              >
-                {geminiModels.map((model) => (
+                {getModelsForCli(selectedTemplate.id).map((model) => (
                   <option key={model.value} value={model.value}>
                     {model.label}
                   </option>

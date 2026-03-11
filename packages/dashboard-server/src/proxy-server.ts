@@ -16,6 +16,7 @@ import { fileURLToPath } from 'url';
 import { registerMockRoutes } from './mocks/routes.js';
 import {
   fetchAgents,
+  fetchAllMessages,
   fetchChannels,
   loadRelaycastConfig,
   type RelaycastConfig,
@@ -59,6 +60,7 @@ import { registerReactionRoutes } from './routes/reactions.js';
 import { registerThreadReplyRoutes } from './routes/thread-replies.js';
 import { registerRelayConfigRoutes } from './routes/relay-config.js';
 import { registerRelaycastHistoryRoutes } from './routes/history-relaycast.js';
+import { registerModelsRoutes } from './routes/models.js';
 
 export type { DashboardServerOptions, DashboardServer } from './lib/types.js';
 
@@ -235,8 +237,9 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       return { ...EMPTY_DASHBOARD_SNAPSHOT };
     }
 
-    const [agents, spawnedAgents, localAgentNames] = await Promise.all([
+    const [agents, messages, spawnedAgents, localAgentNames] = await Promise.all([
       fetchAgents(config),
+      fetchAllMessages(config),
       brokerProxyEnabled ? getSpawnedAgents() : Promise.resolve({ names: null, agents: null }),
       brokerProxyEnabled ? Promise.resolve(null) : Promise.resolve(getLocalAgentNames()),
     ]);
@@ -246,7 +249,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     return {
       agents: mergedAgents,
       users: [],
-      messages: [],
+      messages,
       activity: [],
       sessions: [],
       summaries: [],
@@ -422,6 +425,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       resolveWorkspaceId,
     });
     registerRelaycastHistoryRoutes(app, ctx);
+    registerModelsRoutes(app);
     registerBrokerProxyRoutes(app, ctx);
   }
 

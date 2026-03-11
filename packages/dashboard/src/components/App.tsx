@@ -15,6 +15,7 @@ import { MessageList } from './MessageList';
 import { ThreadPanel } from './ThreadPanel';
 import { CommandPalette, PRIORITY_CONFIG } from './CommandPalette';
 import { SpawnModal } from './SpawnModal';
+import { useModelOptions } from './hooks/useModelOptions';
 import { NewConversationModal } from './NewConversationModal';
 import { SettingsPage } from './settings';
 import { ConversationHistory } from './ConversationHistory';
@@ -161,6 +162,7 @@ function AppShell({
   enableReactions,
   wsEventHandlerRef,
 }: AppShellProps) {
+  const { modelOptions, defaultModels: registryDefaultModels } = useModelOptions();
   const { settings, updateSettings } = useSettings();
   const {
     cloudUser,
@@ -1004,6 +1006,8 @@ function AppShell({
           const BACKEND_TO_FRONTEND_MAP: Record<string, string> = { openai: 'codex' };
           return BACKEND_TO_FRONTEND_MAP[p.provider] ?? p.provider;
         })}
+        modelOptions={modelOptions}
+        registryDefaultModels={registryDefaultModels}
       />
 
       <AddWorkspaceModal
@@ -1193,6 +1197,8 @@ function AppShell({
           onUpdateSettings={updateSettings}
           activeWorkspaceId={effectiveActiveWorkspaceId}
           onReposChanged={refetchWorkspaceRepos}
+          modelOptions={modelOptions}
+          registryDefaultModels={registryDefaultModels}
         />
       )}
 

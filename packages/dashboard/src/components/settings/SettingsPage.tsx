@@ -13,7 +13,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDashboardConfig, type DashboardFeatures } from '../../adapters';
 import type { Settings, CliType } from './types';
-import { type ModelOption, DEFAULT_MODEL_OPTIONS } from '../SpawnModal';
+import type { ModelOption } from '../SpawnModal';
 
 type SettingsTab = 'dashboard' | 'workspace' | 'team' | 'billing';
 
@@ -32,13 +32,12 @@ export interface SettingsPageProps {
   activeWorkspaceId?: string | null;
   /** Callback when repos are added/removed in workspace settings */
   onReposChanged?: () => void;
-  /** Model options per agent type — provided by the host app */
+  /** Model options per agent type — provided by the host app (fetched from /api/models) */
   modelOptions?: {
-    claude?: ModelOption[];
-    cursor?: ModelOption[];
-    codex?: ModelOption[];
-    gemini?: ModelOption[];
+    [cli: string]: ModelOption[];
   };
+  /** Default model per CLI from cli-registry.yaml (fetched from /api/models) */
+  registryDefaultModels?: Record<string, string>;
 }
 
 interface WorkspaceSummary {
@@ -60,6 +59,16 @@ function resolveInitialTab(initialTab: SettingsTab, features: DashboardFeatures)
 
 const EMPTY_MODEL_OPTIONS: ModelOption[] = [];
 
+/** All CLIs that support model selection */
+const MODEL_CLIS = [
+  { id: 'claude', label: 'Claude' },
+  { id: 'cursor', label: 'Cursor' },
+  { id: 'codex', label: 'Codex' },
+  { id: 'gemini', label: 'Gemini' },
+  { id: 'opencode', label: 'OpenCode' },
+  { id: 'droid', label: 'Droid' },
+] as const;
+
 export function SettingsPage({
   initialTab = 'dashboard',
   onClose,
@@ -67,14 +76,14 @@ export function SettingsPage({
   onUpdateSettings,
   activeWorkspaceId,
   modelOptions,
+  registryDefaultModels,
 }: SettingsPageProps) {
   const config = useDashboardConfig();
   const { features, api, settingsSlots } = config;
 
-  const claudeModels = modelOptions?.claude ?? DEFAULT_MODEL_OPTIONS.claude ?? EMPTY_MODEL_OPTIONS;
-  const cursorModels = modelOptions?.cursor ?? DEFAULT_MODEL_OPTIONS.cursor ?? EMPTY_MODEL_OPTIONS;
-  const codexModels = modelOptions?.codex ?? DEFAULT_MODEL_OPTIONS.codex ?? EMPTY_MODEL_OPTIONS;
-  const geminiModels = modelOptions?.gemini ?? DEFAULT_MODEL_OPTIONS.gemini ?? EMPTY_MODEL_OPTIONS;
+  /** Resolve models for any CLI */
+  const getModelsForCli = (cli: string): ModelOption[] =>
+    modelOptions?.[cli] ?? EMPTY_MODEL_OPTIONS;
 
   const [activeTab, setActiveTab] = useState<SettingsTab>(() =>
     resolveInitialTab(initialTab, features)
@@ -384,106 +393,43 @@ export function SettingsPage({
                         <option value="claude">Claude</option>
                         <option value="codex">Codex</option>
                         <option value="gemini">Gemini</option>
+                        <option value="opencode">OpenCode</option>
+                        <option value="droid">Droid</option>
                         <option value="cursor">Cursor</option>
                         <option value="custom">Custom</option>
                       </select>
                     </SettingRow>
 
-                    <SettingRow
-                      label="Default Claude Model"
-                      description="Default model when spawning Claude agents"
-                    >
-                      <select
-                        value={settings.agentDefaults?.defaultModels?.claude ?? claudeModels[0]?.value ?? ''}
-                        onChange={(e) => updateSettings((prev) => ({
-                          ...prev,
-                          agentDefaults: {
-                            ...prev.agentDefaults,
-                            defaultModels: {
-                              ...prev.agentDefaults?.defaultModels,
-                              claude: e.target.value,
-                            },
-                          },
-                        }))}
-                        className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
-                      >
-                        {claudeModels.map((model) => (
-                          <option key={model.value} value={model.value}>{model.label}</option>
-                        ))}
-                      </select>
-                    </SettingRow>
-
-                    <SettingRow
-                      label="Default Cursor Model"
-                      description="Default model when spawning Cursor agents"
-                    >
-                      <select
-                        value={settings.agentDefaults?.defaultModels?.cursor ?? cursorModels[0]?.value ?? ''}
-                        onChange={(e) => updateSettings((prev) => ({
-                          ...prev,
-                          agentDefaults: {
-                            ...prev.agentDefaults,
-                            defaultModels: {
-                              ...prev.agentDefaults?.defaultModels,
-                              cursor: e.target.value,
-                            },
-                          },
-                        }))}
-                        className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
-                      >
-                        {cursorModels.map((model) => (
-                          <option key={model.value} value={model.value}>{model.label}</option>
-                        ))}
-                      </select>
-                    </SettingRow>
-
-                    <SettingRow
-                      label="Default Codex Model"
-                      description="Default model when spawning Codex agents"
-                    >
-                      <select
-                        value={settings.agentDefaults?.defaultModels?.codex ?? codexModels[0]?.value ?? ''}
-                        onChange={(e) => updateSettings((prev) => ({
-                          ...prev,
-                          agentDefaults: {
-                            ...prev.agentDefaults,
-                            defaultModels: {
-                              ...prev.agentDefaults?.defaultModels,
-                              codex: e.target.value,
-                            },
-                          },
-                        }))}
-                        className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
-                      >
-                        {codexModels.map((model) => (
-                          <option key={model.value} value={model.value}>{model.label}</option>
-                        ))}
-                      </select>
-                    </SettingRow>
-
-                    <SettingRow
-                      label="Default Gemini Model"
-                      description="Default model when spawning Gemini agents"
-                    >
-                      <select
-                        value={settings.agentDefaults?.defaultModels?.gemini ?? geminiModels[0]?.value ?? ''}
-                        onChange={(e) => updateSettings((prev) => ({
-                          ...prev,
-                          agentDefaults: {
-                            ...prev.agentDefaults,
-                            defaultModels: {
-                              ...prev.agentDefaults?.defaultModels,
-                              gemini: e.target.value,
-                            },
-                          },
-                        }))}
-                        className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
-                      >
-                        {geminiModels.map((model) => (
-                          <option key={model.value} value={model.value}>{model.label}</option>
-                        ))}
-                      </select>
-                    </SettingRow>
+                    {MODEL_CLIS.map(({ id, label }) => {
+                      const models = getModelsForCli(id);
+                      if (models.length === 0) return null;
+                      return (
+                        <SettingRow
+                          key={id}
+                          label={`Default ${label} Model`}
+                          description={`Default model when spawning ${label} agents`}
+                        >
+                          <select
+                            value={settings.agentDefaults?.defaultModels?.[id] ?? registryDefaultModels?.[id] ?? models[0]?.value ?? ''}
+                            onChange={(e) => updateSettings((prev) => ({
+                              ...prev,
+                              agentDefaults: {
+                                ...prev.agentDefaults,
+                                defaultModels: {
+                                  ...prev.agentDefaults?.defaultModels,
+                                  [id]: e.target.value,
+                                },
+                              },
+                            }))}
+                            className="px-4 py-2 bg-bg-tertiary border border-border-subtle rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
+                          >
+                            {models.map((model) => (
+                              <option key={model.value} value={model.value}>{model.label}</option>
+                            ))}
+                          </select>
+                        </SettingRow>
+                      );
+                    })}
                   </SettingsSection>
                 </div>
               )}

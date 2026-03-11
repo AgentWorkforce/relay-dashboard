@@ -12,12 +12,7 @@ export interface AgentDefaults {
   /** Default CLI type when opening spawn modal (null = show all templates) */
   defaultCliType: CliType | null;
   /** Default models for each CLI type that supports model selection */
-  defaultModels: {
-    claude: string;
-    cursor: string;
-    codex: string;
-    gemini: string;
-  };
+  defaultModels: Record<string, string>;
 }
 
 export interface Settings {
@@ -71,9 +66,11 @@ export const defaultSettings: Settings = {
     defaultCliType: null,
     defaultModels: {
       claude: 'sonnet',
-      cursor: 'opus-4.5-thinking',
-      codex: 'gpt-5.2-codex',
-      gemini: 'gemini-2.5-pro',
+      cursor: 'opus-4.6-thinking',
+      codex: 'gpt-5.4',
+      gemini: 'gemini-3.1-pro-preview',
+      opencode: 'openai/gpt-5.2',
+      droid: 'opus-4.6-fast',
     },
   },
 };
