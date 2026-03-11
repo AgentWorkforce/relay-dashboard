@@ -49,7 +49,14 @@ export function useModelOptions() {
       }
 
       if (data.defaultModels && typeof data.defaultModels === 'object') {
-        setDefaultModels(data.defaultModels as DefaultModelsMap);
+        // Normalize to lowercase to match modelOptions keys
+        const normalizedDefaults: DefaultModelsMap = {};
+        for (const [key, value] of Object.entries(data.defaultModels)) {
+          if (typeof value === 'string') {
+            normalizedDefaults[key.toLowerCase()] = value;
+          }
+        }
+        setDefaultModels(normalizedDefaults);
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
