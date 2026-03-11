@@ -67,7 +67,7 @@ export const defaultSettings: Settings = {
     defaultModels: {
       claude: 'sonnet',
       cursor: 'opus-4.6-thinking',
-      codex: 'gpt-5.2-codex',
+      codex: 'gpt-5.4',
       gemini: 'gemini-3.1-pro-preview',
       opencode: 'openai/gpt-5.2',
       droid: 'opus-4.6-fast',

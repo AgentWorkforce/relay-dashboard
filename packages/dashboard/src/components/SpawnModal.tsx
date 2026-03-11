@@ -11,8 +11,7 @@ import { useDashboardConfig } from '../adapters';
 /**
  * Model options are fetched from the server (/api/models) which sources them
  * from @agent-relay/config (generated from cli-registry.yaml via codegen).
- * The modelOptions prop is the primary source; DEFAULT_MODEL_OPTIONS below
- * is an empty fallback used only when no prop is provided and models haven't loaded yet.
+ * The modelOptions prop is the primary source of model data.
  */
 import { getAgentColor, getAgentInitials } from '../lib/colors';
 
@@ -70,8 +69,6 @@ export interface ModelOption {
 
 const EMPTY_MODEL_OPTIONS: ModelOption[] = [];
 
-/** Empty fallback — real model options come from /api/models via the modelOptions prop */
-export const DEFAULT_MODEL_OPTIONS: Record<string, ModelOption[]> = {};
 
 interface AgentTemplate {
   id: string;
@@ -167,13 +164,13 @@ export function SpawnModal({
   const hasWorkspaceFeature = features.workspaces;
   const canUseWorkspaceRepoSelection = hasWorkspaceFeature && !!repos?.length;
 
-  /** Resolve model options for a CLI, preferring prop over fallback */
+  /** Resolve model options for a CLI from the modelOptions prop */
   const getModelsForCli = useCallback((cli: string): ModelOption[] => {
-    return modelOptions?.[cli] ?? DEFAULT_MODEL_OPTIONS[cli] ?? EMPTY_MODEL_OPTIONS;
+    return modelOptions?.[cli] ?? EMPTY_MODEL_OPTIONS;
   }, [modelOptions]);
 
   const getDefaultModelForCli = useCallback((cli: string): string => {
-    return agentDefaults?.defaultModels?.[cli as keyof typeof agentDefaults.defaultModels]
+    return agentDefaults?.defaultModels?.[cli]
       ?? getModelsForCli(cli)[0]?.value
       ?? '';
   }, [agentDefaults, getModelsForCli]);

@@ -13,7 +13,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDashboardConfig, type DashboardFeatures } from '../../adapters';
 import type { Settings, CliType } from './types';
-import { type ModelOption, DEFAULT_MODEL_OPTIONS } from '../SpawnModal';
+import type { ModelOption } from '../SpawnModal';
 
 type SettingsTab = 'dashboard' | 'workspace' | 'team' | 'billing';
 
@@ -57,6 +57,16 @@ function resolveInitialTab(initialTab: SettingsTab, features: DashboardFeatures)
 
 const EMPTY_MODEL_OPTIONS: ModelOption[] = [];
 
+/** All CLIs that support model selection */
+const MODEL_CLIS = [
+  { id: 'claude', label: 'Claude' },
+  { id: 'cursor', label: 'Cursor' },
+  { id: 'codex', label: 'Codex' },
+  { id: 'gemini', label: 'Gemini' },
+  { id: 'opencode', label: 'OpenCode' },
+  { id: 'droid', label: 'Droid' },
+] as const;
+
 export function SettingsPage({
   initialTab = 'dashboard',
   onClose,
@@ -70,17 +80,7 @@ export function SettingsPage({
 
   /** Resolve models for any CLI */
   const getModelsForCli = (cli: string): ModelOption[] =>
-    modelOptions?.[cli] ?? DEFAULT_MODEL_OPTIONS[cli] ?? EMPTY_MODEL_OPTIONS;
-
-  /** All CLIs that support model selection */
-  const MODEL_CLIS = [
-    { id: 'claude', label: 'Claude' },
-    { id: 'cursor', label: 'Cursor' },
-    { id: 'codex', label: 'Codex' },
-    { id: 'gemini', label: 'Gemini' },
-    { id: 'opencode', label: 'OpenCode' },
-    { id: 'droid', label: 'Droid' },
-  ];
+    modelOptions?.[cli] ?? EMPTY_MODEL_OPTIONS;
 
   const [activeTab, setActiveTab] = useState<SettingsTab>(() =>
     resolveInitialTab(initialTab, features)
