@@ -30,6 +30,7 @@ interface RelayAdapterLike {
     cli: string;
     task?: string;
     team?: string;
+    model?: string;
     cwd?: string;
     interactive?: boolean;
     shadowMode?: string;
@@ -171,6 +172,7 @@ export function registerSpawnRoutes(app: Application, deps: SpawnRouteDeps): voi
       cli = 'claude',
       task = '',
       team,
+      model,
       spawnerName,
       cwd,
       interactive,
@@ -202,6 +204,7 @@ export function registerSpawnRoutes(app: Application, deps: SpawnRouteDeps): voi
         cli,
         task,
         team: team || undefined,
+        model: model || undefined,
         cwd: effectiveCwd || undefined,
         interactive,
         shadowMode,
