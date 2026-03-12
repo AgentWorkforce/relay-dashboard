@@ -10,6 +10,8 @@ interface RelayConfigResponse {
   agentToken?: string;
   agentName?: string | null;
   channels?: string[];
+  /** Workspace API key for WebSocket auth (never rotated by agent operations) */
+  wsToken?: string;
 }
 
 export interface RelayConfigProviderProps {
@@ -136,6 +138,9 @@ export function RelayConfigProvider({ children }: RelayConfigProviderProps) {
         baseUrl: config!.baseUrl!,
         apiKey: config!.apiKey!,
         agentToken: config!.agentToken!,
+        // Use workspace key for WebSocket auth — it is never rotated by
+        // agent registerOrRotate calls, so the connection stays stable.
+        wsToken: config!.wsToken,
       };
     }
 
@@ -143,6 +148,7 @@ export function RelayConfigProvider({ children }: RelayConfigProviderProps) {
       baseUrl: typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1',
       apiKey: '__relay_disabled__',
       agentToken: '__relay_disabled__',
+      wsToken: undefined,
     };
   }, [configured, config]);
 
@@ -162,6 +168,7 @@ export function RelayConfigProvider({ children }: RelayConfigProviderProps) {
         baseUrl={providerConfig.baseUrl}
         apiKey={providerConfig.apiKey}
         agentToken={providerConfig.agentToken}
+        wsToken={providerConfig.wsToken}
         channels={channels}
       >
         {configured && <TokenRefreshMonitor onTokenRefresh={handleTokenRefresh} />}

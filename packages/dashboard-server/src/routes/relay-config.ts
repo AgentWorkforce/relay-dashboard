@@ -128,6 +128,9 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
       agentToken,
       agentName,
       channels: defaultChannels,
+      // Workspace key for WebSocket auth — never rotated by agent operations,
+      // so the WS connection survives registerOrRotate calls from other processes.
+      wsToken: config.apiKey,
     });
   });
 }
