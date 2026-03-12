@@ -69,6 +69,14 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
       }
     }
 
+    // When refresh=true, clear cached agent token so we re-register and get
+    // a fresh token. This handles cases where the token was rotated externally
+    // (e.g. by another process calling registerOrRotate for the same agent).
+    const forceRefresh = req.query.refresh === 'true';
+    if (forceRefresh) {
+      ctx.clearCachedAgentToken();
+    }
+
     const config = ctx.resolveRelaycastConfig();
     if (!config) {
       res.status(503).json({

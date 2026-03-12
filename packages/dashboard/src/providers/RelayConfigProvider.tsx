@@ -1,7 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { RelayProvider } from '@relaycast/react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { RelayProvider, useWebSocket } from '@relaycast/react';
 
 interface RelayConfigResponse {
   success: boolean;
@@ -35,6 +35,74 @@ export function useRelayConfigStatus(): RelayConfigStatus {
 /** Default channels the dashboard agent should subscribe to via WebSocket */
 const DEFAULT_CHANNELS = ['general'];
 
+/** How long the WS must stay in reconnecting state before we try a token refresh */
+const RECONNECT_STALE_MS = 10_000;
+
+async function fetchRelayConfig(refresh = false): Promise<RelayConfigResponse | null> {
+  const url = refresh ? '/api/relay-config?refresh=true' : '/api/relay-config';
+  const response = await fetch(url, { credentials: 'include' });
+  if (!response.ok) return null;
+  const payload = await response.json() as RelayConfigResponse;
+  if (!payload?.success || !payload.baseUrl || !payload.apiKey || !payload.agentToken) return null;
+  return payload;
+}
+
+/**
+ * Child component that monitors WebSocket connection status.
+ * When the connection stays in 'reconnecting' state for too long, it requests
+ * a fresh token from the server and triggers a config update.
+ */
+function TokenRefreshMonitor({ onTokenRefresh }: { onTokenRefresh: (config: RelayConfigResponse) => void }) {
+  const { status } = useWebSocket();
+  const reconnectingSinceRef = useRef<number | null>(null);
+  const refreshInFlightRef = useRef(false);
+
+  useEffect(() => {
+    if (status === 'reconnecting') {
+      if (reconnectingSinceRef.current === null) {
+        reconnectingSinceRef.current = Date.now();
+      }
+
+      const elapsed = Date.now() - reconnectingSinceRef.current;
+      if (elapsed >= RECONNECT_STALE_MS && !refreshInFlightRef.current) {
+        refreshInFlightRef.current = true;
+        fetchRelayConfig(true)
+          .then((payload) => {
+            if (payload) {
+              onTokenRefresh(payload);
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            refreshInFlightRef.current = false;
+          });
+      } else if (elapsed < RECONNECT_STALE_MS) {
+        // Schedule a check after the threshold
+        const timer = setTimeout(() => {
+          if (reconnectingSinceRef.current !== null && !refreshInFlightRef.current) {
+            refreshInFlightRef.current = true;
+            fetchRelayConfig(true)
+              .then((payload) => {
+                if (payload) {
+                  onTokenRefresh(payload);
+                }
+              })
+              .catch(() => {})
+              .finally(() => {
+                refreshInFlightRef.current = false;
+              });
+          }
+        }, RECONNECT_STALE_MS - elapsed);
+        return () => clearTimeout(timer);
+      }
+    } else {
+      reconnectingSinceRef.current = null;
+    }
+  }, [status, onTokenRefresh]);
+
+  return null;
+}
+
 export function RelayConfigProvider({ children }: RelayConfigProviderProps) {
   const [config, setConfig] = useState<RelayConfigResponse | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -42,28 +110,23 @@ export function RelayConfigProvider({ children }: RelayConfigProviderProps) {
   useEffect(() => {
     let cancelled = false;
 
-    void fetch('/api/relay-config', { credentials: 'include' })
-      .then(async (response) => {
-        if (!response.ok) return null;
-        return response.json() as Promise<RelayConfigResponse>;
-      })
+    void fetchRelayConfig()
       .then((payload) => {
-        if (cancelled || !payload?.success) return;
-        if (!payload.baseUrl || !payload.apiKey || !payload.agentToken) return;
-        setConfig(payload);
+        if (cancelled) return;
+        if (payload) setConfig(payload);
       })
-      .catch(() => {
-        // No relay-config is a valid local fallback.
-      })
+      .catch(() => {})
       .finally(() => {
-        if (!cancelled) {
-          setLoaded(true);
-        }
+        if (!cancelled) setLoaded(true);
       });
 
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  const handleTokenRefresh = useCallback((newConfig: RelayConfigResponse) => {
+    setConfig(newConfig);
   }, []);
 
   const configured = Boolean(config?.baseUrl && config.apiKey && config.agentToken);
@@ -101,6 +164,7 @@ export function RelayConfigProvider({ children }: RelayConfigProviderProps) {
         agentToken={providerConfig.agentToken}
         channels={channels}
       >
+        {configured && <TokenRefreshMonitor onTokenRefresh={handleTokenRefresh} />}
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         {children as any}
       </RelayProvider>

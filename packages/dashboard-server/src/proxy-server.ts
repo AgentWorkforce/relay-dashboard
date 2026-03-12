@@ -24,6 +24,7 @@ import {
 import { createSendStrategy } from './lib/send-strategy.js';
 import type { SendStrategy } from './lib/send-strategy.js';
 import { DASHBOARD_DISPLAY_NAME } from './relaycast-provider-types.js';
+import { clearRegistrationCache } from './relaycast-provider-helpers.js';
 import { resolveIdentity } from './lib/identity.js';
 import type {
   DashboardMode,
@@ -224,6 +225,11 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     inMemoryAgentToken = token;
     inMemoryAgentName = name;
   };
+  const clearCachedAgentToken = (): void => {
+    inMemoryAgentToken = undefined;
+    inMemoryAgentName = undefined;
+    clearRegistrationCache();
+  };
   const { getSpawnedAgents, getLocalAgentNames } = createSpawnedAgentsCaches({
     brokerProxyEnabled,
     relayUrl,
@@ -385,6 +391,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     resolveRelaycastConfig,
     setRelayApiKey,
     setRelayAgentIdentity,
+    clearCachedAgentToken,
     getRelaycastSnapshot,
     getRelaycastChannels,
     sendRelaycastMessage,

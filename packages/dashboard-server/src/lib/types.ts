@@ -115,6 +115,7 @@ export interface RouteContext {
   resolveRelaycastConfig: () => RelaycastConfig | null;
   setRelayApiKey: (apiKey: string) => void;
   setRelayAgentIdentity: (token: string, name: string) => void;
+  clearCachedAgentToken: () => void;
   getRelaycastSnapshot: () => Promise<DashboardSnapshot>;
   getRelaycastChannels: () => Promise<{ channels: DashboardChannel[]; archivedChannels: DashboardChannel[] }>;
   sendRelaycastMessage: (params: { to: string; message: string; from?: string; thread?: string }) => Promise<

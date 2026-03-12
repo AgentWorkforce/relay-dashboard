@@ -58,6 +58,15 @@ function registrationCacheKey(baseUrl: string | undefined, apiKey: string, agent
 }
 
 /**
+ * Clear all entries from the registration cache so the next
+ * getDashboardAgentToken / createRelaycastClient call performs
+ * a fresh registerOrRotate against the server.
+ */
+export function clearRegistrationCache(): void {
+  registrationCache.clear();
+}
+
+/**
  * Register (or retrieve cached) agent token via registerOrRotate.
  * Shared by createRelaycastClient and getDashboardAgentToken to ensure
  * a single registration per agent identity.
