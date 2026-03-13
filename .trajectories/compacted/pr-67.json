@@ -1,0 +1,24 @@
+{
+  "id": "compact_gofj4wd7fyr2",
+  "version": 1,
+  "type": "compacted",
+  "compactedAt": "2026-03-13T10:35:44.568Z",
+  "sourceTrajectories": [
+    "traj_dsxbsapslsw1",
+    "traj_ytxbp9dpsji7"
+  ],
+  "dateRange": {
+    "start": "2026-03-13T08:55:30.959Z",
+    "end": "2026-03-13T09:17:17.835Z"
+  },
+  "summary": {
+    "totalDecisions": 0,
+    "totalEvents": 0,
+    "uniqueAgents": []
+  },
+  "decisionGroups": [],
+  "keyLearnings": [],
+  "keyFindings": [],
+  "filesAffected": [],
+  "commits": []
+}
