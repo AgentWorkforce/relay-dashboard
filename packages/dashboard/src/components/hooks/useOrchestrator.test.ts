@@ -6,7 +6,7 @@
 
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useOrchestrator } from './useOrchestrator';
 
 // Mock WebSocket to prevent actual connections
@@ -81,7 +81,7 @@ describe('useOrchestrator', () => {
       );
 
       // Wait for initial data fetch
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(result.current.isLoading).toBe(false);
       });
 
@@ -127,7 +127,7 @@ describe('useOrchestrator', () => {
         useOrchestrator({ apiUrl: 'http://localhost:3456', enabled: true }),
       );
 
-      await vi.waitFor(() => {
+      await waitFor(() => {
         expect(result.current.isLoading).toBe(false);
       });
 
