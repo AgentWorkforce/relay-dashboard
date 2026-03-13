@@ -4,7 +4,6 @@
  * This module is orchestration glue only: SDK reads/writes + dashboard adapters.
  */
 
-import fs from 'fs';
 import path from 'path';
 import { RelayCast } from '@relaycast/sdk';
 import { extractMessageId } from './lib/message-id.js';
@@ -78,37 +77,14 @@ export type {
 } from './relaycast-provider-types.js';
 
 /**
- * Try to load Relaycast credentials.
+ * Try to load Relaycast credentials from environment only.
  *
- * Resolution order:
- * 1. `<dataDir>/relaycast.json` — written by `agent-relay init` / workflow runner
- * 2. `RELAY_API_KEY` environment variable — set when launching the dashboard
- *    alongside a live workflow (e.g. `RELAY_API_KEY=rk_live_... agent-relay dashboard`)
- *
- * Returns null only if neither source provides a valid API key.
+ * The dashboard no longer reads or writes any local Relaycast credential file. Credentials must come
+ * from RELAY_API_KEY, the server option, broker bootstrap, or POST /api/relay-config.
  */
 export function loadRelaycastConfig(dataDir: string): RelaycastConfig | null {
   const baseUrl = process.env.RELAYCAST_API_URL || DEFAULT_RELAYCAST_BASE_URL;
   const projectDir = path.basename(path.resolve(dataDir, '..'));
-
-  // 1. File-based credentials (written by workflow runner / agent-relay init)
-  const credPath = path.join(dataDir, 'relaycast.json');
-  if (fs.existsSync(credPath)) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(credPath, 'utf-8'));
-      const apiKey = typeof raw.api_key === 'string' ? raw.api_key.trim() : '';
-      if (apiKey) {
-        const agentName = raw.agent_name as string | undefined;
-        const agentToken = raw.agent_token as string | undefined;
-        const projectIdentity = (projectDir || agentName || '').trim();
-        return { apiKey, baseUrl, agentName, agentToken, projectIdentity };
-      }
-    } catch {
-      // fall through to env var
-    }
-  }
-
-  // 2. Environment variable fallback — no file needed
   const envApiKey = process.env.RELAY_API_KEY?.trim();
   if (envApiKey) {
     const projectIdentity = projectDir.trim();

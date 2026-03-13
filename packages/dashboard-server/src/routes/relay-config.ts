@@ -69,21 +69,32 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
       }
     }
 
+    // When refresh=true, clear cached agent token so we re-register and get
+    // a fresh token. This handles cases where the token was rotated externally
+    // (e.g. by another process calling registerOrRotate for the same agent).
+    const forceRefresh = req.query.refresh === 'true';
+    if (forceRefresh) {
+      ctx.clearCachedAgentToken();
+    }
+
     const config = ctx.resolveRelaycastConfig();
     if (!config) {
       res.status(503).json({
         success: false,
-        error: "Relaycast credentials not configured. Set RELAY_API_KEY or create .agent-relay/relaycast.json",
+        error: 'Relaycast credentials not configured. Set RELAY_API_KEY or POST /api/relay-config.',
       });
       return;
     }
 
-    let agentToken = config.agentToken;
+    // refresh=true should force a fresh registerOrRotate even when an older
+    // token was cached earlier in this process. The new token remains cached
+    // in memory so future requests reuse it without any file persistence.
+    let agentToken = forceRefresh ? undefined : config.agentToken;
     let agentName = config.agentName ?? path.basename(path.resolve(ctx.dataDir, '..'));
 
     if (!agentToken) {
       try {
-        const registered = await getDashboardAgentToken(config, agentName);
+        const registered = await getDashboardAgentToken({ ...config, agentToken: undefined }, agentName);
         agentToken = registered.token;
         agentName = registered.name;
         // Persist the token so subsequent calls reuse it instead of rotating
@@ -120,6 +131,9 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
       agentToken,
       agentName,
       channels: defaultChannels,
+      // WebSocket auth uses the stable workspace key so agent token rotation
+      // does not disconnect the dashboard's realtime connection.
+      wsToken: config.apiKey,
     });
   });
 }

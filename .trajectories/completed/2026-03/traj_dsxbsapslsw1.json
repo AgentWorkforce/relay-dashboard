@@ -1,0 +1,25 @@
+{
+  "id": "traj_dsxbsapslsw1",
+  "version": 1,
+  "task": {
+    "title": "Fix PR #67 stale token refresh issues"
+  },
+  "status": "completed",
+  "startedAt": "2026-03-13T09:05:55.670Z",
+  "agents": [],
+  "chapters": [],
+  "commits": [],
+  "filesChanged": [],
+  "projectId": "/Users/khaliqgant/Projects/relay-dashboard",
+  "tags": [],
+  "_trace": {
+    "startRef": "33cbb014460b89278818a04839905bbbffedf965",
+    "endRef": "33cbb014460b89278818a04839905bbbffedf965"
+  },
+  "completedAt": "2026-03-13T09:17:17.835Z",
+  "retrospective": {
+    "summary": "Fixed stale Relaycast token recovery by preserving refreshed identities in memory for file-backed configs, forcing refresh to bypass stale file tokens, and hardening the client recovery loop with retries, delayed forced refresh, and BroadcastChannel sync. Added server and provider regression tests.",
+    "approach": "Standard approach",
+    "confidence": 0.92
+  }
+}

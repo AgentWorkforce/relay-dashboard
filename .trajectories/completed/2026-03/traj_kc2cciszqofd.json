@@ -1,0 +1,53 @@
+{
+  "id": "traj_kc2cciszqofd",
+  "version": 1,
+  "task": {
+    "title": "Add integration tests for Relaycast token rotation recovery"
+  },
+  "status": "completed",
+  "startedAt": "2026-03-13T09:37:37.366Z",
+  "agents": [
+    {
+      "name": "default",
+      "role": "lead",
+      "joinedAt": "2026-03-13T09:48:53.576Z"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "chap_yua4vdj6ntlh",
+      "title": "Work",
+      "agentName": "default",
+      "startedAt": "2026-03-13T09:48:53.576Z",
+      "events": [
+        {
+          "ts": 1773395333577,
+          "type": "decision",
+          "content": "Added a real dashboard-provider integration test with a fake Relaycast backend: Added a real dashboard-provider integration test with a fake Relaycast backend",
+          "raw": {
+            "question": "Added a real dashboard-provider integration test with a fake Relaycast backend",
+            "chosen": "Added a real dashboard-provider integration test with a fake Relaycast backend",
+            "alternatives": [],
+            "reasoning": "This covers the real dashboard server, RelayConfigProvider, SDK HTTP retry path, and wsToken wiring without depending on external Relaycast infrastructure."
+          },
+          "significance": "high"
+        }
+      ],
+      "endedAt": "2026-03-13T09:48:59.904Z"
+    }
+  ],
+  "commits": [],
+  "filesChanged": [],
+  "projectId": "/Users/khaliqgant/Projects/relay-dashboard",
+  "tags": [],
+  "_trace": {
+    "startRef": "108216be1a9b43c23125be078e9392f641676991",
+    "endRef": "108216be1a9b43c23125be078e9392f641676991"
+  },
+  "completedAt": "2026-03-13T09:48:59.904Z",
+  "retrospective": {
+    "summary": "Added dashboard integration coverage for Relaycast token invalidation and refresh.",
+    "approach": "Standard approach",
+    "confidence": 0.92
+  }
+}

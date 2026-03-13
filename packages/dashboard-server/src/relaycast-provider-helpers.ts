@@ -1,4 +1,3 @@
-import path from 'path';
 import { RelayCast, type AgentClient } from '@relaycast/sdk';
 // Import SDK's createRelaycastClient if available (for backwards compatibility and testing)
 // Falls back to local implementation when not exported by SDK
@@ -55,6 +54,15 @@ const registrationCache = new Map<string, Promise<{ token: string; name: string 
 
 function registrationCacheKey(baseUrl: string | undefined, apiKey: string, agentName: string): string {
   return `${baseUrl ?? ''}|${apiKey}|${agentName.toLowerCase()}`;
+}
+
+/**
+ * Clear all entries from the registration cache so the next
+ * getDashboardAgentToken / createRelaycastClient call performs
+ * a fresh registerOrRotate against the server.
+ */
+export function clearRegistrationCache(): void {
+  registrationCache.clear();
 }
 
 /**
@@ -130,19 +138,14 @@ function resolveDmRecipient(participants: string[], sender: string, identityConf
   return fallback || resolveDashboardDisplayName(identityConfig);
 }
 
-function getCachePath(dataDir?: string): string | undefined {
-  if (!dataDir) return undefined;
-  return path.join(dataDir, 'relaycast.json');
-}
-
 function getClientCacheKey(
   config: RelaycastConfig,
   agentName: string,
   registrationType: RelaycastRegistrationType,
   dataDir?: string,
 ): string {
-  const cachePath = getCachePath(dataDir) ?? '';
-  return `${config.baseUrl}|${config.apiKey}|${config.agentToken ?? ''}|${agentName}|${registrationType}|${cachePath}`;
+  const cacheNamespace = dataDir ?? '';
+  return `${config.baseUrl}|${config.apiKey}|${config.agentToken ?? ''}|${agentName}|${registrationType}|${cacheNamespace}`;
 }
 
 /**
@@ -152,7 +155,6 @@ function getClientCacheKey(
 async function createRelaycastClient(options: {
   apiKey: string;
   baseUrl?: string;
-  cachePath?: string;
   agentName: string;
   agentType: RelaycastRegistrationType;
 }): Promise<RelaycastClientLike> {
@@ -206,7 +208,6 @@ async function getCachedClient(
   const clientPromise = createRelaycastClient({
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
-    cachePath: getCachePath(dataDir),
     agentName,
     agentType: registrationType,
   }).then((client) => client as unknown as RelaycastClientLike)

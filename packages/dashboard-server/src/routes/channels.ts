@@ -225,7 +225,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     if (!config) {
       res.status(503).json({
         success: false,
-        error: "Relaycast credentials not configured. Set RELAY_API_KEY or create .agent-relay/relaycast.json",
+        error: 'Relaycast credentials not configured. Set RELAY_API_KEY or POST /api/relay-config.',
       });
       return;
     }
@@ -288,7 +288,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     if (!config) {
       res.status(503).json({
         success: false,
-        error: "Relaycast credentials not configured. Set RELAY_API_KEY or create .agent-relay/relaycast.json",
+        error: 'Relaycast credentials not configured. Set RELAY_API_KEY or POST /api/relay-config.',
       });
       return;
     }
@@ -330,7 +330,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     if (!config) {
       res.status(503).json({
         success: false,
-        error: "Relaycast credentials not configured. Set RELAY_API_KEY or create .agent-relay/relaycast.json",
+        error: 'Relaycast credentials not configured. Set RELAY_API_KEY or POST /api/relay-config.',
       });
       return;
     }
@@ -381,7 +381,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     if (!config) {
       res.status(503).json({
         success: false,
-        error: "Relaycast credentials not configured. Set RELAY_API_KEY or create .agent-relay/relaycast.json",
+        error: 'Relaycast credentials not configured. Set RELAY_API_KEY or POST /api/relay-config.',
       });
       return;
     }
@@ -427,7 +427,7 @@ export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
     if (!config) {
       res.status(503).json({
         success: false,
-        error: "Relaycast credentials not configured. Set RELAY_API_KEY or create .agent-relay/relaycast.json",
+        error: 'Relaycast credentials not configured. Set RELAY_API_KEY or POST /api/relay-config.',
       });
       return;
     }
