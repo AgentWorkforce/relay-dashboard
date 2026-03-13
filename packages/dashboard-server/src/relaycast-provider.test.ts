@@ -205,22 +205,20 @@ describe('relaycast-provider fetchAllMessages', () => {
 });
 
 describe('relaycast-provider loadRelaycastConfig', () => {
+  const originalRelayApiKey = process.env.RELAY_API_KEY;
+
   afterEach(() => {
+    if (originalRelayApiKey === undefined) {
+      delete process.env.RELAY_API_KEY;
+    } else {
+      process.env.RELAY_API_KEY = originalRelayApiKey;
+    }
     vi.resetModules();
   });
 
-  it('reads project identity fields from relaycast.json', async () => {
+  it('reads project identity fields from RELAY_API_KEY without any file-backed credentials', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-config-'));
-    const configPath = path.join(dataDir, 'relaycast.json');
-    fs.writeFileSync(
-      configPath,
-      JSON.stringify({
-        api_key: 'rk_test',
-        agent_name: 'my-project',
-        agent_token: 'agt_test_token',
-      }),
-      'utf-8',
-    );
+    process.env.RELAY_API_KEY = 'rk_test';
 
     const { loadRelaycastConfig } = await import('./relaycast-provider.js');
     const { resolveIdentity } = await import('./lib/identity.js');
@@ -228,11 +226,12 @@ describe('relaycast-provider loadRelaycastConfig', () => {
 
     expect(loaded).toMatchObject({
       apiKey: 'rk_test',
-      agentName: 'my-project',
-      agentToken: 'agt_test_token',
+      projectIdentity: path.basename(path.resolve(dataDir, '..')),
     });
+    expect(loaded?.agentName).toBeUndefined();
+    expect(loaded?.agentToken).toBeUndefined();
     const identityConfig = { projectIdentity: loaded?.projectIdentity ?? '' };
-    expect(resolveIdentity('my-project', identityConfig)).toBe('my-project');
+    expect(resolveIdentity(identityConfig.projectIdentity, identityConfig)).toBe(identityConfig.projectIdentity);
     expect(resolveIdentity('worker-1', identityConfig)).toBe('worker-1');
 
     fs.rmSync(dataDir, { recursive: true, force: true });

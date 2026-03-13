@@ -79,9 +79,9 @@ export interface DashboardServerOptions {
   relayUrl?: string;
   /** Path to static files directory (default: ../out) */
   staticDir?: string;
-  /** Data directory containing relaycast.json credentials */
+  /** Data directory for dashboard state such as logs and spawned agent metadata */
   dataDir?: string;
-  /** Relaycast API key — overrides relaycast.json and RELAY_API_KEY env var */
+  /** Relaycast API key — seeds the in-memory config and overrides RELAY_API_KEY env var */
   relayApiKey?: string;
   /** Enable verbose logging */
   verbose?: boolean;

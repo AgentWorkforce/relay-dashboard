@@ -18,7 +18,6 @@ import {
   fetchAgents,
   fetchAllMessages,
   fetchChannels,
-  loadRelaycastConfig,
   type RelaycastConfig,
 } from './relaycast-provider.js';
 import { createSendStrategy } from './lib/send-strategy.js';
@@ -195,20 +194,27 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
 
   // --- Build shared context ---
 
+  const applyCachedAgentIdentity = (config: RelaycastConfig | null): RelaycastConfig | null => {
+    if (!config) return null;
+    if (!inMemoryAgentToken && !inMemoryAgentName) return config;
+
+    return {
+      ...config,
+      agentToken: inMemoryAgentToken ?? config.agentToken,
+      agentName: inMemoryAgentName ?? config.agentName,
+    };
+  };
+
   const resolveRelaycastConfig = (): RelaycastConfig | null => {
-    // In-memory key (from option, env var, or dynamic update) takes priority over the file.
-    if (inMemoryRelayApiKey) {
-      const baseUrl = process.env.RELAYCAST_API_URL || 'https://api.relaycast.dev';
-      const projectDir = path.basename(path.resolve(dataDir, '..'));
-      return {
-        apiKey: inMemoryRelayApiKey,
-        baseUrl,
-        projectIdentity: projectDir,
-        agentToken: inMemoryAgentToken,
-        agentName: inMemoryAgentName,
-      };
-    }
-    return loadRelaycastConfig(dataDir);
+    if (!inMemoryRelayApiKey) return null;
+
+    const baseUrl = process.env.RELAYCAST_API_URL || 'https://api.relaycast.dev';
+    const projectDir = path.basename(path.resolve(dataDir, '..'));
+    return applyCachedAgentIdentity({
+      apiKey: inMemoryRelayApiKey,
+      baseUrl,
+      projectIdentity: projectDir,
+    });
   };
 
   const setRelayApiKey = (apiKey: string): void => {
@@ -335,7 +341,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
             return {
               success: false as const,
               status: 503,
-              error: `Relaycast credentials not found in ${path.join(dataDir, 'relaycast.json')}`,
+              error: 'Relaycast credentials not configured. Set RELAY_API_KEY or POST /api/relay-config.',
             };
           }
 
@@ -639,7 +645,7 @@ export async function startServer(options: DashboardServerOptions = {}): Promise
   }
 
   // Best-effort: fetch workspace key from the broker health endpoint so the
-  // dashboard uses the same Relaycast workspace as the broker (no relaycast.json needed).
+  // dashboard uses the same Relaycast workspace as the broker without any file persistence.
   const resolvedRelayUrl = normalizeRelayUrl(options.relayUrl ?? process.env.RELAY_URL);
   if (resolvedRelayUrl && !options.mock) {
     bootstrapRelayApiKeyFromBroker(resolvedRelayUrl, dashboard.setRelayApiKey).catch(() => {});

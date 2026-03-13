@@ -54,11 +54,6 @@ describe('Dashboard Server Relaycast snapshots', () => {
       setChannelArchived: vi.fn(async () => undefined),
       createChannel: vi.fn(async () => undefined),
       sendMessage: vi.fn(async () => ({ messageId: 'msg_1' })),
-      loadRelaycastConfig: vi.fn(() => ({
-        apiKey: 'rk_test',
-        baseUrl: 'https://api.relaycast.dev',
-        projectIdentity: 'relay',
-      })),
     }));
 
     const { createServer } = await import('./proxy-server.js');
@@ -68,6 +63,7 @@ describe('Dashboard Server Relaycast snapshots', () => {
       verbose: false,
       dataDir,
       staticDir,
+      relayApiKey: 'rk_test',
     });
 
     try {
