@@ -226,7 +226,7 @@ describe('relaycast-provider loadRelaycastConfig', () => {
 
     expect(loaded).toMatchObject({
       apiKey: 'rk_test',
-      projectIdentity: path.basename(path.resolve(dataDir, '..')),
+      projectIdentity: os.userInfo().username,
     });
     expect(loaded?.agentName).toBeUndefined();
     expect(loaded?.agentToken).toBeUndefined();

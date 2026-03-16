@@ -3,10 +3,25 @@
  */
 
 import fs from 'fs';
+import os from 'node:os';
 import path from 'path';
 import type { Response } from 'express';
 import { loadTeamsConfig } from '@agent-relay/config';
 import type { DashboardChannel } from './types.js';
+
+/**
+ * Returns the current OS username, falling back to `fallback` if os.userInfo()
+ * throws (e.g. in containers where the UID has no /etc/passwd entry).
+ */
+export function safeUsername(fallback = 'Dashboard'): string {
+  try {
+    const name = os.userInfo().username;
+    if (name) return name;
+  } catch {
+    // no-op — fall through to fallback
+  }
+  return fallback;
+}
 
 export const PHANTOM_OFFLINE_MAX_AGE_MS = 5 * 60 * 1000;
 export const SPAWNED_CACHE_TTL_MS = 3000;

@@ -24,7 +24,7 @@ describe('Dashboard Server relay-config refresh', () => {
   });
 
   it('reuses the refreshed in-memory token for later relay-config reads without any file persistence', async () => {
-    const expectedProjectIdentity = path.basename(path.resolve(dataDir, '..'));
+    const expectedProjectIdentity = os.userInfo().username;
     const getDashboardAgentToken = vi.fn()
       .mockResolvedValueOnce({
         token: 'agt_old',
