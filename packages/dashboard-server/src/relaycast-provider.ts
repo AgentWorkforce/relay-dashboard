@@ -5,6 +5,7 @@
  */
 
 import path from 'path';
+import os from 'node:os';
 import { RelayCast } from '@relaycast/sdk';
 import { extractMessageId } from './lib/message-id.js';
 import type {
@@ -84,10 +85,9 @@ export type {
  */
 export function loadRelaycastConfig(dataDir: string): RelaycastConfig | null {
   const baseUrl = process.env.RELAYCAST_API_URL || DEFAULT_RELAYCAST_BASE_URL;
-  const projectDir = path.basename(path.resolve(dataDir, '..'));
   const envApiKey = process.env.RELAY_API_KEY?.trim();
   if (envApiKey) {
-    const projectIdentity = projectDir.trim();
+    const projectIdentity = os.userInfo().username;
     return { apiKey: envApiKey, baseUrl, projectIdentity };
   }
 

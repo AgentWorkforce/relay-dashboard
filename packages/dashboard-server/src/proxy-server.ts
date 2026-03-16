@@ -12,6 +12,7 @@ import { createServer as createHttpServer, type Server } from 'http';
 import { WebSocketServer } from 'ws';
 import fs from 'fs';
 import path from 'path';
+import os from 'node:os';
 import { fileURLToPath } from 'url';
 import { registerMockRoutes } from './mocks/routes.js';
 import {
@@ -209,11 +210,11 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     if (!inMemoryRelayApiKey) return null;
 
     const baseUrl = process.env.RELAYCAST_API_URL || 'https://api.relaycast.dev';
-    const projectDir = path.basename(path.resolve(dataDir, '..'));
+    const projectIdentity = os.userInfo().username;
     return applyCachedAgentIdentity({
       apiKey: inMemoryRelayApiKey,
       baseUrl,
-      projectIdentity: projectDir,
+      projectIdentity: projectIdentity,
     });
   };
 
@@ -320,7 +321,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
           }
 
           const projectIdentity = config?.agentName?.trim()
-            || path.basename(path.resolve(dataDir, '..'))
+            || os.userInfo().username
             || DASHBOARD_DISPLAY_NAME;
           const senderInput = params.from?.trim() ?? '';
           const senderName = mode === 'proxy'
