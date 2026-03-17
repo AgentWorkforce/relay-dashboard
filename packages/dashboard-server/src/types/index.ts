@@ -7,66 +7,6 @@
 import type { Express } from 'express';
 import type { Server } from 'http';
 import type { WebSocketServer } from 'ws';
-import type { RelayAdapter } from '@agent-relay/sdk';
-
-/**
- * Interface for spawn manager read operations.
- * When the broker SpawnManager is passed in, the dashboard uses it
- * for read operations (logs, worker listing).
- * Spawn/release go through the SDK client → broker socket.
- */
-export interface SpawnManagerLike {
-  hasWorker(name: string): boolean;
-  getWorkerOutput(name: string, limit?: number): string[] | undefined;
-  getWorkerRawOutput(name: string): string | undefined;
-  getActiveWorkers(): Array<{
-    name: string;
-    cli: string;
-    task: string;
-    team?: string;
-    spawnerName?: string;
-    spawnedAt: number;
-    pid?: number;
-  }>;
-  sendWorkerInput(name: string, data: string): boolean | Promise<boolean>;
-}
-
-/**
- * Options for starting the dashboard server
- */
-export interface DashboardOptions {
-  /** Port to listen on */
-  port: number;
-  /** Data directory for storage */
-  dataDir: string;
-  /** Team directory for configuration */
-  teamDir: string;
-  /** Path to SQLite database (defaults to dataDir/messages.sqlite - same as broker runtime) */
-  dbPath?: string;
-  /** Enable agent spawning API */
-  enableSpawner?: boolean;
-  /** Project root for spawner (defaults to dataDir) */
-  projectRoot?: string;
-  /** Tmux session name for workers */
-  tmuxSession?: string;
-  /** Enable verbose logging (WebSocket connections, broadcasts, etc.) */
-  verbose?: boolean;
-  /**
-   * Callback to mark an agent as spawning (before HELLO completes).
-   * Messages sent to this agent can be queued for delivery after registration.
-   */
-  onMarkSpawning?: (agentName: string) => void;
-  /**
-   * Callback to clear the spawning flag for an agent.
-   * Called when spawn fails or is cancelled.
-   */
-  onClearSpawning?: (agentName: string) => void;
-  /**
-   * RelayAdapter instance for broker mode.
-   * Provides spawn/release/list/messaging via the broker binary.
-   */
-  relayAdapter?: RelayAdapter;
-}
 
 /**
  * Options for the proxy/mock server (simpler mode)
@@ -139,20 +79,3 @@ export interface ThreadMetadata {
   participants?: string[];
 }
 
-/**
- * Server context passed to route handlers
- */
-export interface ServerContext {
-  /** Data directory */
-  dataDir: string;
-  /** Team directory */
-  teamDir: string;
-  /** Database path */
-  dbPath?: string;
-  /** Project root */
-  projectRoot?: string;
-  /** Default workspace ID */
-  defaultWorkspaceId?: string;
-  /** Enable spawner */
-  enableSpawner?: boolean;
-}
