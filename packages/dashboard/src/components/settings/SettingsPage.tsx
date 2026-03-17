@@ -12,6 +12,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDashboardConfig, type DashboardFeatures } from '../../adapters';
+import { resolveSupportedModel } from '../../lib/model-options';
 import type { Settings, CliType } from './types';
 import type { ModelOption } from '../SpawnModal';
 
@@ -410,7 +411,11 @@ export function SettingsPage({
                           description={`Default model when spawning ${label} agents`}
                         >
                           <select
-                            value={settings.agentDefaults?.defaultModels?.[id] ?? registryDefaultModels?.[id] ?? models[0]?.value ?? ''}
+                            value={resolveSupportedModel(
+                              models,
+                              settings.agentDefaults?.defaultModels?.[id],
+                              registryDefaultModels?.[id],
+                            )}
                             onChange={(e) => updateSettings((prev) => ({
                               ...prev,
                               agentDefaults: {

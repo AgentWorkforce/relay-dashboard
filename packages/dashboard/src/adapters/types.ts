@@ -471,6 +471,7 @@ export interface CloudApiAdapter {
       task?: string;
       cwd?: string;
       model?: string;
+      reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh';
     }
   ): Promise<
     CloudApiResult<{

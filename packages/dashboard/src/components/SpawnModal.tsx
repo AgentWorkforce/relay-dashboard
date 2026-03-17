@@ -7,6 +7,7 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useDashboardConfig } from '../adapters';
+import { buildCommandWithModel, resolveSupportedModel } from '../lib/model-options';
 
 /**
  * Model options are fetched from the server (/api/models) which sources them
@@ -67,6 +68,8 @@ export interface SpawnModalProps {
 export interface ModelOption {
   value: string;
   label: string;
+  reasoningEfforts?: Array<'low' | 'medium' | 'high' | 'xhigh'>;
+  defaultReasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh';
 }
 
 const EMPTY_MODEL_OPTIONS: ModelOption[] = [];
@@ -173,10 +176,8 @@ export function SpawnModal({
   }, [modelOptions]);
 
   const getDefaultModelForCli = useCallback((cli: string): string => {
-    return agentDefaults?.defaultModels?.[cli]
-      ?? registryDefaultModels?.[cli]
-      ?? getModelsForCli(cli)[0]?.value
-      ?? '';
+    const options = getModelsForCli(cli);
+    return resolveSupportedModel(options, agentDefaults?.defaultModels?.[cli], registryDefaultModels?.[cli]);
   }, [agentDefaults, registryDefaultModels, getModelsForCli]);
 
   const [selectedTemplate, setSelectedTemplate] = useState(AGENT_TEMPLATES[0]);
@@ -197,8 +198,14 @@ export function SpawnModal({
 
   /** Get selected model for the current template */
   const getSelectedModel = useCallback((cli: string): string => {
-    return selectedModels[cli] ?? getDefaultModelForCli(cli);
-  }, [selectedModels, getDefaultModelForCli]);
+    const options = getModelsForCli(cli);
+    return resolveSupportedModel(
+      options,
+      selectedModels[cli],
+      agentDefaults?.defaultModels?.[cli],
+      registryDefaultModels?.[cli],
+    );
+  }, [selectedModels, agentDefaults, registryDefaultModels, getModelsForCli]);
 
   const setModelForCli = useCallback((cli: string, model: string) => {
     setSelectedModels(prev => ({ ...prev, [cli]: model }));
@@ -213,11 +220,16 @@ export function SpawnModal({
     if (template?.supportsModelSelection) {
       const model = getSelectedModel(selectedTemplate.id);
       if (model) {
-        return `${selectedTemplate.command} --model ${model}`;
+        return buildCommandWithModel(
+          selectedTemplate.command,
+          selectedTemplate.id,
+          model,
+          getModelsForCli(selectedTemplate.id),
+        );
       }
     }
     return selectedTemplate.command;
-  }, [selectedTemplate, customCommand, getSelectedModel]);
+  }, [selectedTemplate, customCommand, getSelectedModel, getModelsForCli]);
 
   const shadowMode = useMemo(() => deriveShadowMode(effectiveCommand), [effectiveCommand]);
 

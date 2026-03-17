@@ -220,4 +220,131 @@ describe('SpawnModal', () => {
       expect(config.cwd).toBe('/custom/path');
     });
   });
+
+  describe('model selection', () => {
+    it('falls back to a supported Codex model and applies the default reasoning effort override', async () => {
+      const onSpawn = vi.fn().mockResolvedValue(true);
+
+      renderSpawnModal({
+        onSpawn,
+        agentDefaults: {
+          defaultCliType: 'codex',
+          defaultModels: {
+            codex: 'gpt-5.1-codex-mini',
+          },
+        },
+        modelOptions: {
+          codex: [
+            {
+              value: 'gpt-5.4',
+              label: 'GPT-5.4',
+              reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+              defaultReasoningEffort: 'xhigh',
+            },
+            {
+              value: 'gpt-5.1-codex-max',
+              label: 'GPT-5.1 Codex Max',
+              reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+              defaultReasoningEffort: 'xhigh',
+            },
+          ],
+        },
+        registryDefaultModels: {
+          codex: 'gpt-5.4',
+        },
+      });
+
+      const modelSelect = await screen.findByLabelText('Model') as HTMLSelectElement;
+      expect(modelSelect.value).toBe('gpt-5.4');
+
+      fireEvent.submit(getForm());
+
+      await waitFor(() => {
+        expect(onSpawn).toHaveBeenCalled();
+      });
+
+      const config = onSpawn.mock.calls[0][0];
+      expect(config.command).toBe('codex --model gpt-5.4 -c model_reasoning_effort="xhigh"');
+    });
+
+    it('applies the Codex mini reasoning effort override when mini is selected', async () => {
+      const onSpawn = vi.fn().mockResolvedValue(true);
+
+      renderSpawnModal({
+        onSpawn,
+        agentDefaults: {
+          defaultCliType: 'codex',
+          defaultModels: {
+            codex: 'gpt-5.1-codex-mini',
+          },
+        },
+        modelOptions: {
+          codex: [
+            {
+              value: 'gpt-5.1-codex-mini',
+              label: 'GPT-5.1 Codex Mini',
+              reasoningEfforts: ['medium', 'high'],
+              defaultReasoningEffort: 'high',
+            },
+            {
+              value: 'gpt-5.4',
+              label: 'GPT-5.4',
+              reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+              defaultReasoningEffort: 'xhigh',
+            },
+          ],
+        },
+        registryDefaultModels: {
+          codex: 'gpt-5.4',
+        },
+      });
+
+      const modelSelect = await screen.findByLabelText('Model') as HTMLSelectElement;
+      expect(modelSelect.value).toBe('gpt-5.1-codex-mini');
+
+      fireEvent.submit(getForm());
+
+      await waitFor(() => {
+        expect(onSpawn).toHaveBeenCalled();
+      });
+
+      const config = onSpawn.mock.calls[0][0];
+      expect(config.command).toBe('codex --model gpt-5.1-codex-mini -c model_reasoning_effort="high"');
+    });
+
+    it('falls back to a supported OpenCode model when a saved default is no longer offered', async () => {
+      const onSpawn = vi.fn().mockResolvedValue(true);
+
+      renderSpawnModal({
+        onSpawn,
+        agentDefaults: {
+          defaultCliType: 'opencode',
+          defaultModels: {
+            opencode: 'openai/gpt-5.1-codex',
+          },
+        },
+        modelOptions: {
+          opencode: [
+            { value: 'openai/gpt-5.2', label: 'GPT-5.2' },
+            { value: 'openai/gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
+          ],
+        },
+        registryDefaultModels: {
+          opencode: 'openai/gpt-5.2',
+        },
+      });
+
+      const modelSelect = await screen.findByLabelText('Model') as HTMLSelectElement;
+      expect(modelSelect.value).toBe('openai/gpt-5.2');
+
+      fireEvent.submit(getForm());
+
+      await waitFor(() => {
+        expect(onSpawn).toHaveBeenCalled();
+      });
+
+      const config = onSpawn.mock.calls[0][0];
+      expect(config.command).toBe('opencode --model openai/gpt-5.2');
+    });
+  });
 });
