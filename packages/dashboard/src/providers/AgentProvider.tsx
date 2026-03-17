@@ -17,6 +17,7 @@ import { useRecentRepos } from '../components/hooks/useRecentRepos';
 import { useWorkspaceRepos } from '../components/hooks/useWorkspaceRepos';
 import { useCloudWorkspace } from './CloudWorkspaceProvider';
 import { api, convertApiDecision, getCsrfToken } from '../lib/api';
+import { parseSpawnCommand } from '../lib/model-options';
 import { mergeAgentsForDashboard } from '../lib/agent-merge';
 import type { DashboardData } from '../components/hooks/useWebSocket';
 
@@ -493,16 +494,14 @@ export function AgentProvider({ children, data, isConnected }: AgentProviderProp
     setIsSpawning(true);
     setSpawnError(null);
     try {
-      const commandParts = config.command.trim().split(/\s+/);
-      const provider = commandParts[0];
-      const modelIdx = commandParts.indexOf('--model');
-      const model = modelIdx !== -1 && commandParts[modelIdx + 1] ? commandParts[modelIdx + 1] : undefined;
+      const { provider, model, reasoningEffort } = parseSpawnCommand(config.command);
 
       if (hasWorkspaceApi && apiAdapter && activeCloudWorkspaceId) {
         const result = await apiAdapter.spawnAgent(activeCloudWorkspaceId, {
           name: config.name,
           provider,
           model,
+          reasoningEffort,
           cwd: config.cwd,
         });
         if (!result.success) {

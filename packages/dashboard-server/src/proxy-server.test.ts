@@ -286,6 +286,31 @@ describe('Dashboard Server', () => {
       expect(data.ok).toBe(true);
     });
 
+    it('should expose Codex reasoning metadata from /api/models', async () => {
+      const address = server.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+      const port = address.port;
+
+      const response = await fetch(`http://localhost:${port}/api/models`);
+      const data = await response.json();
+
+      expect(response.ok).toBe(true);
+      expect(data.success).toBe(true);
+      expect(Array.isArray(data.modelOptions?.Codex)).toBe(true);
+
+      const codexMini = data.modelOptions.Codex.find((model: { value: string }) => model.value === 'gpt-5.1-codex-mini');
+      expect(codexMini).toBeDefined();
+      expect(codexMini.defaultReasoningEffort).toBe('high');
+      expect(codexMini.reasoningEfforts).toEqual(['medium', 'high']);
+
+      const codexFrontier = data.modelOptions.Codex.find((model: { value: string }) => model.value === 'gpt-5.4');
+      expect(codexFrontier).toBeDefined();
+      expect(codexFrontier.defaultReasoningEffort).toBe('xhigh');
+      expect(codexFrontier.reasoningEfforts).toEqual(['low', 'medium', 'high', 'xhigh']);
+    });
+
     it('should proxy /api/brokers/* routes in proxy mode', async () => {
       const address = server.server.address();
       if (!address || typeof address === 'string') {
