@@ -1,8 +1,8 @@
-import crypto from 'crypto';
-import path from 'path';
+import crypto from 'node:crypto';
 import type { Express, Request, Response } from 'express';
 import type { RouteContext } from '../lib/types.js';
 import { getDashboardAgentToken, getWriterClient } from '../relaycast-provider-helpers.js';
+import { safeUsername } from '../lib/utils.js';
 
 export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void {
   // Allow the workflow runner (or any local caller) to push a Relaycast API key
@@ -90,7 +90,7 @@ export function registerRelayConfigRoutes(app: Express, ctx: RouteContext): void
     // token was cached earlier in this process. The new token remains cached
     // in memory so future requests reuse it without any file persistence.
     let agentToken = forceRefresh ? undefined : config.agentToken;
-    let agentName = config.agentName ?? path.basename(path.resolve(ctx.dataDir, '..'));
+    let agentName = config.agentName ?? safeUsername();
 
     if (!agentToken) {
       try {

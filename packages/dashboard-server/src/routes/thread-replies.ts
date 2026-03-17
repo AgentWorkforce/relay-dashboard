@@ -2,12 +2,12 @@
  * Thread reply routes for proxy/standalone modes.
  */
 
-import path from 'path';
 import type { Express, Request, Response } from 'express';
 import { fetchAllMessages } from '../relaycast-provider.js';
 import type { Message, RelaycastConfig } from '../relaycast-provider-types.js';
 import { resolveIdentity } from '../lib/identity.js';
 import type { RouteContext } from '../lib/types.js';
+import { safeUsername } from '../lib/utils.js';
 
 function parseBeforeCursor(raw: unknown): number | undefined {
   if (typeof raw !== 'string' || raw.trim() === '') {
@@ -68,7 +68,7 @@ function resolveSenderName(
 }
 
 export function registerThreadReplyRoutes(app: Express, ctx: RouteContext): void {
-  const projectName = path.basename(path.resolve(ctx.dataDir, '..')) || 'Dashboard';
+  const projectName = safeUsername();
 
   app.get('/api/messages/:id/replies', async (req: Request, res: Response) => {
     const idParam = req.params.id;

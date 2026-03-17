@@ -2,14 +2,13 @@
  * Health and keep-alive route handlers.
  */
 
-import path from 'node:path';
 import type { Express, Request, Response } from 'express';
 import type { RouteContext } from '../lib/types.js';
-import { countOnlineAgents } from '../lib/utils.js';
+import { countOnlineAgents, safeUsername } from '../lib/utils.js';
 import { mockAgents } from '../mocks/fixtures.js';
 
 export function registerHealthRoutes(app: Express, ctx: RouteContext): void {
-  const projectName = path.basename(path.resolve(ctx.dataDir, '..'));
+  const projectName = safeUsername();
 
   app.get('/health', (_req: Request, res: Response) => {
     res.json({

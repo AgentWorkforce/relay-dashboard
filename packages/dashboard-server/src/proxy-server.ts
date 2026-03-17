@@ -41,6 +41,7 @@ import {
   sendHtmlFileOrFallback,
   getBindHost,
   mapChannelForDashboard,
+  safeUsername,
 } from './lib/utils.js';
 import {
   filterPhantomAgents,
@@ -209,11 +210,11 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     if (!inMemoryRelayApiKey) return null;
 
     const baseUrl = process.env.RELAYCAST_API_URL || 'https://api.relaycast.dev';
-    const projectDir = path.basename(path.resolve(dataDir, '..'));
+    const projectIdentity = safeUsername(path.basename(path.resolve(dataDir, '..')));
     return applyCachedAgentIdentity({
       apiKey: inMemoryRelayApiKey,
       baseUrl,
-      projectIdentity: projectDir,
+      projectIdentity,
     });
   };
 
@@ -320,8 +321,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
           }
 
           const projectIdentity = config?.agentName?.trim()
-            || path.basename(path.resolve(dataDir, '..'))
-            || DASHBOARD_DISPLAY_NAME;
+            || safeUsername(DASHBOARD_DISPLAY_NAME);
           const senderInput = params.from?.trim() ?? '';
           const senderName = mode === 'proxy'
             ? resolveIdentity(senderInput || projectIdentity, {

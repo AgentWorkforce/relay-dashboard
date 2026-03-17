@@ -2,7 +2,6 @@
  * Channel route handlers: list, create, join, leave, messages, archive, etc.
  */
 
-import path from 'path';
 import type { Express, Request, Response } from 'express';
 import {
   fetchChannelMembers,
@@ -20,10 +19,11 @@ import {
   normalizeChannelTarget,
   normalizeChannelName,
   parseInviteMembers,
+  safeUsername,
 } from '../lib/utils.js';
 
 export function registerChannelRoutes(app: Express, ctx: RouteContext): void {
-  const projectName = path.basename(path.resolve(ctx.dataDir, '..')) || 'Dashboard';
+  const projectName = safeUsername();
   app.get('/api/channels', async (_req: Request, res: Response) => {
     try {
       const channels = await ctx.getRelaycastChannels();
