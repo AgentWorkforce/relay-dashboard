@@ -518,7 +518,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
         if (mode === 'mock') {
           handleMockWebSocket(ws, verbose);
         } else if (mode === 'proxy' && relayUrl) {
-          handleHybridWebSocket(ws, getRelaycastSnapshot, relayUrl, verbose);
+          handleHybridWebSocket(ws, getRelaycastSnapshot, relayUrl, verbose, brokerApiKey);
         } else {
           handleStandaloneWebSocket(ws, getRelaycastSnapshot, verbose);
         }
