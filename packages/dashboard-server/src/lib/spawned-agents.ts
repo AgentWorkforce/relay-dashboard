@@ -275,11 +275,12 @@ export function createSpawnedAgentsCaches(opts: {
   relayUrl: string | undefined;
   dataDir: string;
   verbose: boolean;
+  brokerApiKey?: string;
 }): {
   getSpawnedAgents: () => Promise<{ names: Set<string> | null; agents: SpawnedAgentSummary[] | null }>;
   getLocalAgentNames: () => Set<string> | null;
 } {
-  const { brokerProxyEnabled, relayUrl, dataDir, verbose } = opts;
+  const { brokerProxyEnabled, relayUrl, dataDir, verbose, brokerApiKey } = opts;
 
   let spawnedAgentsCache: { expiresAt: number; names: Set<string> | null; agents: SpawnedAgentSummary[] | null } = {
     expiresAt: 0,
@@ -305,9 +306,13 @@ export function createSpawnedAgentsCaches(opts: {
     }
 
     try {
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (brokerApiKey) {
+        headers['x-api-key'] = brokerApiKey;
+      }
       const response = await fetch(`${relayUrl}/api/spawned`, {
         method: 'GET',
-        headers: { Accept: 'application/json' },
+        headers,
       });
 
       if (!response.ok) {

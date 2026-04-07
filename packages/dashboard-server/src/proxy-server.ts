@@ -237,11 +237,13 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     inMemoryAgentName = undefined;
     clearRegistrationCache();
   };
+  const brokerApiKey = process.env.RELAY_BROKER_API_KEY?.trim() || undefined;
   const { getSpawnedAgents, getLocalAgentNames } = createSpawnedAgentsCaches({
     brokerProxyEnabled,
     relayUrl,
     dataDir,
     verbose,
+    brokerApiKey,
   });
 
   const getRelaycastSnapshot = async (): Promise<DashboardSnapshot> => {
@@ -333,6 +335,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
           const strategy: SendStrategy | null = createSendStrategy({
             brokerProxyEnabled,
             brokerUrl: relayUrl,
+            brokerApiKey,
             relaycastConfig: config,
             dataDir,
           });
@@ -394,6 +397,7 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
     verbose,
     relayUrl,
     brokerProxyEnabled,
+    brokerApiKey,
     resolveRelaycastConfig,
     setRelayApiKey,
     setRelayAgentIdentity,
