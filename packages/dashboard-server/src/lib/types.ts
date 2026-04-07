@@ -112,6 +112,7 @@ export interface RouteContext {
   verbose: boolean;
   relayUrl: string | undefined;
   brokerProxyEnabled: boolean;
+  brokerApiKey: string | undefined;
   resolveRelaycastConfig: () => RelaycastConfig | null;
   setRelayApiKey: (apiKey: string) => void;
   setRelayAgentIdentity: (token: string, name: string) => void;

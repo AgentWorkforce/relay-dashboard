@@ -26,6 +26,9 @@ export function registerBrokerProxyRoutes(app: Express, ctx: RouteContext): void
       const headers: Record<string, string> = {
         'content-type': 'application/json',
       };
+      if (ctx.brokerApiKey) {
+        headers['x-api-key'] = ctx.brokerApiKey;
+      }
       const workspaceId = req.header('x-workspace-id');
       if (workspaceId) {
         headers['x-workspace-id'] = workspaceId;
@@ -74,6 +77,11 @@ export function registerBrokerProxyRoutes(app: Express, ctx: RouteContext): void
     ws: false,
     logger: ctx.verbose ? console : undefined,
     on: {
+      proxyReq: (proxyReq) => {
+        if (ctx.brokerApiKey) {
+          proxyReq.setHeader('x-api-key', ctx.brokerApiKey);
+        }
+      },
       error: (err, _req, res) => {
         console.error('[dashboard] Broker proxy error:', (err as Error).message);
         if (res && 'writeHead' in res && typeof res.writeHead === 'function') {
