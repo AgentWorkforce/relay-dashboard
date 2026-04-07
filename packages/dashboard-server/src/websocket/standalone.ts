@@ -87,6 +87,7 @@ export function handleHybridWebSocket(
   getSnapshot: () => Promise<DashboardSnapshot>,
   relayUrl: string,
   verbose: boolean,
+  brokerApiKey?: string,
 ): void {
   if (verbose) {
     console.log('[dashboard] Hybrid WebSocket client connected');
@@ -141,7 +142,7 @@ export function handleHybridWebSocket(
       console.log(`[dashboard] Connecting to broker WS: ${brokerWsUrl}`);
     }
 
-    const bws = new WebSocket(brokerWsUrl);
+    const bws = new WebSocket(brokerWsUrl, brokerApiKey ? { headers: { 'x-api-key': brokerApiKey } } : undefined);
     brokerWs = bws;
 
     bws.on('open', () => {
