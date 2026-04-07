@@ -61,15 +61,19 @@ export interface SendStrategy {
  * Used when running in proxy mode with a broker URL configured.
  */
 export class BrokerSendStrategy implements SendStrategy {
-  constructor(private brokerUrl: string) {}
+  constructor(private brokerUrl: string, private brokerApiKey?: string) {}
 
   async send(request: SendRequest): Promise<SendOutcome> {
     try {
+      const headers: Record<string, string> = {
+        'content-type': 'application/json',
+      };
+      if (this.brokerApiKey) {
+        headers['x-api-key'] = this.brokerApiKey;
+      }
       const upstream = await fetch(`${this.brokerUrl}/api/send`, {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           to: request.to,
           message: request.message,
@@ -159,6 +163,7 @@ export class DirectSendStrategy implements SendStrategy {
 export interface CreateSendStrategyOptions {
   brokerProxyEnabled: boolean;
   brokerUrl?: string;
+  brokerApiKey?: string;
   relaycastConfig?: RelaycastConfig | null;
   dataDir: string;
 }
@@ -171,7 +176,7 @@ export interface CreateSendStrategyOptions {
  */
 export function createSendStrategy(opts: CreateSendStrategyOptions): SendStrategy | null {
   if (opts.brokerProxyEnabled && opts.brokerUrl) {
-    return new BrokerSendStrategy(opts.brokerUrl);
+    return new BrokerSendStrategy(opts.brokerUrl, opts.brokerApiKey);
   }
 
   if (opts.relaycastConfig) {
