@@ -217,7 +217,7 @@ export function sendHtmlFileOrFallback(
   statusIfMissing = 404,
 ): void {
   if (fs.existsSync(filePath)) {
-    res.sendFile(path.resolve(filePath));
+    res.type('html').send(fs.readFileSync(path.resolve(filePath), 'utf-8'));
     return;
   }
 
