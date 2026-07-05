@@ -83,7 +83,7 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
   });
 
   app.post('/api/spawn', (req: Request, res: Response) => {
-    const { name, cli = 'claude-code', task } = req.body || {};
+    const { name, cli = 'claude-code', task, continueFrom } = req.body || {};
     log(`POST /api/spawn - ${name}`);
 
     if (!name) {
@@ -96,6 +96,8 @@ export function registerMockRoutes(app: Express, verbose: boolean): void {
       name,
       cli,
       task,
+      continueFrom,
+      resumed: typeof continueFrom === 'string' && continueFrom.length > 0,
       message: `Agent ${name} spawned successfully (mock)`,
     });
   });

@@ -234,6 +234,81 @@ describe('Dashboard Server', () => {
     });
   });
 
+  describe('Broker Proxy Mode', () => {
+    let brokerServer: HttpServer;
+    let dashboardServer: DashboardServer;
+    let forwardedSpawnBody: unknown;
+
+    beforeAll(async () => {
+      brokerServer = createHttpServer((req, res) => {
+        if (req.method !== 'POST' || req.url !== '/api/spawn') {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+
+        let body = '';
+        req.on('data', (chunk) => {
+          body += chunk;
+        });
+        req.on('end', () => {
+          forwardedSpawnBody = JSON.parse(body);
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ success: true }));
+        });
+      });
+      await new Promise<void>((resolve) => {
+        brokerServer.listen(0, () => resolve());
+      });
+
+      const brokerAddress = brokerServer.address();
+      if (!brokerAddress || typeof brokerAddress === 'string') {
+        throw new Error('Broker address not available');
+      }
+
+      dashboardServer = createServer({
+        port: 0,
+        mock: false,
+        relayUrl: `http://localhost:${brokerAddress.port}`,
+        verbose: false,
+      });
+      await new Promise<void>((resolve) => {
+        dashboardServer.server.listen(0, () => resolve());
+      });
+    });
+
+    afterAll(async () => {
+      await dashboardServer.close();
+      await new Promise<void>((resolve, reject) => {
+        brokerServer.close((err) => (err ? reject(err) : resolve()));
+      });
+    });
+
+    it('should forward continueFrom when resuming a previous session', async () => {
+      const address = dashboardServer.server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Server address not available');
+      }
+
+      const response = await fetch(`http://localhost:${address.port}/api/spawn`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'worker',
+          cli: 'claude-code',
+          task: 'resume context',
+          continueFrom: 'worker',
+        }),
+      });
+
+      expect(response.ok).toBe(true);
+      expect(forwardedSpawnBody).toMatchObject({
+        name: 'worker',
+        continueFrom: 'worker',
+      });
+    });
+  });
+
   describe('Proxy Mode (Configuration)', () => {
     let server: DashboardServer;
 

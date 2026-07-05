@@ -63,22 +63,22 @@ describe('BUG 7 — Resume session loses context', () => {
 
     if (res.status === 200) {
       const data = await res.json();
-      // BUG: The response doesn't indicate whether session was resumed
-      // because the server never processes continueFrom
       expect(data.success).toBeDefined();
+      expect(data.continueFrom).toBe('test-resume-agent');
+      expect(data.resumed).toBe(true);
     }
   });
 
-  it('spawn.ts should destructure continueFrom from request body', () => {
+  it('broker-proxy.ts should explicitly forward continueFrom from request body', () => {
     // This is a static code analysis test
     const fs = require('fs');
     const path = require('path');
     const spawnRouteCode = fs.readFileSync(
-      path.resolve(__dirname, '../../packages/dashboard-server/src/routes/spawn.ts'),
+      path.resolve(__dirname, '../../packages/dashboard-server/src/routes/broker-proxy.ts'),
       'utf-8'
     );
 
-    // FIX: continueFrom is now read from req.body and forwarded to spawn
+    // FIX: continueFrom is now read from req.body and forwarded to the broker spawn endpoint
     // Verify the fix is in place by checking the source contains continueFrom
     expect(spawnRouteCode).toContain('continueFrom');
   });

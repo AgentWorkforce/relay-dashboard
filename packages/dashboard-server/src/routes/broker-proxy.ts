@@ -109,11 +109,13 @@ export function registerBrokerProxyRoutes(app: Express, ctx: RouteContext): void
         typeof rawBody.model === 'string' ? rawBody.model : undefined,
       );
       const model = parsed.model;
+      const continueFrom = typeof rawBody.continueFrom === 'string' ? rawBody.continueFrom : undefined;
       return {
         ...rawBody,
         cli: parsed.cli,
         args: parsed.args,
         model,
+        continueFrom,
         includeWorkflowConventions,
         task: withWorkflowConventions(task, includeWorkflowConventions),
       };
