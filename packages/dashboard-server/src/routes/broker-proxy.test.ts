@@ -22,10 +22,10 @@ const catalog = { get: async () => ({
   }, defaultModels: {},
 }) };
 /** Mount broker routes with a fixed catalog and capture forwarded JSON without a live broker. */
-function setup(relayUrl = 'http://127.0.0.1:9000') {
+function setup(relayUrl = 'http://127.0.0.1:9000', dataDir?: string) {
   const app = express();
   app.use(express.json());
-  registerBrokerProxyRoutes(app, { brokerProxyEnabled: true, relayUrl } as RouteContext, catalog);
+  registerBrokerProxyRoutes(app, { brokerProxyEnabled: true, relayUrl, dataDir } as RouteContext, catalog);
   const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { headers: { 'content-type': 'application/json' } }));
   vi.stubGlobal('fetch', fetch);
   return { app, fetch };
@@ -53,6 +53,25 @@ describe('selected reasoning effort forwarding', () => {
     expect(response.status).toBe(400);
     expect(readDefaultOpenCodeAgent).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('accepts an absolute worker directory with a trailing separator', async () => {
+    const { app, fetch } = setup();
+    const cwd = path.resolve('worker');
+    const response = await request(app).post('/api/spawn').send({ name: 'worker', cli: 'opencode', model: 'provider/current', reasoningEffort: 'high', cwd: cwd + path.sep });
+    expect(response.status).toBe(200);
+    expect(readDefaultOpenCodeAgent).toHaveBeenCalledWith(expect.anything(), cwd, {});
+    expect(JSON.parse(fetch.mock.calls[0][1].body).harnessConfig.cwd).toBe(cwd);
+  });
+
+  it.each([['relative/work', path.join('relative', 'work')], [undefined, '']])('resolves a dashboard worker directory %s against the local project root', async (cwd, child) => {
+    const project = path.resolve('project');
+    const { app, fetch } = setup(undefined, path.join(project, '.agent-relay'));
+    const response = await request(app).post('/api/spawn').send({ name: 'worker', cli: 'opencode', model: 'provider/current', reasoningEffort: 'high', cwd });
+    expect(response.status).toBe(200);
+    const expected = path.join(project, child);
+    expect(readDefaultOpenCodeAgent).toHaveBeenCalledWith(expect.anything(), expected, {});
+    expect(JSON.parse(fetch.mock.calls[0][1].body).harnessConfig.cwd).toBe(expected);
   });
 
   it('reports unavailable default-agent discovery as an effort capability error', async () => {

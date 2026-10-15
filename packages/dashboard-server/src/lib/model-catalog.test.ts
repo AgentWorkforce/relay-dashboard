@@ -76,6 +76,10 @@ describe('current local model catalog', () => {
     expect(children.every(child => child.kill.mock.calls.length === 1)).toBe(true);
     expect(mocks.spawn.mock.calls.every(call => call[2].shell === false)).toBe(true);
   });
+  it('does not start configured MCP servers for the Claude probe', async () => {
+    await readCliCatalog('claude');
+    expect(mocks.spawn.mock.calls[0][1]).toContain('--strict-mcp-config');
+  });
   it('coalesces discovery and caches results', async () => {
     const catalog = createModelCatalog(fallback);
     const [first, second] = await Promise.all([catalog.get(), catalog.get()]);

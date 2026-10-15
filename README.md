@@ -115,8 +115,9 @@ against the selected model. Unsupported selections return HTTP 400 without spawn
 Claude receives `--effort`; Codex receives `model_reasoning_effort`; OpenCode receives
 a process-local `OPENCODE_CONFIG_CONTENT` model/variant setting, preserving the chosen
 agent and existing inline configuration. Without `--agent`, local OpenCode launches
-require an absolute worker directory and use `debug config` there to identify the
-configured default. The lookup and launch use the same executable. The lookup is bounded
+resolve a relative or empty worker directory against the dashboard's project root (the
+parent of its data directory) and use `debug config` there to identify the configured
+default. The worker is launched in that resolved directory with the same executable. The lookup is bounded
 to ten seconds and retains only the agent name. If discovery fails or the built-in
 fallback has been disabled/hidden, select an explicit `--agent` or use CLI default
 effort. Remote brokers and custom launchers require an explicit `--agent` for effort

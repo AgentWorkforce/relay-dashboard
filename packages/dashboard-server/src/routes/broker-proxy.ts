@@ -2,6 +2,7 @@
  * Broker proxy route handlers — forwards requests to the relay broker.
  */
 
+import path from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { createProxyMiddleware, type Options as ProxyOptions } from 'http-proxy-middleware';
 import type { RouteContext } from '../lib/types.js';
@@ -21,6 +22,8 @@ export function registerBrokerProxyRoutes(app: Express, ctx: RouteContext, catal
 
   const relayUrl = ctx.relayUrl;
   const localBroker = ['localhost', '127.0.0.1', '[::1]'].includes(new URL(relayUrl).hostname);
+  // A local broker shares the dashboard's project, whose data directory is <project>/.agent-relay.
+  const projectRoot = localBroker && ctx.dataDir ? path.dirname(path.resolve(ctx.dataDir)) : undefined;
 
   /** Transform and forward JSON with broker/workspace headers; reject invalid effort with HTTP 400. */
   const forwardBrokerJson = async (
@@ -32,7 +35,7 @@ export function registerBrokerProxyRoutes(app: Express, ctx: RouteContext, catal
     try {
       const rawBody = isRecord(req.body) ? { ...req.body } : {};
       const transformed = transformBody ? transformBody(rawBody) : rawBody;
-      const body = endpoint === '/api/spawn' ? await applySpawnEffort(transformed, catalog, localBroker) : transformed;
+      const body = endpoint === '/api/spawn' ? await applySpawnEffort(transformed, catalog, localBroker, projectRoot) : transformed;
       const headers: Record<string, string> = {
         'content-type': 'application/json',
       };

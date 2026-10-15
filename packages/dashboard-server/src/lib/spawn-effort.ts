@@ -5,8 +5,21 @@ import path from 'node:path';
 
 export class InvalidEffortError extends Error {}
 
+/**
+ * Resolve a worker directory for local default-agent discovery.
+ * Relative or missing directories resolve against the local project root when known.
+ */
+function resolveWorkerDirectory(cwd: unknown, projectRoot?: string): string | undefined {
+  if (cwd === undefined || cwd === '') return projectRoot;
+  if (typeof cwd !== 'string') return undefined;
+  if (!path.isAbsolute(cwd)) return projectRoot ? path.resolve(projectRoot, cwd) : undefined;
+  // Ignore trailing separators, but reject drive-relative or non-normalized paths.
+  const trimmed = cwd.length > path.parse(cwd).root.length ? cwd.replace(/[\\/]+$/, '') : cwd;
+  return path.resolve(trimmed) === path.normalize(trimmed) ? path.resolve(trimmed) : undefined;
+}
+
 /** Translate only an explicit dashboard selection; preserve legacy CLI arguments. */
-export async function applySpawnEffort(body: Record<string, unknown>, catalog: ModelCatalog, localBroker = false): Promise<Record<string, unknown>> {
+export async function applySpawnEffort(body: Record<string, unknown>, catalog: ModelCatalog, localBroker = false, projectRoot?: string): Promise<Record<string, unknown>> {
   if (body.reasoningEffort === undefined || body.reasoningEffort === '') return body;
   const cli = body.cli;
   const provider = cli === 'claude' ? 'Claude' : cli === 'codex' ? 'Codex' : cli === 'opencode' ? 'Opencode' : undefined;
@@ -48,6 +61,7 @@ export async function applySpawnEffort(body: Record<string, unknown>, catalog: M
   }
   let agent = '';
   let hasAgent = false;
+  let workerCwd: string | undefined;
   for (let i = 0; i < effectiveArgs.length; i++) {
     if (effectiveArgs[i] === '--agent') { agent = effectiveArgs[++i]; hasAgent = true; }
     else if (effectiveArgs[i].startsWith('--agent=')) { agent = effectiveArgs[i].slice('--agent='.length); hasAgent = true; }
@@ -56,8 +70,9 @@ export async function applySpawnEffort(body: Record<string, unknown>, catalog: M
     if (!localBroker || (harness.command && harness.command !== 'opencode')) {
       throw new InvalidEffortError('OpenCode effort requires an explicit --agent for remote brokers or custom launchers');
     }
-    const cwd = harness.cwd ?? body.cwd;
-    if (typeof cwd !== 'string' || !path.isAbsolute(cwd) || path.resolve(cwd) !== path.normalize(cwd)) {
+    const cwd = resolveWorkerDirectory(harness.cwd ?? body.cwd, projectRoot);
+    workerCwd = cwd;
+    if (!cwd) {
       throw new InvalidEffortError('OpenCode effort requires an absolute working directory to discover the default agent; specify a directory or --agent, or use CLI default effort');
     }
     try {
@@ -75,7 +90,8 @@ export async function applySpawnEffort(body: Record<string, unknown>, catalog: M
     ...result, args,
     harnessConfig: {
       ...harness, runtime: 'pty', command: launch.command, args: [...launch.args, ...effectiveArgs, '--model', model.value],
-      ...(!harness.cwd && body.cwd ? { cwd: body.cwd } : {}),
+      // Run the worker in the directory whose configuration identified its agent.
+      ...(workerCwd ? { cwd: workerCwd } : !harness.cwd && body.cwd ? { cwd: body.cwd } : {}),
       env: { ...env, OPENCODE_CONFIG_CONTENT: JSON.stringify(config) },
     },
   };

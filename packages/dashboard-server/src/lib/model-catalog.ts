@@ -121,7 +121,7 @@ export async function readCliCatalog(cli: 'claude' | 'opencode'): Promise<unknow
   const resolved = await resolveDiscoveryCommand(cli);
   return new Promise((resolve, reject) => {
     const args = cli === 'claude'
-      ? ['--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--no-session-persistence']
+      ? ['--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--no-session-persistence', '--strict-mcp-config']
       : ['models', '--verbose'];
     const child = spawn(resolved.command, [...resolved.args, ...args], { windowsHide: true, shell: false, cwd: os.homedir() });
     child.stdout.setEncoding('utf8');
