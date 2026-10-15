@@ -18,14 +18,22 @@ export interface ModelCatalog { get(): Promise<ModelCatalogData> }
 const TTL = 10 * 60 * 1000;
 const OUTPUT_LIMIT = 8 * 1024 * 1024;
 const providers = { Claude: 'claude', Codex: 'codex', Opencode: 'opencode' } as const;
+/** Narrow CLI metadata to an object, excluding null and arrays. */
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+/** Accept bounded model/variant identifiers before exposing CLI metadata. */
 const identifier = (value: unknown): value is string =>
   typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]{0,255}$/.test(value);
+/** Keep distinct valid effort identifiers; absent or malformed lists become empty. */
 function efforts(value: unknown): string[] {
   return Array.isArray(value) ? [...new Set(value.filter(identifier))] : [];
 }
 
+/**
+ * Normalize Claude initialization metadata, preferring resolved model IDs.
+ * Alias-only responses retain previous choices; duplicate IDs use the fresh entry.
+ * @throws If the response is not an array.
+ */
 export function parseClaudeModels(raw: unknown, previous: ModelOption[] = []): ModelOption[] {
   if (!Array.isArray(raw)) throw new Error('Invalid Claude catalog');
   const entries = raw.filter(record).filter(m => m.value !== 'default');
@@ -43,6 +51,10 @@ export function parseClaudeModels(raw: unknown, previous: ModelOption[] = []): M
   return [...result, ...(partial ? previous : [])].filter((m, i, all) => all.findIndex(x => x.value === m.value) === i);
 }
 
+/**
+ * Parse `opencode models --verbose` ID/JSON blocks into labeled provider models.
+ * Disabled variants are omitted. Malformed JSON throws so discovery can fall back.
+ */
 export function parseOpenCodeModels(text: string): ModelOption[] {
   const chunks = text.replace(/\r/g, '').split(/^([^\s{}]+\/[^\s{}]+)\s*$/m);
   const result: ModelOption[] = [];
@@ -59,6 +71,10 @@ export function parseOpenCodeModels(text: string): ModelOption[] {
   return result;
 }
 
+/**
+ * Extract listed Codex cache entries and their advertised effort metadata.
+ * Hidden or invalid model IDs are omitted; a missing models array throws.
+ */
 export function parseCodexModels(raw: unknown): ModelOption[] {
   if (!record(raw) || !Array.isArray(raw.models)) throw new Error('Invalid Codex catalog');
   return raw.models.filter(record).filter(m => m.visibility === 'list' && identifier(m.slug)).map(m => ({
@@ -100,6 +116,7 @@ export async function readCliCatalog(cli: 'claude' | 'opencode'): Promise<unknow
     const child = spawn(resolved.command, [...resolved.args, ...args], { windowsHide: true, shell: false, cwd: os.homedir() });
     child.stdout.setEncoding('utf8');
     let output = '', bytes = 0, settled = false;
+    /** Settle discovery once and release its timeout and child process. */
     const finish = (error?: Error, result?: unknown) => {
       if (settled) return;
       settled = true;
@@ -139,11 +156,18 @@ export async function readCliCatalog(cli: 'claude' | 'opencode'): Promise<unknow
   });
 }
 
+/**
+ * Create a ten-minute catalog cache with shared in-flight refreshes.
+ * Provider failures retain cached or bundled options and expose generic warnings.
+ * Set discover=false for remote brokers to avoid querying this host's CLIs.
+ */
 export function createModelCatalog(fallback: () => Promise<ModelCatalogData>, discover = true): ModelCatalog {
   let cached: ModelCatalogData | undefined;
   let expires = 0;
   let pending: Promise<ModelCatalogData> | undefined;
-  return { get() {
+  return {
+  /** Return fresh cached data or share one refresh across concurrent callers. */
+  get() {
     if (cached && Date.now() < expires) return Promise.resolve(cached);
     if (pending) return pending;
     pending = (async () => {

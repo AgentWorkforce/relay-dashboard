@@ -2,6 +2,7 @@ import type { ModelOption } from '../components/SpawnModal';
 
 export type ReasoningEffort = NonNullable<ModelOption['defaultReasoningEffort']>;
 
+/** Accept bounded effort names without restricting them to a fixed list of levels. */
 function isReasoningEffort(value: string): value is ReasoningEffort {
   return /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(value);
 }
@@ -98,6 +99,10 @@ export function parseSpawnCommand(command: string): {
   return { provider, model, reasoningEffort };
 }
 
+/**
+ * Append the selected model without injecting an effort override.
+ * Retain the CLI/options parameters for caller compatibility; effort travels separately.
+ */
 export function buildCommandWithModel(
   baseCommand: string,
   _cli: string,

@@ -120,6 +120,10 @@ export interface AgentProviderProps {
 /** Bridge-level agent names shown separately from project agents */
 const BRIDGE_AGENT_NAMES = ['architect'];
 
+/**
+ * Supply merged agent state and lifecycle actions to the dashboard.
+ * Route launches through the active cloud, orchestrator, or local API and surface errors.
+ */
 export function AgentProvider({ children, data, isConnected }: AgentProviderProps) {
   const {
     cloudUser,

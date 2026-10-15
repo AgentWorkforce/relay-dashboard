@@ -28,6 +28,7 @@ beforeEach(() => {
   };
 });
 afterEach(cleanup);
+/** Render the provider against mocked transports to inspect the selected spawn API. */
 function setup() {
   return renderHook(() => useAgentContext(), { wrapper: ({ children }) => <AgentProvider data={null} isConnected={false}>{children}</AgentProvider> });
 }

@@ -14,14 +14,14 @@ function isModelOption(item: unknown): item is ModelOption {
   );
 }
 
-/**
- * Fetches model options from the server's discovered catalog or bundled registry.
- * Returns model options keyed by lowercase CLI name (e.g., claude, codex, gemini, opencode, droid).
- */
 export interface DefaultModelsMap {
   [cli: string]: string;
 }
 
+/**
+ * Fetch discovered or bundled model choices and defaults, keyed by lowercase CLI name.
+ * Expose loading/error state and a refetch action; cancel the initial request on unmount.
+ */
 export function useModelOptions() {
   const [modelOptions, setModelOptions] = useState<ModelOptionsMap>({});
   const [defaultModels, setDefaultModels] = useState<DefaultModelsMap>({});

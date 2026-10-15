@@ -154,6 +154,10 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
   },
 ];
 
+/**
+ * Collect an agent launch configuration with model-dependent, opt-in reasoning effort.
+ * Omit unsupported effort and reset it when the model changes or the dialog reopens.
+ */
 export function SpawnModal({
   isOpen,
   onClose,
@@ -326,6 +330,7 @@ export function SpawnModal({
     [existingAgents]
   );
 
+  /** Validate launch fields, derive the working directory, and close only after a successful spawn. */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 

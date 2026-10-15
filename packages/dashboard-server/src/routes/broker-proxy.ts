@@ -10,6 +10,10 @@ import type { ModelCatalog } from '../lib/model-catalog.js';
 import { bundledModels } from './models.js';
 import { applySpawnEffort, InvalidEffortError } from '../lib/spawn-effort.js';
 
+/**
+ * Register broker forwarding when enabled, sharing the model catalog for effort validation.
+ * Local executable resolution is enabled only for loopback broker URLs.
+ */
 export function registerBrokerProxyRoutes(app: Express, ctx: RouteContext, catalog: ModelCatalog = { get: bundledModels }): void {
   if (!ctx.brokerProxyEnabled || !ctx.relayUrl) {
     return;
@@ -18,6 +22,7 @@ export function registerBrokerProxyRoutes(app: Express, ctx: RouteContext, catal
   const relayUrl = ctx.relayUrl;
   const localBroker = ['localhost', '127.0.0.1', '[::1]'].includes(new URL(relayUrl).hostname);
 
+  /** Transform and forward JSON with broker/workspace headers; reject invalid effort with HTTP 400. */
   const forwardBrokerJson = async (
     req: Request,
     res: Response,

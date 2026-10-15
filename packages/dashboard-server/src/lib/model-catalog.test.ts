@@ -8,6 +8,7 @@ import { createModelCatalog, parseClaudeModels, parseOpenCodeModels, readCliCata
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }));
+/** Supply a minimal registry fixture independent of bundled model versions. */
 const fallback = async () => ({ modelOptions: { Claude: [{ value: 'opus', label: 'Opus' }], Codex: [], Opencode: [] }, defaultModels: { claude: 'opus' } });
 let directory: string;
 let fail = false;

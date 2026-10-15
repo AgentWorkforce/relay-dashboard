@@ -67,8 +67,7 @@ function enrichCodexModelOptions(
 }
 
 /**
- * Model options route.
- * Serves the shared catalog, with @agent-relay/config as the bundled fallback.
+ * Load bundled model choices and defaults, enriching legacy Codex effort metadata.
  */
 export async function bundledModels() {
   const config = await import('@agent-relay/config') as ConfigModule;
@@ -78,6 +77,7 @@ export async function bundledModels() {
   };
 }
 
+/** Serve the supplied catalog at GET /api/models, returning HTTP 500 on load failure. */
 export function registerModelsRoutes(app: Application, catalog: ModelCatalog = { get: bundledModels }): void {
   app.get('/api/models', async (_req, res) => {
     try {

@@ -154,6 +154,7 @@ interface AppShellProps {
   wsEventHandlerRef: React.MutableRefObject<((event: any) => void) | undefined>;
 }
 
+/** Compose the dashboard providers' UI state and enable spawn controls for the active transport. */
 function AppShell({
   data,
   isConnected,

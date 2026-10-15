@@ -16,6 +16,7 @@ const catalog = { get: async () => ({
     Opencode: [{ value: 'provider/current', label: 'Current', reasoningEfforts: ['high', 'custom'] }],
   }, defaultModels: {},
 }) };
+/** Mount broker routes with a fixed catalog and capture forwarded JSON without a live broker. */
 function setup() {
   const app = express();
   app.use(express.json());
