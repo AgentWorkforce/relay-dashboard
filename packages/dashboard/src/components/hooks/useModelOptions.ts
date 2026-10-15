@@ -15,7 +15,7 @@ function isModelOption(item: unknown): item is ModelOption {
 }
 
 /**
- * Fetches model options from the server (sourced from cli-registry.yaml via codegen).
+ * Fetches model options from the server's discovered catalog or bundled registry.
  * Returns model options keyed by lowercase CLI name (e.g., claude, codex, gemini, opencode, droid).
  */
 export interface DefaultModelsMap {

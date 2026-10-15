@@ -30,6 +30,11 @@ type SpawnModalOverrides = Partial<React.ComponentProps<typeof SpawnModal>> & {
   isCloudMode?: boolean;
 };
 
+const effortModels = { claude: [
+  { value: 'claude-opus-4-6', label: 'Opus 4.6', reasoningEfforts: ['high', 'max'] },
+  { value: 'claude-haiku-4-5', label: 'Haiku 4.5', reasoningEfforts: [] },
+] };
+
 function renderSpawnModal(overrides: SpawnModalOverrides = {}) {
   const { isCloudMode = false, ...spawnModalOverrides } = overrides;
   const defaultProps: React.ComponentProps<typeof SpawnModal> = {
@@ -56,6 +61,36 @@ describe('SpawnModal', () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('clears effort when switching to a model that cannot use it', async () => {
+    const { props } = renderSpawnModal({ modelOptions: effortModels });
+    fireEvent.change(screen.getByLabelText('Reasoning effort'), { target: { value: 'max' } });
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'claude-haiku-4-5' } });
+    expect((screen.getByLabelText('Reasoning effort') as HTMLSelectElement).disabled).toBe(true);
+    fireEvent.submit(getForm());
+    await waitFor(() => expect(props.onSpawn).toHaveBeenCalled());
+    expect(vi.mocked(props.onSpawn).mock.calls[0][0].reasoningEffort).toBeUndefined();
+  });
+
+  it('does not offer effort for a host that cannot carry it', async () => {
+    const { props } = renderSpawnModal({ modelOptions: effortModels, supportsReasoningEffort: false });
+    expect(screen.queryByLabelText('Reasoning effort')).toBeNull();
+    fireEvent.submit(getForm());
+    await waitFor(() => expect(props.onSpawn).toHaveBeenCalled());
+    expect(vi.mocked(props.onSpawn).mock.calls[0][0].reasoningEffort).toBeUndefined();
+  });
+
+  it('resets effort when reopened and validates refreshed model metadata', async () => {
+    const { props, rerender } = renderSpawnModal({ modelOptions: effortModels });
+    fireEvent.change(screen.getByLabelText('Reasoning effort'), { target: { value: 'max' } });
+    rerender(<DashboardConfigProvider><SpawnModal {...props} modelOptions={{ claude: [{ ...effortModels.claude[0], reasoningEfforts: ['high'] }] }} /></DashboardConfigProvider>);
+    expect((screen.getByLabelText('Reasoning effort') as HTMLSelectElement).value).toBe('');
+    rerender(<DashboardConfigProvider><SpawnModal {...props} modelOptions={effortModels} /></DashboardConfigProvider>);
+    expect((screen.getByLabelText('Reasoning effort') as HTMLSelectElement).value).toBe('');
+    rerender(<DashboardConfigProvider><SpawnModal {...props} isOpen={false} /></DashboardConfigProvider>);
+    rerender(<DashboardConfigProvider><SpawnModal {...props} /></DashboardConfigProvider>);
+    expect((screen.getByLabelText('Reasoning effort') as HTMLSelectElement).value).toBe('');
   });
 
   describe('repo dropdown (cloud mode)', () => {
@@ -222,7 +257,7 @@ describe('SpawnModal', () => {
   });
 
   describe('model selection', () => {
-    it('falls back to a supported Codex model and applies the default reasoning effort override', async () => {
+    it('falls back to a supported Codex model without silently overriding CLI effort', async () => {
       const onSpawn = vi.fn().mockResolvedValue(true);
 
       renderSpawnModal({
@@ -264,10 +299,11 @@ describe('SpawnModal', () => {
       });
 
       const config = onSpawn.mock.calls[0][0];
-      expect(config.command).toBe('codex --model gpt-5.4 -c model_reasoning_effort="xhigh"');
+      expect(config.command).toBe('codex --model gpt-5.4');
+      expect(config.reasoningEffort).toBeUndefined();
     });
 
-    it('applies the Codex mini reasoning effort override when mini is selected', async () => {
+    it('carries an explicitly selected Codex effort separately from the command', async () => {
       const onSpawn = vi.fn().mockResolvedValue(true);
 
       renderSpawnModal({
@@ -302,6 +338,8 @@ describe('SpawnModal', () => {
       const modelSelect = await screen.findByLabelText('Model') as HTMLSelectElement;
       expect(modelSelect.value).toBe('gpt-5.1-codex-mini');
 
+      fireEvent.change(screen.getByLabelText('Reasoning effort'), { target: { value: 'high' } });
+
       fireEvent.submit(getForm());
 
       await waitFor(() => {
@@ -309,7 +347,8 @@ describe('SpawnModal', () => {
       });
 
       const config = onSpawn.mock.calls[0][0];
-      expect(config.command).toBe('codex --model gpt-5.1-codex-mini -c model_reasoning_effort="high"');
+      expect(config.command).toBe('codex --model gpt-5.1-codex-mini');
+      expect(config.reasoningEffort).toBe('high');
     });
 
     it('falls back to a supported OpenCode model when a saved default is no longer offered', async () => {

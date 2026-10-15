@@ -6,13 +6,17 @@ import type { Express, Request, Response } from 'express';
 import { createProxyMiddleware, type Options as ProxyOptions } from 'http-proxy-middleware';
 import type { RouteContext } from '../lib/types.js';
 import { isRecord, parseCommandDescriptor, withWorkflowConventions } from '../lib/utils.js';
+import type { ModelCatalog } from '../lib/model-catalog.js';
+import { bundledModels } from './models.js';
+import { applySpawnEffort, InvalidEffortError } from '../lib/spawn-effort.js';
 
-export function registerBrokerProxyRoutes(app: Express, ctx: RouteContext): void {
+export function registerBrokerProxyRoutes(app: Express, ctx: RouteContext, catalog: ModelCatalog = { get: bundledModels }): void {
   if (!ctx.brokerProxyEnabled || !ctx.relayUrl) {
     return;
   }
 
   const relayUrl = ctx.relayUrl;
+  const localBroker = ['localhost', '127.0.0.1', '[::1]'].includes(new URL(relayUrl).hostname);
 
   const forwardBrokerJson = async (
     req: Request,
@@ -22,7 +26,8 @@ export function registerBrokerProxyRoutes(app: Express, ctx: RouteContext): void
   ) => {
     try {
       const rawBody = isRecord(req.body) ? { ...req.body } : {};
-      const body = transformBody ? transformBody(rawBody) : rawBody;
+      const transformed = transformBody ? transformBody(rawBody) : rawBody;
+      const body = endpoint === '/api/spawn' ? await applySpawnEffort(transformed, catalog, localBroker) : transformed;
       const headers: Record<string, string> = {
         'content-type': 'application/json',
       };
@@ -62,6 +67,10 @@ export function registerBrokerProxyRoutes(app: Express, ctx: RouteContext): void
       }
       res.send(text);
     } catch (err) {
+      if (err instanceof InvalidEffortError) {
+        res.status(400).json({ success: false, error: err.message });
+        return;
+      }
       console.error('[dashboard] Broker proxy error:', (err as Error).message);
       res.status(502).json({
         success: false,

@@ -88,6 +88,36 @@ npx @agent-relay/dashboard
 
 ## Usage
 
+### Models and reasoning effort
+
+When connected to a broker on localhost, the dashboard discovers Claude's versioned
+models with the CLI's initialization protocol, reads Codex's `models_cache.json`
+from `CODEX_HOME` (or `~/.codex`), and reads OpenCode's `models --verbose` catalog.
+Discovery uses the dashboard process's `PATH` and user account. On Windows, native
+executables and standard npm installations on `PATH` are supported without a shell.
+Discovery does not send a model prompt or change global CLI settings.
+
+The catalog is cached in memory for ten minutes. Reload the dashboard to refresh an
+expired catalog. Missing CLIs, timeouts, malformed output, and empty catalogs fall
+back independently to the last successful result or the bundled registry. A partial
+Claude alias response retains previously discovered versioned choices. Responses
+include `catalogWarnings` when discovery is unavailable. Remote broker connections
+use the bundled registry rather than discovering models on the wrong host.
+
+**Spawn Agent → Reasoning effort** lists the levels advertised for the selected
+model. **CLI default** sends no override. Switching models or reopening the dialog
+clears the selection. Models without effort metadata disable the control. Settings
+apply to newly launched agents, not agents already running.
+
+The local spawn API accepts an optional `reasoningEffort` string and validates it
+against the selected model. Unsupported selections return HTTP 400 without spawning.
+Claude receives `--effort`; Codex receives `model_reasoning_effort`; OpenCode receives
+a process-local `OPENCODE_CONFIG_CONTENT` model/variant setting, preserving the chosen
+agent and existing inline configuration. OpenCode effort requires a broker supporting
+`harnessConfig.env` (verified with broker 14); older brokers are not covered.
+Cloud adapters forward the optional effort field to their host API. The legacy
+orchestrator path does not expose the control because it cannot transport that field.
+
 ### Standalone Mode (No Dependencies)
 
 Perfect for development, testing, and demos:

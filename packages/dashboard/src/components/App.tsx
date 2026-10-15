@@ -175,6 +175,8 @@ function AppShell({
     effectiveIsLoading,
     isOrchestratorConnected,
     orchestratorWorkspaces,
+    activeWorkspaceId,
+    activeCloudWorkspaceId,
     handleEffectiveWorkspaceSelect,
     features,
     apiAdapter,
@@ -992,6 +994,7 @@ function AppShell({
       />
 
       <SpawnModal
+        supportsReasoningEffort={Boolean(features.workspaces && apiAdapter && activeCloudWorkspaceId) || !(orchestratorWorkspaces.length > 0 && activeWorkspaceId)}
         isOpen={isSpawnModalOpen}
         onClose={() => setIsSpawnModalOpen(false)}
         onSpawn={handleSpawn}

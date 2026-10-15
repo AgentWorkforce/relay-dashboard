@@ -2,10 +2,8 @@ import type { ModelOption } from '../components/SpawnModal';
 
 export type ReasoningEffort = NonNullable<ModelOption['defaultReasoningEffort']>;
 
-const REASONING_EFFORTS: ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
-
 function isReasoningEffort(value: string): value is ReasoningEffort {
-  return REASONING_EFFORTS.includes(value as ReasoningEffort);
+  return /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(value);
 }
 
 function stripWrappingQuotes(value: string): string {
@@ -102,18 +100,10 @@ export function parseSpawnCommand(command: string): {
 
 export function buildCommandWithModel(
   baseCommand: string,
-  cli: string,
+  _cli: string,
   model: string,
-  options: ModelOption[],
+  _options: ModelOption[],
 ): string {
   const parts = [baseCommand, '--model', model];
-  const reasoningEffort = cli === 'codex'
-    ? getDefaultReasoningEffortForModel(options, model)
-    : undefined;
-
-  if (reasoningEffort) {
-    parts.push('-c', 'model_reasoning_effort="' + reasoningEffort + '"');
-  }
-
   return parts.join(' ');
 }

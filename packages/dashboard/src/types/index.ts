@@ -263,6 +263,7 @@ export type SpeakOnTrigger = 'SESSION_END' | 'CODE_WRITTEN' | 'REVIEW_REQUEST' |
 export interface SpawnAgentRequest {
   name: string;
   cli?: string;
+  reasoningEffort?: string;
   task?: string;
   team?: string;
   /** Working directory relative to project root */

@@ -494,7 +494,8 @@ export function AgentProvider({ children, data, isConnected }: AgentProviderProp
     setIsSpawning(true);
     setSpawnError(null);
     try {
-      const { provider, model, reasoningEffort } = parseSpawnCommand(config.command);
+      const { provider, model, reasoningEffort: commandEffort } = parseSpawnCommand(config.command);
+      const reasoningEffort = config.reasoningEffort ?? commandEffort;
 
       if (hasWorkspaceApi && apiAdapter && activeCloudWorkspaceId) {
         const result = await apiAdapter.spawnAgent(activeCloudWorkspaceId, {
@@ -512,6 +513,7 @@ export function AgentProvider({ children, data, isConnected }: AgentProviderProp
       }
 
       if (orchestratorWorkspaces.length > 0 && activeWorkspaceId) {
+        if (config.reasoningEffort) throw new Error('This orchestrator does not support explicit reasoning effort');
         await orchestratorSpawnAgent(config.name, undefined, config.command, config.cwd);
         return true;
       }
@@ -519,6 +521,7 @@ export function AgentProvider({ children, data, isConnected }: AgentProviderProp
       const result = await api.spawnAgent({
         name: config.name,
         cli: config.command,
+        reasoningEffort: config.reasoningEffort,
         cwd: config.cwd,
         team: config.team,
         shadowMode: config.shadowMode,

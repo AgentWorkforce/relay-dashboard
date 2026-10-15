@@ -8,8 +8,14 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { createServer as createHttpServer, type Server as HttpServer } from 'http';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createServer, type DashboardServer } from './proxy-server.js';
+
+// General route tests must not depend on the developer's installed CLIs or account.
+vi.mock('./lib/model-catalog.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./lib/model-catalog.js')>();
+  return { ...actual, createModelCatalog: (fallback: Parameters<typeof actual.createModelCatalog>[0]) => actual.createModelCatalog(fallback, false) };
+});
 
 describe('Dashboard Server', () => {
   describe('Static Route Fallbacks', () => {
@@ -236,12 +242,16 @@ describe('Dashboard Server', () => {
 
   describe('Proxy Mode (Configuration)', () => {
     let server: DashboardServer;
+    let broker: HttpServer;
 
     beforeAll(async () => {
+      broker = createHttpServer((_req, res) => { res.writeHead(404); res.end(); });
+      await new Promise<void>((resolve) => broker.listen(0, '127.0.0.1', resolve));
+      const brokerPort = (broker.address() as { port: number }).port;
       server = createServer({
         port: 0,
         mock: false,
-        relayUrl: 'http://localhost:3889',
+        relayUrl: `http://127.0.0.1:${brokerPort}`,
         verbose: false,
       });
       await new Promise<void>((resolve) => {
@@ -251,6 +261,7 @@ describe('Dashboard Server', () => {
 
     afterAll(async () => {
       await server.close();
+      await new Promise<void>((resolve) => broker.close(() => resolve()));
     });
 
     it('should start in proxy mode', () => {

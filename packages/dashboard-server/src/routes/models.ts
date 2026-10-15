@@ -1,6 +1,7 @@
 import type { Application } from 'express';
+import type { ModelCatalog } from '../lib/model-catalog.js';
 
-type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+type ReasoningEffort = string;
 
 type ModelOption = {
   value: string;
@@ -67,20 +68,22 @@ function enrichCodexModelOptions(
 
 /**
  * Model options route.
- * Serves model options from @agent-relay/config (generated from cli-registry.yaml).
+ * Serves the shared catalog, with @agent-relay/config as the bundled fallback.
  */
-export function registerModelsRoutes(app: Application): void {
+export async function bundledModels() {
+  const config = await import('@agent-relay/config') as ConfigModule;
+  return {
+    modelOptions: enrichCodexModelOptions(config.ModelOptions as ModelOptionsResponse, config),
+    defaultModels: config.DefaultModels as DefaultModelsResponse,
+  };
+}
+
+export function registerModelsRoutes(app: Application, catalog: ModelCatalog = { get: bundledModels }): void {
   app.get('/api/models', async (_req, res) => {
     try {
-      const config = await import('@agent-relay/config') as ConfigModule;
-      const modelOptions = enrichCodexModelOptions(
-        config.ModelOptions as ModelOptionsResponse,
-        config,
-      );
       return res.json({
         success: true,
-        modelOptions,
-        defaultModels: config.DefaultModels as DefaultModelsResponse,
+        ...await catalog.get(),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

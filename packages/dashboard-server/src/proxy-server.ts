@@ -61,7 +61,8 @@ import { registerReactionRoutes } from './routes/reactions.js';
 import { registerThreadReplyRoutes } from './routes/thread-replies.js';
 import { registerRelayConfigRoutes } from './routes/relay-config.js';
 import { registerRelaycastHistoryRoutes } from './routes/history-relaycast.js';
-import { registerModelsRoutes } from './routes/models.js';
+import { registerModelsRoutes, bundledModels } from './routes/models.js';
+import { createModelCatalog } from './lib/model-catalog.js';
 
 export type { DashboardServerOptions, DashboardServer } from './lib/types.js';
 
@@ -442,8 +443,11 @@ export function createServer(options: DashboardServerOptions = {}): DashboardSer
       resolveWorkspaceId,
     });
     registerRelaycastHistoryRoutes(app, ctx);
-    registerModelsRoutes(app);
-    registerBrokerProxyRoutes(app, ctx);
+    // Discovery describes this host, never an unrelated remote broker's installation.
+    const localBroker = relayUrl && ['localhost', '127.0.0.1', '[::1]'].includes(new URL(relayUrl).hostname);
+    const catalog = createModelCatalog(bundledModels, Boolean(localBroker));
+    registerModelsRoutes(app, catalog);
+    registerBrokerProxyRoutes(app, ctx, catalog);
   }
 
   // --- Static files and SPA fallback ---

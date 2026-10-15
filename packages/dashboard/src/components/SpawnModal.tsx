@@ -11,7 +11,7 @@ import { buildCommandWithModel, resolveSupportedModel } from '../lib/model-optio
 
 /**
  * Model options are fetched from the server (/api/models) which sources them
- * from @agent-relay/config (generated from cli-registry.yaml via codegen).
+ * from installed CLI catalogs with @agent-relay/config as a fallback.
  * The modelOptions prop is the primary source of model data.
  */
 import { getAgentColor, getAgentInitials } from '../lib/colors';
@@ -21,6 +21,7 @@ export type SpeakOnTrigger = 'SESSION_END' | 'CODE_WRITTEN' | 'REVIEW_REQUEST' |
 export interface SpawnConfig {
   name: string;
   command: string;
+  reasoningEffort?: string;
   cwd?: string;
   team?: string;
   shadowMode?: 'subagent' | 'process';
@@ -63,13 +64,15 @@ export interface SpawnModalProps {
   };
   /** Default model per CLI from cli-registry.yaml (fetched from /api/models) */
   registryDefaultModels?: Record<string, string>;
+  /** Disable when the host's spawn API cannot forward an explicit effort. */
+  supportsReasoningEffort?: boolean;
 }
 
 export interface ModelOption {
   value: string;
   label: string;
-  reasoningEfforts?: Array<'low' | 'medium' | 'high' | 'xhigh'>;
-  defaultReasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh';
+  reasoningEfforts?: string[];
+  defaultReasoningEffort?: string;
 }
 
 const EMPTY_MODEL_OPTIONS: ModelOption[] = [];
@@ -165,6 +168,7 @@ export function SpawnModal({
   connectedProviders,
   modelOptions,
   registryDefaultModels,
+  supportsReasoningEffort = true,
 }: SpawnModalProps) {
   const { features } = useDashboardConfig();
   const hasWorkspaceFeature = features.workspaces;
@@ -184,6 +188,7 @@ export function SpawnModal({
   const [name, setName] = useState('');
   const [customCommand, setCustomCommand] = useState('');
   const [selectedModels, setSelectedModels] = useState<Record<string, string>>({});
+  const [selectedEffort, setSelectedEffort] = useState('');
   const [cwd, setCwd] = useState('');
   const [selectedRepoId, setSelectedRepoId] = useState<string | undefined>(activeRepoId);
   const [team, setTeam] = useState('');
@@ -210,6 +215,14 @@ export function SpawnModal({
   const setModelForCli = useCallback((cli: string, model: string) => {
     setSelectedModels(prev => ({ ...prev, [cli]: model }));
   }, []);
+
+  const selectedModel = getSelectedModel(selectedTemplate.id);
+  const effortLevels = getModelsForCli(selectedTemplate.id).find(model => model.value === selectedModel)?.reasoningEfforts ?? [];
+  const reasoningEffort = supportsReasoningEffort && effortLevels.includes(selectedEffort) ? selectedEffort : '';
+  useEffect(() => { setSelectedEffort(''); }, [selectedTemplate.id, selectedModel]);
+  useEffect(() => {
+    if (selectedEffort && !reasoningEffort) setSelectedEffort('');
+  }, [selectedEffort, reasoningEffort]);
 
   // Build effective command, always including model flag for CLIs with model selection
   const effectiveCommand = useMemo(() => {
@@ -283,6 +296,7 @@ export function SpawnModal({
         }
       }
       setSelectedModels(initialModels);
+      setSelectedEffort('');
       setCwd('');
       setSelectedRepoId(activeRepoId);
       setTeam('');
@@ -352,6 +366,7 @@ export function SpawnModal({
     }
 
     const success = await onSpawn({
+      ...(reasoningEffort ? { reasoningEffort } : {}),
       name: finalName,
       command: command.trim(),
       cwd: effectiveCwd,
@@ -491,6 +506,24 @@ export function SpawnModal({
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {supportsReasoningEffort && selectedTemplate.supportsModelSelection && (
+            <div className="mb-5">
+              <label className="block text-sm font-semibold text-text-primary mb-2" htmlFor="agent-effort">Reasoning effort</label>
+              <select
+                id="agent-effort"
+                className="w-full py-2.5 px-3.5 border border-border rounded-md text-sm font-sans outline-none bg-bg-primary text-text-primary focus:border-accent disabled:bg-bg-hover disabled:text-text-muted"
+                value={reasoningEffort}
+                onChange={event => setSelectedEffort(event.target.value)}
+                disabled={isSpawning || effortLevels.length === 0}
+                aria-describedby="agent-effort-help"
+              >
+                <option value="">{effortLevels.length ? 'CLI default' : 'Not supported by this model'}</option>
+                {effortLevels.map(effort => <option key={effort} value={effort}>{effort}</option>)}
+              </select>
+              <p id="agent-effort-help" className="mt-1.5 text-xs text-text-muted">Applies to the new agent. Available levels depend on the selected model.</p>
             </div>
           )}
 
