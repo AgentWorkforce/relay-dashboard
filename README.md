@@ -100,7 +100,8 @@ Discovery does not send a model prompt or change global CLI settings.
 The catalog is cached in memory for ten minutes. Reload the dashboard to refresh an
 expired catalog. Missing CLIs, timeouts, malformed output, and empty catalogs fall
 back independently to the last successful result or the bundled registry. A partial
-Claude alias response retains previously discovered versioned choices. Responses
+Claude alias response retains previously discovered versioned choices. Saved aliases
+such as `opus` resolve to the CLI's current versioned model. Responses
 include `catalogWarnings` when discovery is unavailable. Remote broker connections
 use the bundled registry rather than discovering models on the wrong host.
 
@@ -113,7 +114,16 @@ The local spawn API accepts an optional `reasoningEffort` string and validates i
 against the selected model. Unsupported selections return HTTP 400 without spawning.
 Claude receives `--effort`; Codex receives `model_reasoning_effort`; OpenCode receives
 a process-local `OPENCODE_CONFIG_CONTENT` model/variant setting, preserving the chosen
-agent and existing inline configuration. OpenCode effort requires a broker supporting
+agent and existing inline configuration. Without `--agent`, local OpenCode launches
+require an absolute worker directory and use `debug config` there to identify the
+configured default. The lookup and launch use the same executable. The lookup is bounded
+to ten seconds and retains only the agent name. If discovery fails or the built-in
+fallback has been disabled/hidden, select an explicit `--agent` or use CLI default
+effort. Remote brokers and custom launchers require an explicit `--agent` for effort
+overrides. Dashboard process inline configuration is inherited only for local brokers;
+explicit worker configuration is preserved for either broker type. If local executable
+resolution fails, explicit-agent launches leave command resolution to the broker.
+OpenCode effort requires a broker supporting
 `harnessConfig.env` (verified with broker 14); older brokers are not covered.
 Cloud adapters forward the optional effort field to their host API. The legacy
 orchestrator path does not expose the control because it cannot transport that field.

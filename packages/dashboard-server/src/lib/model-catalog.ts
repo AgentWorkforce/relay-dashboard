@@ -6,6 +6,7 @@ import path from 'node:path';
 export interface ModelOption {
   value: string;
   label: string;
+  aliases?: string[];
   reasoningEfforts?: string[];
   defaultReasoningEffort?: string;
 }
@@ -22,7 +23,7 @@ const providers = { Claude: 'claude', Codex: 'codex', Opencode: 'opencode' } as 
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 /** Accept bounded model/variant identifiers before exposing CLI metadata. */
-const identifier = (value: unknown): value is string =>
+export const identifier = (value: unknown): value is string =>
   typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]{0,255}$/.test(value);
 /** Keep distinct valid effort identifiers; absent or malformed lists become empty. */
 function efforts(value: unknown): string[] {
@@ -46,9 +47,18 @@ export function parseClaudeModels(raw: unknown, previous: ModelOption[] = []): M
     const label = !/\d/.test(m.displayName) && version
       ? `${version[1][0].toUpperCase()}${version[1].slice(1)} ${version[2]}${version[3] ? `.${version[3]}` : ''}`
       : m.displayName;
-    return [{ value, label, reasoningEfforts: efforts(m.supportedEffortLevels) }];
+    return [{ value, label, aliases: identifier(m.value) && m.value !== value ? [m.value] : [], reasoningEfforts: efforts(m.supportedEffortLevels) }];
   });
-  return [...result, ...(partial ? previous : [])].filter((m, i, all) => all.findIndex(x => x.value === m.value) === i);
+  const merged = new Map<string, ModelOption>();
+  const claimedAliases = new Set<string>();
+  for (const model of [...result, ...(partial ? previous : [])]) {
+    const aliases = (model.aliases ?? []).filter(alias => !claimedAliases.has(alias));
+    aliases.forEach(alias => claimedAliases.add(alias));
+    const existing = merged.get(model.value);
+    if (existing) existing.aliases = [...(existing.aliases ?? []), ...aliases];
+    else merged.set(model.value, { ...model, aliases });
+  }
+  return [...merged.values()];
 }
 
 /**
@@ -195,7 +205,9 @@ export function createModelCatalog(fallback: () => Promise<ModelCatalogData>, di
       const defaultModels = { ...bundled.defaultModels };
       for (const [provider, cli] of Object.entries(providers)) {
         const options = modelOptions[provider] ?? [];
-        if (options.length && !options.some(m => m.value === defaultModels[cli])) defaultModels[cli] = options[0].value;
+        const selected = options.find(m => m.value === defaultModels[cli])
+          ?? options.find(m => m.aliases?.includes(defaultModels[cli])) ?? options[0];
+        if (selected) defaultModels[cli] = selected.value;
       }
       return { modelOptions, defaultModels, catalogWarnings };
     })().then(result => { cached = result; expires = Date.now() + TTL; return result; }).finally(() => { pending = undefined; });

@@ -69,6 +69,7 @@ export interface SpawnModalProps {
 }
 
 export interface ModelOption {
+  aliases?: string[];
   value: string;
   label: string;
   reasoningEfforts?: string[];

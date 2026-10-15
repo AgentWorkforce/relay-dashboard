@@ -1,8 +1,13 @@
 import express from 'express';
 import request from 'supertest';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RouteContext } from '../lib/types.js';
 import { registerBrokerProxyRoutes } from './broker-proxy.js';
+import { resolveDiscoveryCommand } from '../lib/model-catalog.js';
+import { readDefaultOpenCodeAgent } from '../lib/opencode-agent.js';
+
+vi.mock('../lib/opencode-agent.js', () => ({ readDefaultOpenCodeAgent: vi.fn(async () => 'build') }));
 
 vi.mock('../lib/model-catalog.js', async importOriginal => ({
   ...await importOriginal<typeof import('../lib/model-catalog.js')>(),
@@ -13,21 +18,96 @@ const catalog = { get: async () => ({
   modelOptions: {
     Claude: [{ value: 'claude-opus-4-6', label: 'Opus 4.6', reasoningEfforts: ['high', 'max'] }],
     Codex: [{ value: 'codex-current', label: 'Codex', reasoningEfforts: ['high', 'ultra'] }],
-    Opencode: [{ value: 'provider/current', label: 'Current', reasoningEfforts: ['high', 'custom'] }],
+    Opencode: [{ value: 'provider/current', label: 'Current', reasoningEfforts: ['high', 'custom', 'custom/high', 'x'.repeat(70)] }],
   }, defaultModels: {},
 }) };
 /** Mount broker routes with a fixed catalog and capture forwarded JSON without a live broker. */
-function setup() {
+function setup(relayUrl = 'http://127.0.0.1:9000') {
   const app = express();
   app.use(express.json());
-  registerBrokerProxyRoutes(app, { brokerProxyEnabled: true, relayUrl: 'http://127.0.0.1:9000' } as RouteContext, catalog);
+  registerBrokerProxyRoutes(app, { brokerProxyEnabled: true, relayUrl } as RouteContext, catalog);
   const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { headers: { 'content-type': 'application/json' } }));
   vi.stubGlobal('fetch', fetch);
   return { app, fetch };
 }
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.clearAllMocks(); });
 
 describe('selected reasoning effort forwarding', () => {
+  it('applies effort to the configured OpenCode default without selecting a different agent', async () => {
+    vi.mocked(readDefaultOpenCodeAgent).mockResolvedValueOnce('review');
+    const { app, fetch } = setup();
+    const cwd = path.resolve('worker');
+    const response = await request(app).post('/api/spawn').send({ name: 'worker', cli: 'opencode', model: 'provider/current', reasoningEffort: 'high', cwd: '/work', harnessConfig: { cwd, env: { PATH: '/another/installation', KEEP: 'yes' } } });
+    expect(response.status).toBe(200);
+    const harness = JSON.parse(fetch.mock.calls[0][1].body).harnessConfig;
+    expect(harness.args).not.toContain('--agent');
+    expect(JSON.parse(harness.env.OPENCODE_CONFIG_CONTENT).agent).toEqual({ review: { model: 'provider/current', variant: 'high' } });
+    expect(readDefaultOpenCodeAgent).toHaveBeenCalledWith({ command: harness.command, args: [] }, cwd, { PATH: '/another/installation', KEEP: 'yes' });
+    expect(harness.command).toBe('/portable/opencode');
+    expect(resolveDiscoveryCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([undefined, 'relative/work'])('requires an absolute worker directory before inspecting implicit defaults: %s', async cwd => {
+    const { app, fetch } = setup();
+    const response = await request(app).post('/api/spawn').send({ name: 'worker', cli: 'opencode', model: 'provider/current', reasoningEffort: 'high', cwd });
+    expect(response.status).toBe(400);
+    expect(readDefaultOpenCodeAgent).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('reports unavailable default-agent discovery as an effort capability error', async () => {
+    vi.mocked(readDefaultOpenCodeAgent).mockRejectedValueOnce(new Error('private config details'));
+    const { app, fetch } = setup();
+    const response = await request(app).post('/api/spawn').send({ name: 'worker', cli: 'opencode', model: 'provider/current', reasoningEffort: 'high', cwd: path.resolve('worker') });
+    expect(response.status).toBe(400);
+    expect(JSON.stringify(response.body)).not.toContain('private config details');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not inspect local configuration for an implicit remote OpenCode agent', async () => {
+    const { app, fetch } = setup('https://remote.example');
+    const response = await request(app).post('/api/spawn').send({ name: 'worker', cli: 'opencode', model: 'provider/current', reasoningEffort: 'high' });
+    expect(response.status).toBe(400);
+    expect(readDefaultOpenCodeAgent).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('does not forward dashboard inline configuration to a remote broker', async () => {
+    vi.stubEnv('OPENCODE_CONFIG_CONTENT', JSON.stringify({ provider: { test: { options: { apiKey: 'dashboard-only-secret' } } } }));
+    const { app, fetch } = setup('https://remote.example');
+    const response = await request(app).post('/api/spawn').send({ name: 'worker', cli: 'opencode', model: 'provider/current', reasoningEffort: 'high', args: ['--agent', 'review'] });
+    expect(response.status).toBe(200);
+    expect(fetch.mock.calls[0][1].body).not.toContain('dashboard-only-secret');
+  });
+
+  it.each([true, false])('preserves explicitly supplied worker configuration (local=%s)', async local => {
+    vi.stubEnv('OPENCODE_CONFIG_CONTENT', '{invalid host configuration');
+    const { app, fetch } = setup(local ? undefined : 'https://remote.example');
+    const response = await request(app).post('/api/spawn').send({ name: 'worker', cli: 'opencode', model: 'provider/current', reasoningEffort: 'high', args: ['--agent', 'review'], harnessConfig: { env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ theme: 'worker-theme' }) } } });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(JSON.parse(fetch.mock.calls[0][1].body).harnessConfig.env.OPENCODE_CONFIG_CONTENT).theme).toBe('worker-theme');
+  });
+
+  it('preserves the local process inline configuration for a local broker', async () => {
+    vi.stubEnv('OPENCODE_CONFIG_CONTENT', JSON.stringify({ theme: 'local-theme' }));
+    const { app, fetch } = setup();
+    await request(app).post('/api/spawn').send({ name: 'worker', cli: 'opencode', model: 'provider/current', reasoningEffort: 'high', args: ['--agent', 'review'] });
+    expect(JSON.parse(JSON.parse(fetch.mock.calls[0][1].body).harnessConfig.env.OPENCODE_CONFIG_CONTENT).theme).toBe('local-theme');
+  });
+
+  it.each(['custom/high', 'x'.repeat(70)])('accepts advertised variant %s', async reasoningEffort => {
+    const { app, fetch } = setup();
+    const response = await request(app).post('/api/spawn').send({ name: 'worker', cli: 'opencode', model: 'provider/current', reasoningEffort, args: ['--agent', 'review'] });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(JSON.parse(fetch.mock.calls[0][1].body).harnessConfig.env.OPENCODE_CONFIG_CONTENT).agent.review.variant).toBe(reasoningEffort);
+  });
+
+  it('lets the broker resolve OpenCode when local executable discovery is unavailable', async () => {
+    vi.mocked(resolveDiscoveryCommand).mockRejectedValueOnce(new Error('CLI unavailable'));
+    const { app, fetch } = setup();
+    const response = await request(app).post('/api/spawn').send({ name: 'worker', cli: 'opencode', model: 'provider/current', reasoningEffort: 'high', args: ['--agent', 'review'] });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(fetch.mock.calls[0][1].body).harnessConfig.command).toBe('opencode');
+  });
   it.each([
     ['claude', 'claude-opus-4-6', 'max', ['--effort', 'max']],
     ['codex', 'codex-current', 'ultra', ['-c', 'model_reasoning_effort="ultra"']],
@@ -90,7 +170,7 @@ describe('selected reasoning effort forwarding', () => {
 
   it('resolves the default local OpenCode executable without a shell', async () => {
     const { app, fetch } = setup();
-    await request(app).post('/api/spawn').send({ name: 'worker', cli: 'opencode', model: 'provider/current', reasoningEffort: 'high' });
+    await request(app).post('/api/spawn').send({ name: 'worker', cli: 'opencode', model: 'provider/current', reasoningEffort: 'high', args: ['--agent', 'review'] });
     expect(JSON.parse(fetch.mock.calls[0][1].body).harnessConfig.command).toBe('/portable/opencode');
   });
 });

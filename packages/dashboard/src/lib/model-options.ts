@@ -23,25 +23,22 @@ function tokenizeCommand(command: string): string[] {
   return command.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
 }
 
-function hasOptionValue(options: ModelOption[], value: string | undefined): value is string {
-  return typeof value === 'string' && options.some((option) => option.value === value);
-}
-
 function getModelOption(options: ModelOption[], value: string | undefined): ModelOption | undefined {
   return typeof value === 'string'
     ? options.find((option) => option.value === value)
     : undefined;
 }
 
+/** Resolve saved selections in priority order, including aliases advertised by the CLI. */
 export function resolveSupportedModel(options: ModelOption[], ...candidates: Array<string | undefined>): string {
   if (options.length === 0) {
     return candidates.find((candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0) ?? '';
   }
 
   for (const candidate of candidates) {
-    if (hasOptionValue(options, candidate)) {
-      return candidate;
-    }
+    if (typeof candidate !== 'string') continue;
+    const option = getModelOption(options, candidate) ?? options.find(option => option.aliases?.includes(candidate));
+    if (option) return option.value;
   }
 
   return options[0]?.value ?? '';

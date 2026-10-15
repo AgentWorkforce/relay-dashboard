@@ -12,6 +12,7 @@ vi.mock('node:child_process', () => ({ spawn: mocks.spawn }));
 const fallback = async () => ({ modelOptions: { Claude: [{ value: 'opus', label: 'Opus' }], Codex: [], Opencode: [] }, defaultModels: { claude: 'opus' } });
 let directory: string;
 let fail = false;
+let claudeModels: unknown[];
 let children: Array<EventEmitter & { stdin: PassThrough; stdout: PassThrough; stderr: PassThrough; kill: ReturnType<typeof vi.fn> }>;
 beforeEach(async () => {
   directory = await mkdtemp(path.join(os.tmpdir(), 'dashboard-models-'));
@@ -23,15 +24,14 @@ beforeEach(async () => {
     { slug: 'hidden', visibility: 'hide' },
   ] }));
   fail = false;
+  claudeModels = [{ value: 'opus', resolvedModel: 'claude-opus-4-6', displayName: 'Opus 4.6', supportedEffortLevels: ['high', 'max'] }];
   children = [];
   mocks.spawn.mockReset().mockImplementation((_command, args: string[]) => {
     const child = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), kill: vi.fn() });
     children.push(child);
     queueMicrotask(() => {
       if (fail) return child.emit('error', new Error('secret must not escape'));
-      if (args.includes('--print')) child.stdout.write(JSON.stringify({ type: 'control_response', response: { request_id: 'dashboard-models', response: { models: [
-        { value: 'opus', resolvedModel: 'claude-opus-4-6', displayName: 'Opus 4.6', supportedEffortLevels: ['high', 'max'] },
-      ] } } }) + '\n');
+      if (args.includes('--print')) child.stdout.write(JSON.stringify({ type: 'control_response', response: { request_id: 'dashboard-models', response: { models: claudeModels } } }) + '\n');
       else { child.stdout.write('provider/current\n{"name":"Current","variants":{"high":{},"custom":{}}}\n'); child.emit('close', 0); }
     });
     return child;
@@ -40,6 +40,31 @@ beforeEach(async () => {
 afterEach(async () => { vi.useRealTimers(); vi.unstubAllEnvs(); await rm(directory, { recursive: true, force: true }); });
 
 describe('current local model catalog', () => {
+  it('moves aliases to the fresh canonical model when retaining older choices', () => {
+    const result = parseClaudeModels([{ value: 'opus', resolvedModel: 'claude-opus-5', displayName: 'Opus' }], [
+      { value: 'claude-opus-4-6', label: 'Opus 4.6', aliases: ['opus'] },
+    ]);
+    expect(result.find(model => model.value === 'claude-opus-5')?.aliases).toEqual(['opus']);
+    expect(result.find(model => model.value === 'claude-opus-4-6')?.aliases).toEqual([]);
+  });
+  it('resolves a registry alias to its discovered model instead of the first family', async () => {
+    claudeModels = [
+      { value: 'sonnet', resolvedModel: 'claude-sonnet-4-6', displayName: 'Sonnet 4.6' },
+      { value: 'opus', resolvedModel: 'claude-opus-4-6', displayName: 'Opus 4.6' },
+    ];
+    const result = await createModelCatalog(fallback).get();
+    expect(result.defaultModels.claude).toBe('claude-opus-4-6');
+    expect(result.modelOptions.Claude[1]).toMatchObject({ aliases: ['opus'] });
+  });
+
+  it('retains aliases when duplicate metadata lists a canonical model first', () => {
+    const result = parseClaudeModels([
+      { value: 'claude-opus-4-6', displayName: 'Opus 4.6' },
+      { value: 'opus', resolvedModel: 'claude-opus-4-6', displayName: 'Opus 4.6' },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ aliases: ['opus'] });
+  });
   it('discovers all providers with portable paths and only requests Claude initialization', async () => {
     const result = await createModelCatalog(fallback).get();
     expect(result.modelOptions.Claude[0]).toMatchObject({ value: 'claude-opus-4-6', reasoningEfforts: ['high', 'max'] });
