@@ -1,54 +1,40 @@
 {
-  "name": "relay-dashboard-monorepo",
-  "version": "2.0.95",
+  "name": "@agent-relay/dashboard",
+  "version": "0.1.0",
   "private": true,
-  "description": "Monorepo for Agent Relay dashboard packages",
-  "workspaces": [
-    "packages/*"
-  ],
-  "scripts": {
-    "dev": "concurrently \"npm run dev -w @agent-relay/dashboard\" \"npm run dev -w @agent-relay/dashboard-server\"",
-    "dev:relay": "npm run build && cd ../relay && node dist/src/cli/bootstrap.js up --verbose",
-    "dev:mock": "concurrently \"npm run dev -w @agent-relay/dashboard\" \"npm run dev:mock -w @agent-relay/dashboard-server\"",
-    "dev:mock:cloud": "concurrently \"NEXT_PUBLIC_FORCE_CLOUD_MODE=true npm run dev -w @agent-relay/dashboard\" \"npm run dev:mock -w @agent-relay/dashboard-server\"",
-    "build": "npm run build -w @agent-relay/dashboard-server && npm run build -w @agent-relay/dashboard && rm -rf packages/dashboard-server/out && cp -r packages/dashboard/out packages/dashboard-server/out",
-    "start": "concurrently \"npm run start -w @agent-relay/dashboard\" \"npm run start -w @agent-relay/dashboard-server\"",
-    "start:mock": "concurrently \"npm run start -w @agent-relay/dashboard\" \"npm run start:mock -w @agent-relay/dashboard-server\"",
-    "lint": "echo 'TODO: Set up ESLint for both packages'",
-    "typecheck": "npm run typecheck --workspaces",
-    "test": "npm run test --workspaces",
-    "test:watch": "npm run test:watch --workspaces",
-    "test:coverage": "npm run test:coverage --workspaces",
-    "clean": "npm run clean --workspaces && rm -rf node_modules",
-    "publish:dashboard": "npm publish -w @agent-relay/dashboard",
-    "publish:server": "npm publish -w @agent-relay/dashboard-server",
-    "publish:all": "npm run publish:dashboard && npm run publish:server",
-    "version:patch": "npm version patch --workspaces --no-git-tag-version",
-    "version:minor": "npm version minor --workspaces --no-git-tag-version",
-    "version:major": "npm version major --workspaces --no-git-tag-version"
-  },
-  "devDependencies": {
-    "agent-trajectories": "^0.3.0",
-    "concurrently": "^8.2.2",
-    "typescript": "^5.9.3"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/AgentWorkforce/relay-dashboard.git"
-  },
+  "type": "module",
   "license": "Apache-2.0",
+  "description": "Open-source SPA client for Agent Relay Cloud",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "typecheck": "tsc -b",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run",
+    "check": "npm run lint && npm run test && npm run build"
   },
   "dependencies": {
-    "@agent-relay/bridge": "^2.3.14",
-    "@agent-relay/config": "^3.2.5",
-    "@agent-relay/protocol": "^2.3.14",
-    "@agent-relay/sdk": "^3.2.5",
-    "@agent-relay/storage": "^2.3.14",
-    "@agent-relay/trajectory": "^3.2.5",
-    "@agent-relay/utils": "^3.2.5",
-    "@agent-relay/wrapper": "^2.3.14",
-    "yaml": "^2.8.2"
+    "@tanstack/react-query": "^5.105.0",
+    "@tanstack/react-router": "^1.170.46",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
   }
 }
