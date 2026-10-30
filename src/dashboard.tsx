@@ -188,13 +188,15 @@ function Workspace({
     queryFn: ({ signal }) =>
       preview
         ? Promise.resolve({
-            workspaces: [
-              {
-                id: "preview",
-                name: "Acme workspace",
-                organization_name: "Acme",
-              },
-            ],
+            workspaces: preview.account.currentWorkspace
+              ? [
+                  {
+                    ...preview.account.currentWorkspace,
+                    organization_name:
+                      preview.account.currentOrganization?.name,
+                  },
+                ]
+              : [],
           })
         : client.workspaces(signal),
   });
