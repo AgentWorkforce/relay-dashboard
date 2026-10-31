@@ -8,3 +8,5 @@ dist/
 .npm-cache/
 
 .vite/
+
+.local/

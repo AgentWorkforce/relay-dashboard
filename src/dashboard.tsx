@@ -1,3 +1,4 @@
+import { productionRead } from "./config";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   useInfiniteQuery,
@@ -305,7 +306,9 @@ function Workspace({
           <Button
             variant="outline"
             className="workspace-picker"
-            disabled={switchWorkspace.isPending || !workspaces.data}
+            disabled={
+              productionRead || switchWorkspace.isPending || !workspaces.data
+            }
           >
             <span className="workspace-monogram">
               {workspace?.name[0]?.toUpperCase() || "W"}
@@ -411,6 +414,12 @@ function Workspace({
             <Button
               variant="ghost"
               size="icon"
+              disabled={productionRead}
+              title={
+                productionRead
+                  ? "Developer credentials are managed by npm run login:prod"
+                  : undefined
+              }
               aria-label="Sign out"
               onClick={onLogout}
             >
@@ -458,7 +467,8 @@ function Workspace({
               <Badge variant="secondary">Preview · sample data</Badge>
             ) : (
               <>
-                <span className="connection-dot" /> Connected
+                <span className="connection-dot" />{" "}
+                {productionRead ? "Production · read only" : "Connected"}
               </>
             )}
           </div>

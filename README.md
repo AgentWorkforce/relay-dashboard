@@ -39,6 +39,38 @@ cookies onto localhost. The OAuth callback must be registered for the gateway
 origin. The companion Cloud change handles the explicit `/dashboard/` return;
 legacy `/cloud/dashboard/*` links remain available.
 
+## Develop against production data
+
+```sh
+npm run login:prod  # one-time browser approval; checks the displayed code
+npm run dev:prod
+```
+
+Open http://127.0.0.1:5173/dashboard/ and edit normally with hot reload. If the
+Cloud launcher already owns 5173, use `npm run dev:prod -- --port 5174` and open
+that port instead. This mode is self-contained; it does not need local Cloud,
+History or the marketing gateway. For the shared launcher use
+`DEV_DASHBOARD_API=production-read npm run dev` from Cloud after signing in here.
+
+The UI says **Production · read only**. It uses the production account's current
+workspace, real session pages, search, and pagination. Workspace switching and
+sign-out controls are disabled in this mode; change the account's workspace in
+Cloud before refreshing the UI. No local API fallback or sample data is used.
+
+The Vite-only bridge exposes account/session GETs and rejects every other route
+or method. Credential refresh is its only internal authenticated POST. The
+underlying operator credential is not a read-only token; the bridge enforces
+the read-only boundary for the UI. It is saved with mode 0600 under ignored
+`.local/production-auth.json`, outside browser storage. Vite denies access to
+`.local` files. No credentials, cookies, arbitrary headers, or arbitrary URLs
+are forwarded from the browser. No CORS is enabled. The bridge is excluded from
+production builds and never changes the hosted cookie login.
+
+Run `npm run login:prod` again if authorization expires. Treat this local
+checkout and its code as trusted: it holds a developer credential. To disconnect,
+revoke the developer session in Cloud and remove `.local/production-auth.json`.
+Normal `npm run dev` uses local cookies again.
+
 ## Hosting
 
 `npm run build` creates `dist`. `wrangler.jsonc` describes a static-only Worker

@@ -13,15 +13,17 @@ export class ApiError extends Error {
     public interval?: number,
   ) {
     super(
-      status === 401
-        ? "Your session has expired. Sign in again."
-        : status === 403
-          ? "You don’t have access to this workspace."
-          : code === "history_customer_hosted"
-            ? "This workspace keeps its sessions in its own RelayHistory."
-            : status === 429
-              ? "Cloud is busy. Wait a moment, then try again."
-              : "Cloud couldn’t complete this request. Try again.",
+      code === "production_login_required"
+        ? "Production access needs developer sign-in. Run npm run login:prod in relay-dashboard, then retry."
+        : status === 401
+          ? "Your session has expired. Sign in again."
+          : status === 403
+            ? "You don’t have access to this workspace."
+            : code === "history_customer_hosted"
+              ? "This workspace keeps its sessions in its own RelayHistory."
+              : status === 429
+                ? "Cloud is busy. Wait a moment, then try again."
+                : "Cloud couldn’t complete this request. Try again.",
     );
   }
 }
