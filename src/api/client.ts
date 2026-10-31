@@ -1,13 +1,9 @@
 import { z } from "zod";
 import {
   accountSchema,
-  deviceSchema,
-  deviceTokensSchema,
   sessionsSchema,
-  tokensSchema,
   workspacesSchema,
-  type Tokens,
-  type Device,
+  type Account,
 } from "./contracts";
 
 export class ApiError extends Error {
@@ -31,27 +27,17 @@ export class ApiError extends Error {
 }
 
 export class CloudClient {
-  private tokens: Tokens | null = null;
+  private state: "unknown" | "signed-in" | "signed-out" = "unknown";
   private revision = 0;
-  private refreshing: Promise<void> | null = null;
   private listeners = new Set<() => void>();
+  private mutations: Promise<unknown> = Promise.resolve();
   constructor(
     readonly base: string,
     readonly cloudOrigin: string,
     private send: typeof fetch = (...args) => globalThis.fetch(...args),
   ) {
-    const url = new URL(base, "http://localhost");
-    if (
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash ||
-      (!base.startsWith("/") &&
-        url.protocol !== "https:" &&
-        !["localhost", "127.0.0.1"].includes(url.hostname))
-    ) {
-      throw new Error("Use an HTTPS API URL or a local development endpoint.");
-    }
+    if (!base.startsWith("/") || base.startsWith("//") || /[\\?#]/.test(base))
+      throw new Error("Cloud API must use a same-origin path.");
   }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -61,179 +47,93 @@ export class CloudClient {
   };
   snapshot = () => this.revision;
   get signedIn() {
-    return this.tokens !== null;
+    return this.state === "signed-in";
   }
-  private setTokens(tokens: Tokens | null) {
-    this.tokens = tokens;
+  get initialized() {
+    return this.state !== "unknown";
+  }
+  private changed(state: typeof this.state) {
+    this.state = state;
     this.revision++;
     this.listeners.forEach((fn) => fn());
   }
-
   private async request(
     path: string,
     init: RequestInit = {},
-    token?: string,
   ): Promise<unknown> {
-    const headers = new Headers({
-      Accept: "application/json",
-      ...init.headers,
-    });
+    const revision = this.revision;
+    const headers = new Headers(init.headers);
+    headers.set("Accept", "application/json");
     if (init.body) headers.set("Content-Type", "application/json");
-    if (token) headers.set("Authorization", `Bearer ${token}`);
-    let response: Response;
-    try {
-      response = await this.send(`${this.base}${path}`, {
-        ...init,
-        headers,
-        credentials: "omit",
-        redirect: "error",
-        cache: "no-store",
-      });
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") throw error;
-      throw new Error(
-        "Can’t reach Cloud. Check your connection and try again.",
-        { cause: error },
-      );
-    }
+    const response = await this.send(`${this.base}${path}`, {
+      ...init,
+      headers,
+      credentials: "same-origin",
+      redirect: "error",
+      cache: "no-store",
+    });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
+      if (
+        response.status === 401 &&
+        revision === this.revision &&
+        this.state !== "signed-out"
+      )
+        this.changed("signed-out");
       const info = z
-        .object({
-          error: z.string().optional(),
-          code: z.string().optional(),
-          interval: z.number().optional(),
-        })
+        .object({ error: z.string().optional(), code: z.string().optional() })
         .safeParse(body);
       throw new ApiError(
         response.status,
         info.success
           ? info.data.code || info.data.error || "request_failed"
           : "request_failed",
-        info.success ? info.data.interval : undefined,
       );
     }
     return body;
   }
-  private async authorized(path: string, init?: RequestInit): Promise<unknown> {
-    const token = this.tokens?.accessToken;
+  async restore(signal?: AbortSignal): Promise<Account | null> {
     const revision = this.revision;
-    if (!token) throw new ApiError(401, "signed_out");
     try {
-      return await this.request(path, init, token);
-    } catch (error) {
+      const body = await this.request("/auth/session?renew=0", { signal });
+      if (revision !== this.revision) return null;
       if (
-        !(error instanceof ApiError) ||
-        error.status !== 401 ||
-        revision !== this.revision
-      )
-        throw error;
-      if (!this.refreshing) {
-        this.refreshing = this.refresh(revision).finally(() => {
-          this.refreshing = null;
-        });
+        z.object({ authenticated: z.literal(false) }).safeParse(body).success
+      ) {
+        this.changed("signed-out");
+        return null;
       }
-      await this.refreshing;
-      if (!this.tokens || revision !== this.revision)
-        throw new ApiError(401, "signed_out");
-      return this.request(path, init, this.tokens.accessToken);
-    }
-  }
-  private async refresh(revision: number) {
-    try {
-      const next = tokensSchema.parse(
-        await this.request("/auth/token/refresh", {
-          method: "POST",
-          body: JSON.stringify({ refreshToken: this.tokens?.refreshToken }),
-        }),
-      );
-      if (this.revision === revision) this.tokens = next;
+      const account = accountSchema.parse(body);
+      this.changed("signed-in");
+      return account;
     } catch (error) {
-      if (
-        this.revision === revision &&
-        error instanceof ApiError &&
-        [400, 401, 403].includes(error.status)
-      )
-        this.setTokens(null);
+      if (error instanceof ApiError && error.status === 401) return null;
       throw error;
     }
   }
-  async startLogin(signal: AbortSignal): Promise<Device> {
-    const device = deviceSchema.parse(
-      await this.request("/auth/device/start", {
-        method: "POST",
-        body: JSON.stringify({ client_name: "Agent Relay Dashboard" }),
-        signal,
-      }),
-    );
-    const verification = new URL(device.verification_uri_complete);
-    if (
-      verification.origin !== this.cloudOrigin ||
-      verification.pathname !== "/cloud/device"
-    )
-      throw new Error("Cloud returned an unexpected sign-in destination.");
-    return device;
-  }
-  async finishLogin(device: Device, signal: AbortSignal) {
-    const revision = this.revision;
-    const deadline = Date.now() + device.expires_in * 1000;
-    let interval = Math.max(5, device.interval);
-    while (Date.now() < deadline) {
-      await delay(interval * 1000, signal);
-      try {
-        const tokens = deviceTokensSchema.parse(
-          await this.request("/auth/device/token", {
-            method: "POST",
-            body: JSON.stringify({
-              grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-              device_code: device.device_code,
-            }),
-            signal,
-          }),
-        );
-        if (!signal.aborted && revision === this.revision)
-          this.setTokens(tokens);
-        return;
-      } catch (error) {
-        if (error instanceof ApiError && error.code === "authorization_pending")
-          continue;
-        if (error instanceof ApiError && error.code === "slow_down") {
-          interval = Math.max(interval + 5, error.interval || 0);
-          continue;
-        }
-        if (error instanceof ApiError && error.status >= 500) {
-          interval = Math.min(60, interval + 5);
-          continue;
-        }
-        if (error instanceof ApiError && error.code === "access_denied")
-          throw new Error(
-            "Sign-in was declined. You can try again whenever you’re ready.",
-            { cause: error },
-          );
-        throw error;
-      }
-    }
-    throw new Error("This sign-in code expired. Start again to get a new one.");
-  }
   async account(signal?: AbortSignal) {
     return accountSchema.parse(
-      await this.authorized("/auth/whoami", { signal }),
+      await this.request("/v1/auth/whoami", { signal }),
     );
   }
   async workspaces(signal?: AbortSignal) {
     return workspacesSchema.parse(
-      await this.authorized("/auth/desktop/workspaces", { signal }),
+      await this.request("/auth/session?renew=0", { signal }),
     );
   }
-  async selectWorkspace(workspaceId: string) {
-    const revision = this.revision;
-    const next = tokensSchema.parse(
-      await this.authorized("/auth/desktop/workspaces", {
+  private serial<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.mutations.then(task, task);
+    this.mutations = run.catch(() => undefined);
+    return run;
+  }
+  selectWorkspace(workspaceId: string) {
+    return this.serial(async () => {
+      await this.request("/auth/workspace", {
         method: "POST",
         body: JSON.stringify({ workspaceId }),
-      }),
-    );
-    if (revision === this.revision) this.setTokens(next);
+      });
+      this.changed("signed-in");
+    });
   }
   async sessions(
     workspaceId: string,
@@ -245,8 +145,8 @@ export class CloudClient {
     if (q.trim()) params.set("q", q.trim());
     if (cursor) params.set("cursor", cursor);
     const page = sessionsSchema.parse(
-      await this.authorized(
-        `/workspaces/${encodeURIComponent(workspaceId)}/sessions?${params}`,
+      await this.request(
+        `/v1/workspaces/${encodeURIComponent(workspaceId)}/sessions?${params}`,
         { signal },
       ),
     );
@@ -256,31 +156,10 @@ export class CloudClient {
       );
     return page;
   }
-  async logout() {
-    const token = this.tokens?.refreshToken;
-    this.setTokens(null);
-    if (token)
-      await this.request("/auth/token/revoke", {
-        method: "POST",
-        body: JSON.stringify({ token }),
-      });
+  logout() {
+    return this.serial(async () => {
+      await this.request("/auth/logout", { method: "POST" });
+      this.changed("signed-out");
+    });
   }
-}
-
-export function delay(ms: number, signal: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new DOMException("Aborted", "AbortError"));
-      return;
-    }
-    const abort = () => {
-      clearTimeout(timer);
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", abort);
-      resolve();
-    }, ms);
-    signal.addEventListener("abort", abort, { once: true });
-  });
 }

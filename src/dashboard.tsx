@@ -110,28 +110,60 @@ export function Dashboard({
       await client.logout();
     } catch {
       setSignOutError(
-        "Signed out here, but Cloud could not revoke the session. It will expire automatically.",
+        "Could not sign out. Your session is still active. Please try again.",
       );
     }
   }
-  if (!client.signedIn && !preview)
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (preview || client.initialized) return;
+    const controller = new AbortController();
+    void client.restore(controller.signal).catch((error) => {
+      if (!controller.signal.aborted)
+        setRestoreError(
+          error instanceof Error
+            ? error.message
+            : "Could not check your session.",
+        );
+    });
+    return () => controller.abort();
+  }, [client, preview, attempt]);
+  if (!preview && !client.initialized)
     return (
-      <>
-        {signOutError && (
-          <Alert variant="destructive">
-            <AlertDescription>{signOutError}</AlertDescription>
-          </Alert>
+      <main className="auth-status">
+        {restoreError ? (
+          <>
+            <p role="alert">{restoreError}</p>
+            <Button
+              onClick={() => {
+                setRestoreError(null);
+                setAttempt((value) => value + 1);
+              }}
+            >
+              Try again
+            </Button>
+          </>
+        ) : (
+          <p>Checking your session…</p>
         )}
-        <Login client={client} />
-      </>
+      </main>
     );
+  if (!client.signedIn && !preview) return <Login />;
   return (
-    <Workspace
-      key={revision}
-      client={client}
-      preview={preview}
-      onLogout={() => void logout()}
-    />
+    <>
+      {signOutError && (
+        <Alert variant="destructive">
+          <AlertDescription>{signOutError}</AlertDescription>
+        </Alert>
+      )}
+      <Workspace
+        key={revision}
+        client={client}
+        preview={preview}
+        onLogout={() => void logout()}
+      />
+    </>
   );
 }
 
@@ -264,8 +296,8 @@ function Workspace({
   const filtered = Boolean(query || project || harness !== "all" || activeOnly);
   const nav = (
     <>
-      <a className="brand" href="/">
-        <img src="/mark.svg" alt="" />
+      <a className="brand" href="/dashboard/">
+        <img src={`${import.meta.env.BASE_URL}mark.svg`} alt="" />
         <span>Agent Relay</span>
       </a>
       <DropdownMenu>
@@ -371,7 +403,7 @@ function Workspace({
           </span>
           {preview ? (
             <Button variant="ghost" size="icon" asChild>
-              <a href="/" aria-label="Exit preview">
+              <a href="/dashboard/" aria-label="Exit preview">
                 <LogOut />
               </a>
             </Button>

@@ -1,34 +1,6 @@
 import { z } from "zod";
 
 const text = z.string().nullable().optional();
-export const tokensSchema = z.object({
-  accessToken: z.string().min(1),
-  refreshToken: z.string().min(1),
-  accessTokenExpiresAt: z.string(),
-  refreshTokenExpiresAt: z.string(),
-});
-export type Tokens = z.infer<typeof tokensSchema>;
-export const deviceSchema = z.object({
-  device_code: z.string(),
-  user_code: z.string(),
-  verification_uri_complete: z.url(),
-  expires_in: z.number().positive(),
-  interval: z.number().positive(),
-});
-export type Device = z.infer<typeof deviceSchema>;
-export const deviceTokensSchema = z
-  .object({
-    access_token: z.string(),
-    refresh_token: z.string(),
-    access_token_expires_at: z.string(),
-    refresh_token_expires_at: z.string(),
-  })
-  .transform((v) => ({
-    accessToken: v.access_token,
-    refreshToken: v.refresh_token,
-    accessTokenExpiresAt: v.access_token_expires_at,
-    refreshTokenExpiresAt: v.refresh_token_expires_at,
-  }));
 export const accountSchema = z.object({
   authenticated: z.literal(true),
   user: z.object({ id: z.string(), name: text, email: text, avatarUrl: text }),

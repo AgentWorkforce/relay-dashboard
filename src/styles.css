@@ -1,16 +1,20 @@
 @import "tailwindcss";
 @import "./brand.css";
+html {
+  color-scheme: dark;
+}
+
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--fg);
-  --color-primary: var(--primary-600);
+  --color-primary: var(--primary-bg);
   --color-primary-foreground: var(--primary-fg);
   --color-secondary: var(--secondary-bg);
   --color-secondary-foreground: var(--secondary-fg);
   --color-muted: var(--surface);
   --color-muted-foreground: var(--fg-muted);
-  --color-accent: var(--primary-50);
-  --color-accent-foreground: var(--primary-800);
+  --color-accent: var(--note-bg);
+  --color-accent-foreground: var(--primary);
   --color-border: var(--line);
   --color-input: var(--nav-border-strong);
   --color-ring: var(--primary-500);
@@ -115,131 +119,12 @@ h2 {
   text-transform: uppercase;
   margin-bottom: 12px;
 }
-.login-page {
+.auth-status {
   min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  padding: 36px 5vw 20px;
-  background: var(--bg);
-}
-.login-layout {
   display: grid;
-  grid-template-columns: 1.1fr 1fr;
-  align-items: center;
-  gap: 8vw;
-  max-width: 1120px;
-  width: 100%;
-  margin: auto;
-  padding: 80px 0;
-}
-.login-story h1 {
-  font-family: "Sora Variable", sans-serif;
-  font-size: clamp(32px, 3.4vw, 48px);
-  line-height: 1.2;
-  font-weight: 550;
-  color: var(--primary-950);
-  margin: 0 0 24px;
-}
-.login-story > p:not(.eyebrow) {
-  font-size: 16px;
-  color: var(--fg-muted);
-  line-height: 1.8;
-  max-width: 40ch;
-}
-.story-foot {
-  margin-top: 44px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--fg-muted);
-  font-size: 12px;
-}
-.little-line {
-  width: 32px;
-  height: 2px;
-  background: var(--accent-warm);
-}
-.login-card {
-  background: var(--surface-strong);
-  border: 1px solid var(--nav-border);
-  border-radius: var(--r-lg);
-  padding: 40px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  box-shadow: 0 8px 32px rgb(35 73 105 / 4%);
-}
-.login-icon {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  border-radius: var(--r-sm);
-  background: var(--primary-50);
-}
-.login-icon img {
-  width: 32px;
-}
-.login-card h2 {
-  font-size: 22px;
-  font-weight: 600;
-  margin: 0;
-}
-.login-card > p {
-  color: var(--fg-muted);
-  font-size: 14px;
-  line-height: 1.7;
-  margin-top: -10px;
-}
-.login-note {
-  display: flex;
-  gap: 10px;
-  color: var(--fg-muted);
-  font-size: 12px;
-  line-height: 1.7;
-  padding-top: 8px;
-}
-.login-note svg {
-  width: 17px;
-  height: 17px;
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--primary-700);
-}
-.login-footer {
-  display: flex;
-  justify-content: space-between;
-  color: var(--fg-muted);
-  font-size: 12px;
-}
-.login-footer a {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.login-footer svg {
-  width: 13px;
-  height: 13px;
-}
-.verification-code {
+  place-content: center;
+  gap: 16px;
   text-align: center;
-  padding: 20px;
-  background: var(--primary-50);
-  border-radius: var(--r-sm);
-  font-family: monospace;
-  font-size: 28px;
-  letter-spacing: 0.14em;
-}
-.waiting {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: var(--fg-muted);
-  font-size: 12px;
-}
-.waiting svg {
-  width: 16px;
 }
 .dashboard {
   min-height: 100dvh;
@@ -277,8 +162,8 @@ h2 {
   height: 32px;
   flex-shrink: 0;
   border-radius: var(--r-xs);
-  background: var(--primary-100);
-  color: var(--primary-800);
+  background: var(--note-bg);
+  color: var(--primary);
 }
 .workspace-copy {
   display: flex;
@@ -341,8 +226,8 @@ h2 {
   background: var(--surface);
 }
 .nav-item.is-active {
-  background: var(--primary-100);
-  color: var(--primary-800);
+  background: var(--note-bg);
+  color: var(--primary);
   font-weight: 600;
 }
 .sidebar-bottom {
@@ -569,8 +454,8 @@ main {
   color: var(--secondary-500);
 }
 .harness-codex {
-  background: var(--primary-50);
-  color: var(--primary-700);
+  background: var(--note-bg);
+  color: var(--primary);
 }
 .session-title {
   display: block;
@@ -583,7 +468,7 @@ main {
   white-space: nowrap;
 }
 .session-title:hover {
-  color: var(--primary-700);
+  color: var(--primary);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -614,8 +499,8 @@ main {
   background: currentColor;
 }
 .session-status.status-active {
-  background: var(--primary-50);
-  color: var(--primary-700);
+  background: var(--note-bg);
+  color: var(--primary);
 }
 .project-cell {
   display: flex;
@@ -804,25 +689,6 @@ main {
   .search-box input {
     font-size: 16px;
   }
-  .login-layout {
-    grid-template-columns: 1fr;
-    gap: 40px;
-    padding: 40px 0;
-    max-width: 450px;
-  }
-  .login-story h1 {
-    font-size: 32px;
-  }
-  .login-story > p:not(.eyebrow),
-  .story-foot {
-    display: none;
-  }
-  .login-card {
-    padding: 28px;
-  }
-  .login-page {
-    padding: 24px 20px 16px;
-  }
   .sync-note {
     display: none;
   }
@@ -834,13 +700,6 @@ main {
     animation: none !important;
     transition: none !important;
   }
-}
-
-.session-note {
-  text-align: center;
-  color: var(--fg-muted);
-  font-size: 11px;
-  margin: 0 0 24px;
 }
 
 .mobile-session-meta {

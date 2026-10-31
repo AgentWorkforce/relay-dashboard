@@ -5,8 +5,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Dashboard } from "./dashboard";
 import { CloudClient } from "./api/client";
 import { previewAccount, previewSessions } from "./preview";
+vi.mock("./auth/login", () => ({
+  Login: () => <a href="/login?next=%2Fdashboard%2F">Sign in</a>,
+}));
 function setup(preview = true) {
-  const send = vi.fn<typeof fetch>();
+  const send = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(new Response(JSON.stringify({ authenticated: false })));
   const client = new CloudClient("/cloud-api", "https://agentrelay.com", send);
   render(
     <QueryClientProvider
@@ -27,12 +32,12 @@ function setup(preview = true) {
   return { send, user: userEvent.setup() };
 }
 describe("dashboard review flow", () => {
-  it("starts signed out without making any Cloud requests", () => {
+  it("checks the browser session before sending visitors to the real login page", async () => {
     const { send } = setup(false);
     expect(
-      screen.getByRole("button", { name: /Continue with Agent Relay/ }),
-    ).toBeInTheDocument();
-    expect(send).not.toHaveBeenCalled();
+      await screen.findByRole("link", { name: "Sign in" }),
+    ).toHaveAttribute("href", "/login?next=%2Fdashboard%2F");
+    expect(send.mock.calls[0][0]).toBe("/cloud-api/auth/session?renew=0");
   });
   it("labels the preview, searches and clears filters without sending requests", async () => {
     const { user, send } = setup();
@@ -79,47 +84,24 @@ describe("dashboard review flow", () => {
 it("renders authenticated API sessions and clears them on sign-out", async () => {
   const send = vi.fn<typeof fetch>().mockImplementation(async (url) => {
     const path = String(url);
-    const body = path.endsWith("/device/token")
-      ? {
-          access_token: "test-access",
-          refresh_token: "test-refresh",
-          access_token_expires_at: "2030-01-01",
-          refresh_token_expires_at: "2030-02-01",
-        }
+    const body = path.includes("/auth/session")
+      ? { ...previewAccount, workspaces: [previewAccount.currentWorkspace] }
       : path.endsWith("/whoami")
         ? previewAccount
-        : path.endsWith("/desktop/workspaces")
-          ? { workspaces: [previewAccount.currentWorkspace] }
-          : path.includes("/sessions?")
-            ? {
-                items: [previewSessions[0]],
-                nextCursor: null,
-                error: false,
-                members: [],
-              }
-            : { revoked: true };
+        : path.includes("/sessions?")
+          ? {
+              items: [previewSessions[0]],
+              nextCursor: null,
+              error: false,
+              members: [],
+            }
+          : { ok: true };
     return new Response(JSON.stringify(body), {
       headers: { "Content-Type": "application/json" },
     });
   });
   const client = new CloudClient("/cloud-api", "https://agentrelay.com", send);
-  vi.useFakeTimers();
-  try {
-    const pending = client.finishLogin(
-      {
-        device_code: "test",
-        user_code: "TEST",
-        verification_uri_complete: "https://agentrelay.com/cloud/device",
-        interval: 5,
-        expires_in: 600,
-      },
-      new AbortController().signal,
-    );
-    await vi.advanceTimersByTimeAsync(5000);
-    await pending;
-  } finally {
-    vi.useRealTimers();
-  }
+  await client.restore();
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -133,11 +115,9 @@ it("renders authenticated API sessions and clears them on sign-out", async () =>
   const call = send.mock.calls.find(([url]) =>
     String(url).includes("/sessions?"),
   );
-  expect(new Headers(call?.[1]?.headers).get("Authorization")).toBe(
-    "Bearer test-access",
-  );
+  expect(new Headers(call?.[1]?.headers).get("Authorization")).toBeNull();
   await act(() => client.logout());
-  await screen.findByRole("button", { name: /Continue with Agent Relay/ });
+  await screen.findByRole("link", { name: "Sign in" });
   expect(
     screen.queryByRole("button", { name: "Tighten the onboarding flow" }),
   ).not.toBeInTheDocument();

@@ -31,7 +31,10 @@ const home = createRoute({
   path: "/",
   component: () => <Dashboard client={client} preview={preview} />,
 });
-const router = createRouter({ routeTree: root.addChildren([home]) });
+const router = createRouter({
+  basepath: "/dashboard",
+  routeTree: root.addChildren([home]),
+});
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
