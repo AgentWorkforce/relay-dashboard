@@ -204,7 +204,7 @@ function readOnlyFormatter(name: string, words: string[]): boolean {
   // `sort -o file` and `uniq in out` write files.
   if (name === "sort" && rest.some((word) => /^(?:-o|--output(?:=.*)?|-[a-zA-Z]*o.*)$/.test(word)))
     return false;
-  if (name === "uniq" && rest.filter((word) => !word.startsWith("-")).length > 1) return false;
+  if (name === "uniq" && rest.filter((word) => word === "-" || !word.startsWith("-")).length > 1) return false;
   if (FORMATTERS.has(name)) return true;
   if (name === "sed") {
     const flags = rest.filter((word) => word.startsWith("-"));
