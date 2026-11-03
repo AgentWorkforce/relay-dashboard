@@ -130,15 +130,15 @@ export async function searchSessions(
       await read(
         path(
           workspace,
-          query({
+          `/search${query({
             q: filters.q,
             source: filters.source,
             project: filters.project,
             since: filters.since,
             until: filters.until,
             cursor: next,
-          }),
-        ).replace("/sessions?", "/sessions/search?"),
+          })}`,
+        ),
         signal,
       ),
     );
@@ -228,7 +228,12 @@ export async function sessionEvents(
   signal: AbortSignal,
 ) {
   const body = z
-    .object({ events: z.array(eventSchema), members, nextCursor: cursor })
+    .object({
+      events: z.array(eventSchema),
+      members,
+      nextCursor: cursor,
+      error: z.boolean().optional(),
+    })
     .parse(
       await read(
         `${sessionPath(workspace, session.sessionId, "events")}${query({
@@ -239,19 +244,21 @@ export async function sessionEvents(
         signal,
       ),
     );
-  return body;
+  if (body.error) throw new HistoryUnavailable();
+  return { events: body.events, members: body.members, nextCursor: body.nextCursor };
 }
 
 export async function sessionTurns(
   workspace: string,
   session: { sessionId: string; source: string },
   signal: AbortSignal,
+  next: string | null = null,
 ) {
   return z
     .object({ turns: z.array(record), nextCursor: cursor })
     .parse(
       await read(
-        `${sessionPath(workspace, session.sessionId, "turns")}${query({ source: session.source })}`,
+        `${sessionPath(workspace, session.sessionId, "turns")}${query({ source: session.source, cursor: next })}`,
         signal,
       ),
     );

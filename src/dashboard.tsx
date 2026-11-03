@@ -26,20 +26,24 @@ function useRoute(): SessionRoute {
 export function Dashboard() {
   const [account, setAccount] = useState<Account | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const route = useRoute();
   const workspace = account?.currentWorkspace;
 
   useEffect(() => {
-    const attempt = new AbortController();
-    getAccount(attempt.signal)
+    const request = new AbortController();
+    getAccount(request.signal)
       .then((value) => {
-        if (!attempt.signal.aborted) setAccount(value);
+        if (!request.signal.aborted) {
+          setError(null);
+          setAccount(value);
+        }
       })
       .catch((reason: Error) => {
-        if (!attempt.signal.aborted) setError(reason);
+        if (!request.signal.aborted) setError(reason);
       });
-    return () => attempt.abort();
-  }, []);
+    return () => request.abort();
+  }, [attempt]);
 
   const signedOut = useCallback(() => setError(new SignedOut()), []);
   useEffect(() => {
@@ -74,11 +78,21 @@ export function Dashboard() {
       </header>
       <main className="wide">
         {error && (
-          <p role="alert">
-            {error instanceof SignedOut
-              ? "Taking you to sign in…"
-              : error.message}
-          </p>
+          <div role="alert" className="load-error">
+            <span>
+              {error instanceof SignedOut
+                ? "Taking you to sign in…"
+                : error.message}
+            </span>
+            {!account && !(error instanceof SignedOut) && (
+              <button
+                type="button"
+                onClick={() => setAttempt((value) => value + 1)}
+              >
+                Retry
+              </button>
+            )}
+          </div>
         )}
         {!account && !error && <p role="status">Loading sessions…</p>}
         {account && !workspace && <p>You don’t have a workspace yet.</p>}
@@ -99,6 +113,7 @@ export function Dashboard() {
               source={route.source}
               event={route.event}
               from={route.from}
+              onSignedOut={signedOut}
             />
           </Suspense>
         )}
