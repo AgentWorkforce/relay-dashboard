@@ -18,12 +18,19 @@ type Route =
   | { kind: "add-worker" }
   | { kind: "worker"; id: string };
 
+function decodeSegment(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
 export function parseFlowsRoute(path: string): Route {
-  const parts = path
-    .split("/")
-    .filter(Boolean)
-    .slice(1)
-    .map(decodeURIComponent);
+  const decoded = path.split("/").filter(Boolean).slice(1).map(decodeSegment);
+  // A malformed percent-encoding is not a valid deep link; show the overview.
+  if (decoded.includes(null)) return { kind: "flows" };
+  const parts = decoded as string[];
   const [section, id] = parts;
   if (section === "new") return { kind: "new-flow" };
   if (section === "f" && id) return { kind: "flow", id };
@@ -57,6 +64,10 @@ export function FlowsApp({ path }: { path: string }) {
     });
     return () => controller.abort();
   }, []);
+  // A failed request on one page must not leave its alert on the next page.
+  useEffect(() => {
+    setError((current) => (current instanceof SignedOut ? current : null));
+  }, [path]);
   useEffect(() => {
     if (error instanceof SignedOut)
       window.location.replace("/login?next=%2Fdashboard%2F");

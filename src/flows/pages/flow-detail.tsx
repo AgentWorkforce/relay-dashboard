@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { flowsApi, type FlowDetail, type Worker } from "../api";
 import { Badge, Tabs, Time } from "../components";
-import { go, usePolling } from "../format";
+import { go, seg, usePolling } from "../format";
 import { FlowForm } from "./flow-editor";
 import { RunList } from "./overview";
 
@@ -24,6 +24,7 @@ export function FlowDetailPage({
   const [runError, setRunError] = useState<string | null>(null);
   const [started, setStarted] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
 
   usePolling(
@@ -31,7 +32,13 @@ export function FlowDetailPage({
       try {
         const [next, nextWorkers] = await Promise.all([
           flowsApi.getFlow(flowId, signal),
-          flowsApi.listWorkers(signal).catch(() => [] as Worker[]),
+          // Only a permission denial means "no workers to pick"; anything
+          // else (an expired session included) must surface.
+          flowsApi.listWorkers(signal).catch((error: unknown) => {
+            if ((error as { status?: number }).status === 403)
+              return [] as Worker[];
+            throw error;
+          }),
         ]);
         if (signal.aborted) return;
         setDetail(next);
@@ -150,7 +157,7 @@ export function FlowDetailPage({
         {runError && <p role="alert">{runError}</p>}
         {started && (
           <p role="status">
-            Run started. <a href={`#/flows/runs/${started}`}>Open run</a>
+            Run started. <a href={`#/flows/runs/${seg(started)}`}>Open run</a>
           </p>
         )}
       </section>
@@ -219,13 +226,21 @@ export function FlowDetailPage({
                   onClick={() =>
                     void flowsApi.deleteFlow(flow.id).then(
                       () => go("/flows"),
-                      (error: Error) => setRunError(error.message),
+                      (error: Error) => setDeleteError(error.message),
                     )
                   }
                 >
                   Yes, delete flow
                 </button>
-                <button onClick={() => setConfirmDelete(false)}>Cancel</button>
+                <button
+                  onClick={() => {
+                    setConfirmDelete(false);
+                    setDeleteError(null);
+                  }}
+                >
+                  Cancel
+                </button>
+                {deleteError && <p role="alert">{deleteError}</p>}
               </div>
             )}
           </div>

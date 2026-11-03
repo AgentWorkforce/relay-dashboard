@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { flowsApi } from "../api";
-import { go } from "../format";
+import { go, seg } from "../format";
 
 export const STARTER_FLOW = `version: '1.0'
 name: hello-flow
@@ -81,12 +81,18 @@ export function FlowForm({
         Format
         <select
           value={value.fileType}
-          onChange={(event) =>
-            setValue({
-              ...value,
-              fileType: event.target.value as "yaml" | "ts",
-            })
-          }
+          onChange={(event) => {
+            const fileType = event.target.value as "yaml" | "ts";
+            // The YAML starter is not a TypeScript workflow; don't submit it
+            // under the wrong format. Edited sources are left alone.
+            const source =
+              fileType === "ts" && value.source === STARTER_FLOW
+                ? ""
+                : fileType === "yaml" && !value.source.trim()
+                  ? STARTER_FLOW
+                  : value.source;
+            setValue({ ...value, fileType, source });
+          }}
         >
           <option value="yaml">YAML workflow</option>
           <option value="ts">TypeScript workflow</option>
@@ -151,7 +157,7 @@ export function NewFlowPage() {
             fileType: value.fileType,
             source: value.source,
           });
-          go(`/flows/f/${flow.id}`);
+          go(`/flows/f/${seg(flow.id)}`);
         }}
       />
     </>

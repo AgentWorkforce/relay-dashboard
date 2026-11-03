@@ -68,9 +68,10 @@ export function duration(ms?: number | null): string {
   if (ms === null || ms === undefined || !Number.isFinite(ms)) return "—";
   if (ms < 1_000) return `${Math.round(ms)}ms`;
   const seconds = ms / 1_000;
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ${Math.round(seconds % 60)}s`;
+  const rounded = Math.round(seconds);
+  if (rounded < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const minutes = Math.floor(rounded / 60);
+  if (minutes < 60) return `${minutes}m ${rounded % 60}s`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
@@ -111,6 +112,16 @@ export function useHashRoute(): string {
   return route;
 }
 
+/** One path segment of a hash route; ids are opaque, so always encode them. */
+export const seg = (value: string) => encodeURIComponent(value);
+
+/** POSIX shell single-quoting for copied commands. */
+export function shellQuote(value: string): string {
+  return /^[A-Za-z0-9_./:@=-]+$/.test(value)
+    ? value
+    : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 export const go = (route: string) => {
   window.location.hash = route;
 };
@@ -130,7 +141,7 @@ export function usePolling(
     let timer: ReturnType<typeof setTimeout> | undefined;
     let inFlight = false;
     const tick = async () => {
-      if (inFlight || controller.signal.aborted) return;
+      if (!active || inFlight || controller.signal.aborted) return;
       if (document.visibilityState === "hidden") {
         timer = setTimeout(tick, intervalMs);
         return;

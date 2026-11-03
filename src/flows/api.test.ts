@@ -1,7 +1,13 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { SignedOut } from "../api/client";
-import { ApiError, flowsApi } from "./api";
-import { duration, relativeTime, runTone, statusLabel } from "./format";
+import { ApiError, flowsApi, runSchema } from "./api";
+import {
+  duration,
+  relativeTime,
+  runTone,
+  shellQuote,
+  statusLabel,
+} from "./format";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -100,4 +106,24 @@ it("formats statuses and durations like the hosted dashboard", () => {
       Date.parse("2026-11-03T00:10:00.000Z"),
     ),
   ).toBe("10m ago");
+});
+
+it("rolls a rounded minute over instead of showing 60s", () => {
+  expect(duration(59_400)).toBe("59s");
+  expect(duration(59_600)).toBe("1m 0s");
+  expect(duration(119_600)).toBe("2m 0s");
+  expect(duration(3_599_600)).toBe("1h 0m");
+});
+
+it("accepts runs whose workflowFileName is null", () => {
+  expect(runSchema.parse({ ...run, workflowFileName: null })).toMatchObject({
+    runId: "r1",
+    workflowFileName: null,
+  });
+});
+
+it("shell-quotes names in copied commands", () => {
+  expect(shellQuote("relayflows-worker")).toBe("relayflows-worker");
+  expect(shellQuote("my worker")).toBe("'my worker'");
+  expect(shellQuote("a'b; rm -rf /")).toBe("'a'\\''b; rm -rf /'");
 });

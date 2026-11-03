@@ -22,6 +22,7 @@ import {
   fullTime,
   go,
   isTerminal,
+  seg,
   shortId,
   usePolling,
 } from "../format";
@@ -100,7 +101,7 @@ export function RunDetailPage({
           kind,
           kind === "resume" ? startFrom || undefined : undefined,
         );
-        go(`/flows/runs/${next.runId}`);
+        go(`/flows/runs/${seg(next.runId)}`);
       }
     } catch (error) {
       setActionError((error as Error).message);
@@ -114,8 +115,14 @@ export function RunDetailPage({
       setDefinition(null);
       return;
     }
-    const source = await flowsApi.getRunWorkflow(runId).catch(() => null);
-    setDefinition(source?.workflow ?? "");
+    try {
+      const source = await flowsApi.getRunWorkflow(runId);
+      setDefinition(
+        source.workflow ?? "No workflow definition is available for this run.",
+      );
+    } catch (error) {
+      onError(error as Error);
+    }
   }
 
   const logSteps = [
@@ -137,7 +144,9 @@ export function RunDetailPage({
         <div>
           <a
             className="back"
-            href={run.flowId ? `#/flows/f/${run.flowId}` : "#/flows/runs"}
+            href={
+              run.flowId ? `#/flows/f/${seg(run.flowId)}` : "#/flows/runs"
+            }
           >
             ← Back to {run.flowId ? "flow" : "flows"}
           </a>
@@ -222,7 +231,7 @@ export function RunDetailPage({
         <Tile label="Status">{run.summary ?? run.status}</Tile>
         <Tile label="Ran on">
           {run.workerName ? (
-            <a href={`#/flows/workers/${run.workerId}`}>{run.workerName}</a>
+            <a href={`#/flows/workers/${seg(run.workerId)}`}>{run.workerName}</a>
           ) : run.dispatchType === "local" ? (
             "Local runtime"
           ) : (
@@ -240,7 +249,7 @@ export function RunDetailPage({
         <Tile label="Exit code">{run.exitCode ?? "—"}</Tile>
         {run.resumedFromRunId && (
           <Tile label="Continues">
-            <a href={`#/flows/runs/${run.resumedFromRunId}`}>
+            <a href={`#/flows/runs/${seg(run.resumedFromRunId)}`}>
               {shortId(run.resumedFromRunId)}
             </a>
             {run.startFrom ? ` from ${run.startFrom}` : ""}
@@ -249,7 +258,7 @@ export function RunDetailPage({
         {run.resumedBy.length > 0 && (
           <Tile label="Resumed by">
             {run.resumedBy.map((child) => (
-              <a key={child.runId} href={`#/flows/runs/${child.runId}`}>
+              <a key={child.runId} href={`#/flows/runs/${seg(child.runId)}`}>
                 {shortId(child.runId)}{" "}
               </a>
             ))}

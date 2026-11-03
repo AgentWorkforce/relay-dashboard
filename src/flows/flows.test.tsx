@@ -99,6 +99,42 @@ it("routes flows hashes and keeps sessions as the default page", () => {
     kind: "worker",
     id: "w1",
   });
+  // A malformed escape must not throw during render.
+  expect(parseFlowsRoute("/flows/f/%E0%A4%A")).toEqual({ kind: "flows" });
+});
+
+it("encodes opaque ids in flow and run links", async () => {
+  window.location.hash = "#/flows";
+  api.listFlows.mockResolvedValue([
+    {
+      id: "team/flow",
+      name: "slashed",
+      description: null,
+      fileType: "yaml",
+      createdAt: "2026-11-03T08:00:00.000Z",
+      updatedAt: "2026-11-03T08:00:00.000Z",
+      stepCount: 1,
+      runCount: 0,
+      lastRun: null,
+    },
+  ]);
+  render(<App />);
+  expect(await screen.findByRole("link", { name: "slashed" })).toHaveAttribute(
+    "href",
+    "#/flows/f/team%2Fflow",
+  );
+});
+
+it("keeps the flows list when run history fails to load", async () => {
+  window.location.hash = "#/flows";
+  api.listRuns.mockRejectedValue(new Error("runs unavailable"));
+  render(<App />);
+  expect(
+    await screen.findByRole("link", { name: "hello-selfhost" }),
+  ).toBeInTheDocument();
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "runs unavailable",
+  );
 });
 
 it("makes Flows discoverable from the sessions page", async () => {
@@ -325,4 +361,24 @@ it("lists workers with status and lets admins revoke", async () => {
   expect(screen.getByText("Online")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
   await vi.waitFor(() => expect(api.revokeWorker).toHaveBeenCalledWith("w1"));
+});
+
+it("confirms enrollment-token revocation and reports a failure", async () => {
+  window.location.hash = "#/flows/workers";
+  api.listEnrollments.mockResolvedValue([
+    {
+      id: "t1",
+      tokenHint: "sh_en_…abcd",
+      name: "box",
+      status: "active",
+      expiresAt: "2026-11-04T08:00:00.000Z",
+      createdAt: "2026-11-03T08:00:00.000Z",
+    },
+  ] as never);
+  api.revokeEnrollment.mockRejectedValue(new Error("revoke failed"));
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Revoke" }));
+  expect(confirm).toHaveBeenCalled();
+  expect(await screen.findByText("revoke failed")).toBeInTheDocument();
 });
