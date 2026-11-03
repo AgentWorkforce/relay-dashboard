@@ -135,6 +135,13 @@ it("keeps the flows list when run history fails to load", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "runs unavailable",
   );
+  // The alert belongs to the page that failed, not the next one.
+  await act(async () => {
+    window.location.hash = "#/flows/workers";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  });
+  expect(await screen.findByText("No workers registered yet.")).toBeVisible();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 it("makes Flows discoverable from the sessions page", async () => {

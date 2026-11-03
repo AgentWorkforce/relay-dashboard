@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getAccount, SignedOut } from "../api/client";
 import type { Account } from "../api/contracts";
 import { FlowDetailPage } from "./pages/flow-detail";
@@ -54,7 +54,25 @@ const SECTIONS = [
 
 export function FlowsApp({ path }: { path: string }) {
   const [account, setAccount] = useState<Account | null>(null);
-  const [error, setError] = useState<Error | null>(null);
+  // Errors are tagged with the route that raised them, so a failed request
+  // on one page doesn't leave its alert on the next page.
+  const [failure, setFailure] = useState<{ error: Error; path: string } | null>(
+    null,
+  );
+  const pathRef = useRef(path);
+  useEffect(() => {
+    pathRef.current = path;
+  }, [path]);
+  const setError = useCallback(
+    (next: Error | null) =>
+      setFailure(next ? { error: next, path: pathRef.current } : null),
+    [],
+  );
+  const error =
+    failure &&
+    (failure.error instanceof SignedOut || failure.path === path)
+      ? failure.error
+      : null;
   const current = parseFlowsRoute(path);
 
   useEffect(() => {
@@ -63,11 +81,7 @@ export function FlowsApp({ path }: { path: string }) {
       if (!controller.signal.aborted) setError(caught);
     });
     return () => controller.abort();
-  }, []);
-  // A failed request on one page must not leave its alert on the next page.
-  useEffect(() => {
-    setError((current) => (current instanceof SignedOut ? current : null));
-  }, [path]);
+  }, [setError]);
   useEffect(() => {
     if (error instanceof SignedOut)
       window.location.replace("/login?next=%2Fdashboard%2F");
