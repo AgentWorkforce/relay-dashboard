@@ -111,7 +111,12 @@ export function messageRole(event: ReplayEvent): "user" | "assistant" | null {
   if (event.kind === "assistant") return "assistant";
   // Native deliveries carry the speaker separately from the record kind.
   if (event.kind === "history" || event.kind === "session_event") {
-    const role = event.actorRole || event.actorName || event.type;
+    // A display name is not a role; consult it only after the role fields.
+    const role =
+      event.actorRole ||
+      (event.type === "user" || event.type === "assistant"
+        ? event.type
+        : event.actorName);
     if (role === "user" || role === "assistant") return role;
   }
   return null;
