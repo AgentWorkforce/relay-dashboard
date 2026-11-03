@@ -97,7 +97,10 @@ const EVENT_LABELS: Record<string, string> = {
   "relayflow.step.completed": "Step completed",
 };
 export const eventLabel = (type: string) =>
-  EVENT_LABELS[type] ?? statusLabel(type);
+  Object.hasOwn(EVENT_LABELS, type) ? EVENT_LABELS[type]! : statusLabel(type);
+
+export const plural = (count: number, one: string, many = `${one}s`) =>
+  `${count} ${count === 1 ? one : many}`;
 
 /** Hash routes keep the static SPA deployable under any prefix without rewrites. */
 export function useHashRoute(): string {

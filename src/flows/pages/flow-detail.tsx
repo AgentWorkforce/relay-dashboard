@@ -74,6 +74,12 @@ export function FlowDetailPage({
   if (!detail) return <p role="status">Loading flow…</p>;
   const { flow, recentRuns } = detail;
   const online = workers.filter((worker) => worker.status === "online");
+  // A worker that was revoked or disappeared can't stay selected.
+  const selectedWorker = workers.some(
+    (worker) => worker.id === workerId && worker.status !== "revoked",
+  )
+    ? workerId
+    : "";
 
   async function runNow() {
     setRunning(true);
@@ -90,7 +96,7 @@ export function FlowDetailPage({
       }
       const run = await flowsApi.invokeFlow(flow.id, {
         inputs: parsed,
-        workerId: workerId || undefined,
+        workerId: selectedWorker || undefined,
       });
       setStarted(run.runId);
       setRevision((value) => value + 1);
@@ -133,7 +139,7 @@ export function FlowDetailPage({
           <label>
             Worker
             <select
-              value={workerId}
+              value={selectedWorker}
               onChange={(event) => setWorkerId(event.target.value)}
             >
               <option value="">Any online worker</option>
@@ -188,7 +194,9 @@ export function FlowDetailPage({
       {tab === "definition" && (
         <>
           <FlowForm
-            key={flow.updatedAt}
+            // Keyed by flow, not updatedAt: a refresh that sees a newer save
+            // must not discard a draft being edited.
+            key={flow.id}
             initial={{
               name: flow.name,
               description: flow.description ?? "",
@@ -196,6 +204,7 @@ export function FlowDetailPage({
               source: flow.source,
             }}
             submitLabel="Save changes"
+            onError={onError}
             onSubmit={async (value) => {
               await flowsApi.updateFlow(flow.id, {
                 name: value.name,

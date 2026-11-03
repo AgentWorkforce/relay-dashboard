@@ -83,7 +83,7 @@ beforeEach(() => {
   api.listEnrollments.mockResolvedValue([]);
 });
 
-it("routes flows hashes and keeps sessions as the default page", () => {
+it("parses flows hash routes, including malformed escapes", () => {
   expect(parseFlowsRoute("/flows")).toEqual({ kind: "flows" });
   expect(parseFlowsRoute("/flows/runs")).toEqual({ kind: "runs" });
   expect(parseFlowsRoute("/flows/runs/abc")).toEqual({
@@ -173,7 +173,7 @@ it("lists flows and run history from the API", async () => {
     await screen.findByRole("link", { name: "hello-selfhost" }),
   ).toHaveAttribute("href", "#/flows/f/f1");
   expect(
-    screen.getByText(/Deterministic smoke flow · 2 steps · YAML · 1 runs/),
+    screen.getByText(/Deterministic smoke flow · 2 steps · YAML · 1 run$/),
   ).toBeInTheDocument();
   await act(async () => {
     window.location.hash = "#/flows/runs";
@@ -384,7 +384,7 @@ it("lists workers with status and lets admins revoke", async () => {
   ).toBeInTheDocument();
   expect(screen.getByText("darwin / arm64 / v22")).toBeInTheDocument();
   expect(screen.getByText("Online")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Revoke" }));
   await vi.waitFor(() => expect(api.revokeWorker).toHaveBeenCalledWith("w1"));
 });
 
@@ -434,4 +434,30 @@ it("shows the flow even when the worker list fails", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "workers unavailable",
   );
+});
+
+it("hides worker revocation from non-admins on the worker page", async () => {
+  window.location.hash = "#/flows/workers/w1";
+  api.getWorker.mockResolvedValue({
+    id: "w1",
+    name: "e2e-worker",
+    displayName: "e2e-worker",
+    hostInfo: {},
+    tags: [],
+    status: "online",
+    lastSeen: null,
+    registeredAt: "2026-11-03T08:00:00.000Z",
+    currentRunId: null,
+  } as never);
+  api.listEnrollments.mockRejectedValue(
+    Object.assign(new Error("forbidden"), { status: 403 }),
+  );
+  render(<App />);
+  expect(
+    await screen.findByRole("heading", { name: "e2e-worker" }),
+  ).toBeInTheDocument();
+  await vi.waitFor(() => expect(api.listEnrollments).toHaveBeenCalled());
+  expect(
+    screen.queryByRole("button", { name: "Revoke worker" }),
+  ).not.toBeInTheDocument();
 });

@@ -54,6 +54,9 @@ const SECTIONS = [
 
 export function FlowsApp({ path }: { path: string }) {
   const [account, setAccount] = useState<Account | null>(null);
+  // Kept apart from page errors: a page's successful poll clears its own
+  // error, and must not hide a failed account request.
+  const [accountError, setAccountError] = useState<Error | null>(null);
   // Each route change is a new visit. Errors are tagged with the visit that
   // raised them, so a failed request doesn't leave its alert on the next
   // page, nor resurface when the user comes back to the failed route.
@@ -72,19 +75,19 @@ export function FlowsApp({ path }: { path: string }) {
     [],
   );
   const error =
-    failure &&
+    (failure &&
     (failure.error instanceof SignedOut || failure.visit === visit.id)
       ? failure.error
-      : null;
+      : null) ?? accountError;
   const current = parseFlowsRoute(path);
 
   useEffect(() => {
     const controller = new AbortController();
     getAccount(controller.signal).then(setAccount, (caught: Error) => {
-      if (!controller.signal.aborted) setError(caught);
+      if (!controller.signal.aborted) setAccountError(caught);
     });
     return () => controller.abort();
-  }, [setError]);
+  }, []);
   useEffect(() => {
     if (error instanceof SignedOut)
       window.location.replace("/login?next=%2Fdashboard%2F");
@@ -97,7 +100,7 @@ export function FlowsApp({ path }: { path: string }) {
       page = <FlowsOverview tab={current.kind} onError={setError} />;
       break;
     case "new-flow":
-      page = <NewFlowPage />;
+      page = <NewFlowPage onError={setError} />;
       break;
     case "flow":
       page = (
@@ -117,7 +120,7 @@ export function FlowsApp({ path }: { path: string }) {
       page = <WorkersPage onError={setError} />;
       break;
     case "add-worker":
-      page = <AddWorkerPage />;
+      page = <AddWorkerPage onError={setError} />;
       break;
     case "worker":
       page = (

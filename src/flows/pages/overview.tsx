@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { flowsApi, type Flow, type RunPage } from "../api";
 import { Badge, StatusBadge, Tabs, Time } from "../components";
-import { seg, usePolling } from "../format";
+import { plural, seg, usePolling } from "../format";
 
 type Tab = "flows" | "runs";
 
@@ -122,9 +122,11 @@ export function FlowsOverview({
                       <span className="sub">
                         {[
                           flow.description,
-                          `${flow.stepCount || "?"} steps`,
+                          flow.stepCount
+                            ? plural(flow.stepCount, "step")
+                            : "? steps",
                           flow.fileType.toUpperCase(),
-                          `${flow.runCount} runs`,
+                          plural(flow.runCount, "run"),
                         ]
                           .filter(Boolean)
                           .join(" · ")}

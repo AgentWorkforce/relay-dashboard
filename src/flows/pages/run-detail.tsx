@@ -44,6 +44,8 @@ export function RunDetailPage({
   const [action, setAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [startFrom, setStartFrom] = useState("");
+  // Updated on each poll so an in-progress run's duration keeps counting.
+  const [now, setNow] = useState<number | null>(null);
   const terminal = run ? isTerminal(run.status) : false;
 
   usePolling(
@@ -57,6 +59,7 @@ export function RunDetailPage({
             flowsApi.getArtifacts(runId, signal),
           ]);
         if (signal.aborted) return;
+        setNow(Date.now());
         setRun(nextRun);
         setSteps(nextSteps);
         setEvents(nextEvents);
@@ -135,7 +138,11 @@ export function RunDetailPage({
   const elapsed =
     run.durationMs ??
     (run.startedAt
-      ? Date.parse(run.completedAt ?? run.updatedAt) - Date.parse(run.startedAt)
+      ? (run.completedAt
+          ? Date.parse(run.completedAt)
+          : terminal || now === null
+            ? Date.parse(run.updatedAt)
+            : now) - Date.parse(run.startedAt)
       : null);
 
   return (

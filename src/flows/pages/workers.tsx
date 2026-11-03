@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { SignedOut } from "../../api/client";
 import {
   flowsApi,
   type Enrollment,
@@ -43,7 +44,9 @@ export function WorkersPage({
 }) {
   const [workers, setWorkers] = useState<Worker[] | null>(null);
   const [tokens, setTokens] = useState<EnrollmentToken[] | null>(null);
-  const [canAdmin, setCanAdmin] = useState(true);
+  // Write controls appear only once the enrollment listing (admin-only)
+  // has succeeded.
+  const [canAdmin, setCanAdmin] = useState(false);
   // Once enrollment listing is denied, stop asking on every poll.
   const enrollmentsDenied = useRef(false);
   const [revision, setRevision] = useState(0);
@@ -59,6 +62,7 @@ export function WorkersPage({
         if (enrollmentsDenied.current) return;
         try {
           setTokens(await flowsApi.listEnrollments(signal));
+          setCanAdmin(true);
         } catch (error) {
           if ((error as { status?: number }).status === 403) {
             enrollmentsDenied.current = true;
@@ -244,7 +248,11 @@ export function WorkersPage({
   );
 }
 
-export function AddWorkerPage() {
+export function AddWorkerPage({
+  onError,
+}: {
+  onError: (error: Error | null) => void;
+}) {
   const [name, setName] = useState("");
   const [tags, setTags] = useState("");
   const [expires, setExpires] = useState("60");
@@ -275,7 +283,8 @@ export function AddWorkerPage() {
     }
   }
 
-  if (enrollment) return <EnrollmentSuccess enrollment={enrollment} />;
+  if (enrollment)
+    return <EnrollmentSuccess enrollment={enrollment} onError={onError} />;
   return (
     <>
       <div className="heading">
@@ -341,20 +350,33 @@ export function AddWorkerPage() {
 
 function EnrollmentSuccess({
   enrollment,
+  onError,
 }: {
   enrollment: Enrollment & { name: string };
+  onError: (error: Error | null) => void;
 }) {
   const [worker, setWorker] = useState<Worker | null>(null);
   const [timedOut, setTimedOut] = useState(false);
+  // Bumped by "Keep waiting" to restart the 5-minute watch (Helm rollouts can
+  // take longer; the token stays valid until it expires).
+  const [watch, setWatch] = useState(0);
   const issuedAt = Date.parse(enrollment.createdAt);
   useEffect(() => {
     const timer = setTimeout(() => setTimedOut(true), 5 * 60_000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [watch]);
   usePolling(
     async (signal) => {
-      const workers = await flowsApi.listWorkers(signal).catch(() => null);
-      if (signal.aborted || !workers) return;
+      let workers: Worker[];
+      try {
+        workers = await flowsApi.listWorkers(signal);
+      } catch (error) {
+        // An expired session must reach the app's sign-in redirect; other
+        // failures are retried on the next poll.
+        if (!signal.aborted && error instanceof SignedOut) onError(error);
+        return;
+      }
+      if (signal.aborted) return;
       setWorker(
         workers.find(
           (candidate) =>
@@ -365,7 +387,7 @@ function EnrollmentSuccess({
     },
     3_000,
     !timedOut && worker?.status !== "online",
-    [],
+    [watch],
   );
   const helm = `relayflows:
   mode: cloudWorker
@@ -412,7 +434,16 @@ function EnrollmentSuccess({
         {!worker && timedOut && (
           <p role="alert">
             Timed out waiting for this worker. The token stays valid until it
-            expires.
+            expires.{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setTimedOut(false);
+                setWatch((value) => value + 1);
+              }}
+            >
+              Keep waiting
+            </button>
           </p>
         )}
         {worker && worker.status !== "online" && (
@@ -442,6 +473,19 @@ export function WorkerDetailPage({
 }) {
   const [worker, setWorker] = useState<Worker | null>(null);
   const [missing, setMissing] = useState(false);
+  // Same permission probe as the workers list: enrollment tokens are
+  // admin-only, so only show Revoke when listing them succeeds.
+  const [canAdmin, setCanAdmin] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    flowsApi.listEnrollments(controller.signal).then(
+      () => {
+        if (!controller.signal.aborted) setCanAdmin(true);
+      },
+      () => undefined,
+    );
+    return () => controller.abort();
+  }, []);
   usePolling(
     async (signal) => {
       try {
@@ -515,7 +559,7 @@ export function WorkerDetailPage({
           command={`agent-relay cloud worker logs --name ${shellQuote(worker.name)} --follow`}
         />
       </section>
-      {worker.status !== "revoked" && (
+      {canAdmin && worker.status !== "revoked" && (
         <section className="panel danger-zone">
           <h2>Danger zone</h2>
           <p>
