@@ -579,8 +579,12 @@ export function WorkerDetailPage({
               setRevokeError(null);
               void flowsApi.revokeWorker(worker.id).then(
                 () => go("/flows/workers"),
-                // Kept locally: the next successful poll clears page errors.
-                (error: Error) => setRevokeError(error.message),
+                // Kept locally (the next successful poll clears page errors);
+                // an expired session still goes straight to sign in.
+                (error: Error) => {
+                  if (error instanceof SignedOut) onError(error);
+                  else setRevokeError(error.message);
+                },
               );
             }}
           >
