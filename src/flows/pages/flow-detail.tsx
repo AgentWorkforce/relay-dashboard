@@ -29,25 +29,31 @@ export function FlowDetailPage({
 
   usePolling(
     async (signal) => {
-      try {
-        const [next, nextWorkers] = await Promise.all([
-          flowsApi.getFlow(flowId, signal),
-          // Only a permission denial means "no workers to pick"; anything
-          // else (an expired session included) must surface.
-          flowsApi.listWorkers(signal).catch((error: unknown) => {
-            if ((error as { status?: number }).status === 403)
-              return [] as Worker[];
-            throw error;
-          }),
-        ]);
-        if (signal.aborted) return;
-        setDetail(next);
-        setWorkers(nextWorkers);
+      // The flow and the worker picker load independently: a worker-list
+      // failure must not hide the flow's definition and recent runs.
+      const [flowResult, workersResult] = await Promise.allSettled([
+        flowsApi.getFlow(flowId, signal),
+        flowsApi.listWorkers(signal),
+      ]);
+      if (signal.aborted) return;
+      if (flowResult.status === "rejected") {
+        const error = flowResult.reason as Error & { status?: number };
+        if (error.status === 404) setMissing(true);
+        else onError(error);
+        return;
+      }
+      setDetail(flowResult.value);
+      if (workersResult.status === "fulfilled") {
+        setWorkers(workersResult.value);
         onError(null);
-      } catch (error) {
-        if (signal.aborted) return;
-        if ((error as { status?: number }).status === 404) setMissing(true);
-        else onError(error as Error);
+      } else if (
+        (workersResult.reason as { status?: number }).status === 403
+      ) {
+        // Not allowed to list workers: "Any online worker" only.
+        setWorkers([]);
+        onError(null);
+      } else {
+        onError(workersResult.reason as Error);
       }
     },
     10_000,

@@ -280,9 +280,14 @@ it("cancels an active run and shows a failure panel for failed runs", async () =
     "href",
     "/cloud/api/v1/workflows/runs/r-active/artifacts/runner.log",
   );
+  const loadsBefore = api.getSteps.mock.calls.length;
   fireEvent.click(screen.getByRole("button", { name: "Cancel run" }));
   await vi.waitFor(() =>
     expect(api.cancelRun).toHaveBeenCalledWith("r-active"),
+  );
+  // Turning terminal stops polling but still refreshes the details once.
+  await vi.waitFor(() =>
+    expect(api.getSteps.mock.calls.length).toBeGreaterThan(loadsBefore),
   );
   unmount();
 
@@ -388,4 +393,32 @@ it("confirms enrollment-token revocation and reports a failure", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Revoke" }));
   expect(confirm).toHaveBeenCalled();
   expect(await screen.findByText("revoke failed")).toBeInTheDocument();
+});
+
+it("shows the flow even when the worker list fails", async () => {
+  window.location.hash = "#/flows/f/f1";
+  api.getFlow.mockResolvedValue({
+    flow: {
+      id: "f1",
+      name: "hello-selfhost",
+      description: null,
+      fileType: "yaml",
+      createdAt: "2026-11-03T08:00:00.000Z",
+      updatedAt: "2026-11-03T08:00:00.000Z",
+      stepCount: 1,
+      runCount: 0,
+      lastRun: null,
+      source: "version: '1.0'",
+      steps: [],
+    },
+    recentRuns: [],
+  } as never);
+  api.listWorkers.mockRejectedValue(new Error("workers unavailable"));
+  render(<App />);
+  expect(
+    await screen.findByRole("heading", { name: "hello-selfhost" }),
+  ).toBeInTheDocument();
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "workers unavailable",
+  );
 });

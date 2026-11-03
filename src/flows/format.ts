@@ -140,10 +140,14 @@ export function usePolling(
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let inFlight = false;
-    const tick = async () => {
-      if (!active || inFlight || controller.signal.aborted) return;
+    // The first tick always runs: the effect re-runs when its inputs change
+    // (a run turning terminal included), and that change deserves one fresh
+    // load. Later ticks only run, or reschedule, while `active`.
+    const tick = async (first = false) => {
+      if (inFlight || controller.signal.aborted) return;
+      if (!active && !first) return;
       if (document.visibilityState === "hidden") {
-        timer = setTimeout(tick, intervalMs);
+        if (active) timer = setTimeout(() => void tick(), intervalMs);
         return;
       }
       inFlight = true;
@@ -152,10 +156,10 @@ export function usePolling(
       } finally {
         inFlight = false;
         if (active && !controller.signal.aborted)
-          timer = setTimeout(tick, intervalMs);
+          timer = setTimeout(() => void tick(), intervalMs);
       }
     };
-    void tick();
+    void tick(true);
     return () => {
       controller.abort();
       if (timer) clearTimeout(timer);
