@@ -155,7 +155,11 @@ export function LogViewer({
     [runId, step, terminal],
   );
   async function copy() {
-    await navigator.clipboard.writeText(content).catch(() => undefined);
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch {
+      // Clipboard unavailable (insecure context or denied permission).
+    }
   }
   return (
     <div className="log">
@@ -413,7 +417,9 @@ export function StepGraph({ steps }: { steps: Step[] }) {
               </text>
               <text x={12} y={39} className="node-sub">
                 {statusLabel(step.status)}
-                {step.durationMs ? ` · ${duration(step.durationMs)}` : ""}
+                {step.durationMs !== null && step.durationMs !== undefined
+                  ? ` · ${duration(step.durationMs)}`
+                  : ""}
               </text>
             </g>
           );

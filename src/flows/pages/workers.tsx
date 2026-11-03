@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   flowsApi,
   type Enrollment,
@@ -6,7 +6,15 @@ import {
   type Worker,
 } from "../api";
 import { Badge, CopyableCommand, Tile, Time } from "../components";
-import { fullTime, go, statusLabel, usePolling, workerTone } from "../format";
+import {
+  fullTime,
+  go,
+  seg,
+  shellQuote,
+  statusLabel,
+  usePolling,
+  workerTone,
+} from "../format";
 
 function hostSummary(worker: Worker): string {
   const info = worker.hostInfo;
@@ -36,6 +44,8 @@ export function WorkersPage({
   const [workers, setWorkers] = useState<Worker[] | null>(null);
   const [tokens, setTokens] = useState<EnrollmentToken[] | null>(null);
   const [canAdmin, setCanAdmin] = useState(true);
+  // Once enrollment listing is denied, stop asking on every poll.
+  const enrollmentsDenied = useRef(false);
   const [revision, setRevision] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -46,10 +56,14 @@ export function WorkersPage({
         if (signal.aborted) return;
         setWorkers(next);
         onError(null);
+        if (enrollmentsDenied.current) return;
         try {
           setTokens(await flowsApi.listEnrollments(signal));
         } catch (error) {
-          if ((error as { status?: number }).status === 403) setCanAdmin(false);
+          if ((error as { status?: number }).status === 403) {
+            enrollmentsDenied.current = true;
+            setCanAdmin(false);
+          } else if (!signal.aborted) onError(error as Error);
         }
       } catch (error) {
         if (!signal.aborted) onError(error as Error);
@@ -70,6 +84,22 @@ export function WorkersPage({
     try {
       await flowsApi.revokeWorker(worker.id);
       setNotice(`${worker.name} was revoked.`);
+      setRevision((value) => value + 1);
+    } catch (error) {
+      setNotice((error as Error).message);
+    }
+  }
+
+  async function revokeToken(token: EnrollmentToken) {
+    if (
+      !window.confirm(
+        `Revoke enrollment token ${token.tokenHint}? It can no longer register a worker.`,
+      )
+    )
+      return;
+    try {
+      await flowsApi.revokeEnrollment(token.id);
+      setNotice(`Enrollment token ${token.tokenHint} was revoked.`);
       setRevision((value) => value + 1);
     } catch (error) {
       setNotice((error as Error).message);
@@ -119,7 +149,7 @@ export function WorkersPage({
             {workers.map((worker) => (
               <tr key={worker.id}>
                 <td>
-                  <a href={`#/flows/workers/${worker.id}`}>
+                  <a href={`#/flows/workers/${seg(worker.id)}`}>
                     <strong>{worker.name}</strong>
                   </a>
                 </td>
@@ -139,7 +169,7 @@ export function WorkersPage({
                 <td>{hostSummary(worker)}</td>
                 <td>
                   {worker.currentRunId ? (
-                    <a href={`#/flows/runs/${worker.currentRunId}`}>
+                    <a href={`#/flows/runs/${seg(worker.currentRunId)}`}>
                       {worker.currentRunId.slice(0, 8)}
                     </a>
                   ) : (
@@ -147,7 +177,7 @@ export function WorkersPage({
                   )}
                 </td>
                 <td className="actions">
-                  <a href={`#/flows/workers/${worker.id}`}>View</a>
+                  <a href={`#/flows/workers/${seg(worker.id)}`}>View</a>
                   {canAdmin && (
                     <button
                       className="danger ghost"
@@ -198,11 +228,7 @@ export function WorkersPage({
                     {token.status === "active" && (
                       <button
                         className="danger ghost"
-                        onClick={() =>
-                          void flowsApi
-                            .revokeEnrollment(token.id)
-                            .then(() => setRevision((value) => value + 1))
-                        }
+                        onClick={() => void revokeToken(token)}
                       >
                         Revoke
                       </button>
@@ -344,8 +370,8 @@ function EnrollmentSuccess({
   const helm = `relayflows:
   mode: cloudWorker
   worker:
-    name: ${enrollment.name}
-    cloudUrl: ${enrollment.cloudUrl}
+    name: ${JSON.stringify(enrollment.name)}
+    cloudUrl: ${JSON.stringify(enrollment.cloudUrl)}
   credentials:
     existingSecret: relayflows-worker-enrollment   # key AGENT_RELAY_WORKER_ENROLLMENT_TOKEN`;
   return (
@@ -398,7 +424,8 @@ function EnrollmentSuccess({
         {worker?.status === "online" && (
           <p role="status">
             <WorkerBadge status="online" /> Online. The worker is ready to run
-            flows. <a href={`#/flows/workers/${worker.id}`}>View worker →</a>
+            flows.{" "}
+            <a href={`#/flows/workers/${seg(worker.id)}`}>View worker →</a>
           </p>
         )}
       </section>
@@ -465,7 +492,7 @@ export function WorkerDetailPage({
         <Tile label="Tags">{worker.tags.join(", ") || "None"}</Tile>
         <Tile label="Current run">
           {worker.currentRunId ? (
-            <a href={`#/flows/runs/${worker.currentRunId}`}>
+            <a href={`#/flows/runs/${seg(worker.currentRunId)}`}>
               {worker.currentRunId.slice(0, 8)}
             </a>
           ) : (
@@ -481,11 +508,11 @@ export function WorkerDetailPage({
         <h2>Local diagnostics</h2>
         <CopyableCommand
           label="Status"
-          command={`agent-relay cloud worker status --name ${worker.name}`}
+          command={`agent-relay cloud worker status --name ${shellQuote(worker.name)}`}
         />
         <CopyableCommand
           label="Logs"
-          command={`agent-relay cloud worker logs --name ${worker.name} --follow`}
+          command={`agent-relay cloud worker logs --name ${shellQuote(worker.name)} --follow`}
         />
       </section>
       {worker.status !== "revoked" && (

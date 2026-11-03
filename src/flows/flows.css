@@ -1,24 +1,4 @@
 /* flows lane: flows, runs, and workers. Uses brand.css semantic tokens only. */
-:root {
-  --flow-success: #1d9f73;
-  --flow-success-soft: rgba(29, 159, 115, 0.12);
-  --flow-warning: #c1674b;
-  --flow-warning-soft: rgba(193, 103, 75, 0.14);
-  --flow-danger: #d95b63;
-  --flow-danger-soft: rgba(217, 91, 99, 0.14);
-  --flow-info: var(--primary);
-  --flow-info-soft: rgba(74, 144, 194, 0.12);
-}
-:root[data-theme="dark"] {
-  --flow-success: #63d18b;
-  --flow-success-soft: rgba(99, 209, 139, 0.12);
-  --flow-warning: #ce9178;
-  --flow-warning-soft: rgba(206, 145, 120, 0.14);
-  --flow-danger: #f0727f;
-  --flow-danger-soft: rgba(240, 114, 127, 0.14);
-  --flow-info: #74b8e2;
-  --flow-info-soft: rgba(116, 184, 226, 0.14);
-}
 .top-nav {
   display: flex;
   align-items: center;
@@ -131,8 +111,8 @@ a.button.primary:hover {
   background: var(--btn-hover);
 }
 button.danger {
-  color: var(--flow-danger);
-  border-color: var(--flow-danger-soft);
+  color: var(--danger-fg);
+  border-color: var(--danger-bg);
 }
 button.ghost {
   background: transparent;
@@ -149,7 +129,7 @@ button.link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border-radius: 999px;
+  border-radius: var(--r-xs);
   border: 1px solid transparent;
   padding: 2px 10px;
   font-size: 11px;
@@ -164,20 +144,20 @@ button.link {
   color: var(--fg-muted);
 }
 .badge-success {
-  background: var(--flow-success-soft);
-  color: var(--flow-success);
+  background: var(--success-bg);
+  color: var(--success-fg);
 }
 .badge-warning {
-  background: var(--flow-warning-soft);
-  color: var(--flow-warning);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
 }
 .badge-danger {
-  background: var(--flow-danger-soft);
-  color: var(--flow-danger);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
 }
 .badge-info {
-  background: var(--flow-info-soft);
-  color: var(--flow-info);
+  background: var(--info-bg);
+  color: var(--info-fg);
 }
 .badges,
 .chips,
@@ -239,9 +219,14 @@ button.link {
   border-bottom: 1px solid var(--line);
   vertical-align: top;
 }
+/* `.actions` is a flex row elsewhere; in a table it must stay a cell. */
 .table td.actions {
+  display: table-cell;
   text-align: right;
-  justify-content: flex-end;
+  white-space: nowrap;
+}
+.table td.actions > * + * {
+  margin-left: 8px;
 }
 .sub {
   display: block;
@@ -264,15 +249,15 @@ code {
   font-size: 13px;
 }
 .warning-banner {
-  background: var(--flow-warning-soft);
-  color: var(--flow-warning);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
   border-radius: var(--r-xs);
   padding: 12px 14px;
   font-weight: 500;
 }
 .error-text {
   display: block;
-  color: var(--flow-danger);
+  color: var(--danger-fg);
   font-size: 12px;
   margin-top: 4px;
 }
@@ -298,7 +283,7 @@ code {
   color: var(--fg-muted);
 }
 .panel.failure {
-  border-color: var(--flow-danger-soft);
+  border-color: var(--danger-bg);
 }
 pre {
   margin: 0;
@@ -317,8 +302,8 @@ pre.source {
   max-height: 480px;
 }
 .danger-box {
-  background: var(--flow-danger-soft);
-  color: var(--flow-danger);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
 }
 .runs {
   list-style: none;
@@ -458,20 +443,20 @@ textarea {
   stroke-width: 1.5;
 }
 .graph .node-success rect {
-  fill: var(--flow-success-soft);
-  stroke: var(--flow-success);
+  fill: var(--success-bg);
+  stroke: var(--success-fg);
 }
 .graph .node-danger rect {
-  fill: var(--flow-danger-soft);
-  stroke: var(--flow-danger);
+  fill: var(--danger-bg);
+  stroke: var(--danger-fg);
 }
 .graph .node-info rect {
-  fill: var(--flow-info-soft);
-  stroke: var(--flow-info);
+  fill: var(--info-bg);
+  stroke: var(--info-fg);
 }
 .graph .node-warning rect {
-  fill: var(--flow-warning-soft);
-  stroke: var(--flow-warning);
+  fill: var(--warning-bg);
+  stroke: var(--warning-fg);
 }
 .graph .node-title {
   fill: var(--fg);
@@ -537,13 +522,13 @@ textarea {
   background: var(--fg-faint);
 }
 .timeline .event-success .dot {
-  background: var(--flow-success);
+  background: var(--success-fg);
 }
 .timeline .event-danger .dot {
-  background: var(--flow-danger);
+  background: var(--danger-fg);
 }
 .timeline .event-info .dot {
-  background: var(--flow-info);
+  background: var(--info-fg);
 }
 .artifacts {
   list-style: none;
@@ -581,6 +566,18 @@ textarea {
 .resume {
   display: inline-flex;
   gap: 6px;
+}
+@media (max-width: 600px) {
+  .top-nav {
+    gap: 12px;
+    min-width: 0;
+  }
+  .top-nav span {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 @media (max-width: 860px) {
   .flows-layout,
