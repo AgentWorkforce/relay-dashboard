@@ -454,7 +454,7 @@ it("hash routes switch between sessions and settings", async () => {
     await screen.findByRole("heading", { name: "Settings" }),
   ).toBeInTheDocument();
   expect(
-    await screen.findByRole("heading", { name: "Environment" }),
+    await screen.findByRole("heading", { name: "Environment", level: 1 }),
   ).toBeInTheDocument();
 });
 

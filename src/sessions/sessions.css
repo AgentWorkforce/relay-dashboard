@@ -1,3 +1,5 @@
+/* Legacy layer: above Tailwind's preflight, below its utilities (see globals.css). */
+@layer legacy {
 /* Session views live under main.wide; shared class names (.tabs, .chips,
    .search, .back, .resume) are scoped there so they don't restyle flows or
    admin pages. */
@@ -669,4 +671,5 @@ pre.context {
 }
 .harness {
   white-space: normal;
+}
 }

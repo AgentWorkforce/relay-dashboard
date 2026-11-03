@@ -1,0 +1,453 @@
+.page {
+  min-height: 100%;
+}
+.workspace {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  min-height: calc(100dvh - 60px);
+}
+.sidebar {
+  padding: 20px 12px;
+  border-right: 1px solid var(--border-soft);
+  background: var(--sidebar);
+  align-self: start;
+  position: sticky;
+  top: 0;
+  min-height: calc(100dvh - 60px);
+}
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.search input {
+  width: 100%;
+  min-width: 0;
+  font-size: 12px;
+}
+.search > svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.groupLabel {
+  padding: 22px 10px 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  color: var(--text-muted);
+  text-align: left;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease;
+}
+.tab[hidden] {
+  display: none;
+}
+.tab:hover,
+.tab[data-state="active"] {
+  background: var(--border-soft);
+  color: var(--foreground);
+}
+.noResults {
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.detail {
+  min-width: 0;
+  width: 100%;
+  max-width: 1000px;
+  padding: 28px 24px;
+}
+.heading {
+  padding-bottom: 24px;
+}
+.heading h1 {
+  font-size: 26px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+.heading p {
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.content {
+  min-width: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--surface-card);
+}
+.content[hidden] {
+  display: none;
+}
+.content[data-section="appearance"],
+.content[data-section="members"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.members {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.members.cards > :global([data-slot="card"]),
+.members > section {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+.members > section {
+  padding: 24px;
+}
+.page.page .members :global([data-slot="button"][data-size="sm"]) {
+  height: 32px;
+  min-height: 32px;
+}
+.page.page .members :global([data-slot="button"][data-variant="outline"]) {
+  border: 1px solid var(--border);
+}
+.general {
+  padding: 0 24px;
+}
+.section {
+  padding: 24px 0;
+}
+.section + .section {
+  border-top: 1px solid var(--border-soft);
+}
+.sectionHeading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.sectionHeading > svg {
+  margin-top: 3px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.sectionHeading > div:nth-child(2) {
+  flex: 1;
+}
+.sectionHeading h2 {
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.sectionHeading p {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.form {
+  max-width: 760px;
+}
+.form > form {
+  border: 0;
+  padding: 0;
+  background: none;
+}
+.form :is(input, button[role="combobox"]) {
+  min-height: 40px;
+}
+.workspaceSelect {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 760px;
+  margin-bottom: 20px;
+}
+.disclosure {
+  border-top: 1px solid var(--border-soft);
+}
+.disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 17px 0;
+  list-style: none;
+  cursor: pointer;
+  font-size: 13px;
+}
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.disclosure > summary > svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.disclosure > summary > span {
+  flex: 1;
+}
+.disclosure > summary:hover {
+  color: var(--ring);
+}
+.disclosure[open] > summary > svg:last-child {
+  transform: rotate(180deg);
+}
+.disclosure > .form {
+  padding: 0 0 22px 26px;
+}
+.identifiers {
+  padding: 0 0 22px 26px;
+  max-width: 760px;
+}
+.identifiers > div:first-child {
+  margin-top: 0;
+}
+.account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 0;
+  border-top: 1px solid var(--border-soft);
+}
+.account > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.account p {
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.account span {
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.account button {
+  flex-shrink: 0;
+  gap: 7px;
+}
+.cards > :global([data-slot="card"]) {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  backdrop-filter: none;
+}
+.cards > :global([data-slot="card"]) + :global([data-slot="card"]) {
+  border-top: 1px solid var(--border-soft);
+}
+.cards :global([data-slot="card-header"]) {
+  padding: 24px 24px 16px;
+}
+.cards :global([data-slot="card-content"]) {
+  padding: 0 24px 24px;
+}
+.cards :global([data-slot="card-title"]) {
+  font-size: 15px;
+}
+.cards :global([data-slot="card-description"]) {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.connections {
+  border: 0;
+  padding: 0;
+}
+.credentials {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+.emptyConnections {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 36px 16px;
+  text-align: center;
+}
+.emptyConnections svg {
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.emptyConnections h3 {
+  font-size: 15px;
+  font-weight: 500;
+}
+.emptyConnections p,
+.emptyConnections span {
+  max-width: 380px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.content:focus-visible,
+.page :is(a, button, summary, input):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+@container (max-width: 560px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+  .sidebar {
+    padding: 20px 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .detail {
+    padding: 24px 16px;
+  }
+  .heading h1 {
+    font-size: 23px;
+  }
+  .tabs {
+    display: flex;
+  }
+  .tabs button {
+    gap: 6px;
+    min-height: 44px;
+    justify-content: center;
+  }
+  .tabs button > svg {
+    width: 14px;
+  }
+  .general {
+    padding: 0 18px;
+  }
+  .disclosure > .form,
+  .identifiers {
+    padding-left: 0;
+  }
+  .cards :global([data-slot="card-header"]) {
+    padding: 22px 18px 18px;
+  }
+  .cards :global([data-slot="card-content"]) {
+    padding: 0 18px 22px;
+  }
+  .connections {
+    padding: 22px 18px;
+  }
+  .account {
+    flex-wrap: wrap;
+  }
+}
+
+/* Settings uses one control scale across every section. Keep icon-only actions compact. */
+.page.page :global([data-slot="button"]:not([data-variant="default"])) {
+  min-height: 40px;
+  height: 40px;
+  padding-inline: 14px;
+  border-radius: 8px;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  flex-shrink: 0;
+}
+.page.page
+  :global(
+    [data-slot="button"][data-size^="icon"]:not([data-variant="default"])
+  ) {
+  width: 40px;
+  padding: 0;
+}
+.page.page :global([data-slot="button"][data-variant="outline"]) {
+  background: transparent;
+  border: 1px solid var(--field-border);
+}
+.page.page
+  :global(
+    [data-slot="button"]:not([data-variant="default"]):hover:not(:disabled)
+  ) {
+  filter: brightness(1.12);
+}
+.page.page :global([data-slot="button"]:disabled) {
+  opacity: 0.45;
+}
+.cards :global([data-slot="card"]) {
+  gap: 0;
+  padding-block: 0;
+}
+
+.tabs > [role="group"] {
+  min-width: 0;
+}
+.tabs > [role="group"][hidden] {
+  display: none;
+}
+.tabs .tab {
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+/* Shell panels reduce the reading width independently of the viewport. */
+@container (max-width: 560px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 100%;
+  }
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-soft);
+    padding: 16px 20px;
+  }
+  .tabs {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 4px;
+  }
+  .tabs > [role="group"] {
+    display: flex;
+    flex-shrink: 0;
+  }
+  .tabs > [role="group"][hidden] {
+    display: none;
+  }
+  .tab {
+    white-space: nowrap;
+    width: auto;
+    min-height: 36px;
+    padding: 8px 10px;
+  }
+  .groupLabel {
+    display: none;
+  }
+  .detail {
+    padding: 24px 20px;
+  }
+}
+
+@container (max-width: 560px) {
+  .sidebar {
+    position: static;
+  }
+}
+
+@container (max-width: 560px) {
+  .sidebar {
+    min-height: 0;
+  }
+}

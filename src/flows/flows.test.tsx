@@ -126,7 +126,7 @@ it("encodes opaque ids in flow and run links", async () => {
   const flowLink = await screen.findByRole("link", { name: "slashed" });
   expect(flowLink).toHaveAttribute("href", "#/flows/f/team%2Fflow");
   expect(
-    within(flowLink.closest("tr")!).getByRole("link", { name: "Completed" }),
+    within(flowLink.closest("article")!).getByRole("link", { name: "Completed" }),
   ).toHaveAttribute("href", "#/flows/runs/team%2Frun");
 });
 
@@ -159,7 +159,9 @@ it("keeps the flows list when run history fails to load", async () => {
 
 it("makes Flows discoverable from the sessions page", async () => {
   render(<App />);
-  const nav = await screen.findByRole("navigation", { name: "Primary" });
+  const nav = await screen.findByRole("navigation", {
+    name: "Workspace views",
+  });
   expect(within(nav).getByRole("link", { name: "Flows" })).toHaveAttribute(
     "href",
     "#/flows",
@@ -172,17 +174,19 @@ it("lists flows and run history from the API", async () => {
   expect(
     await screen.findByRole("link", { name: "hello-selfhost" }),
   ).toHaveAttribute("href", "#/flows/f/f1");
-  expect(
-    screen.getByText(/Deterministic smoke flow · 2 steps · YAML · 1 run$/),
-  ).toBeInTheDocument();
+  expect(screen.getByText("2 steps · YAML · 1 run")).toBeInTheDocument();
+  expect(screen.getByText("Deterministic smoke flow")).toBeInTheDocument();
   await act(async () => {
     window.location.hash = "#/flows/runs";
     window.dispatchEvent(new HashChangeEvent("hashchange"));
   });
   const runLink = await screen.findByRole("link", {
-    name: /hello-selfhost.*on e2e-worker/,
+    name: "View run: hello-selfhost",
   });
   expect(runLink).toHaveAttribute("href", `#/flows/runs/${run().runId}`);
+  expect(
+    within(runLink.closest("li")!).getByText(/on e2e-worker/),
+  ).toBeInTheDocument();
 });
 
 it("shows run detail with declared steps, timeline, missing logs, and retry", async () => {

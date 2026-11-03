@@ -1,6 +1,15 @@
 // Session detail: overview (who, where, when, how long), subagent links,
 // resume command, and the full transcript, as on the hosted session page.
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowDown,
+  ChevronRight,
+  MessageSquare,
+  PanelRight,
+  Play,
+} from "lucide-react";
+import { Button, Skeleton } from "../shell/ui";
+import { WorkspaceViewSlot } from "../shell/view-slots";
 import { SignedOut } from "../api/client";
 import { useLoad } from "./use-load";
 import {
@@ -17,6 +26,7 @@ import {
   memberNames,
   promptLabel,
   shortProject,
+  toolKey,
   type Member,
 } from "./data";
 import { buildTranscript } from "./model/transcript-cells";
@@ -75,6 +85,8 @@ export function SessionView({
   } | null>(null);
   const moreRequest = useRef<AbortController | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // Hosted shows the session overview beside the conversation by default.
+  const [showDetails, setShowDetails] = useState(true);
   const [appended, setAppended] = useState<{
     key: string;
     events: Record<string, unknown>[];
@@ -307,200 +319,333 @@ export function SessionView({
   const last = data?.timing?.lastActionAt ?? replay.at(-1)?.ts ?? null;
   const resume = data ? resumeCommand(replay, sessionId) : null;
 
-  return (
-    <div className="session-view">
-      <div className="session-sticky">
-        <a className="back" href={backHref(from)} onClick={onLinkClick}>
-          ← Sessions
-        </a>
-        {data && (
-          <>
-            <span className="sticky-title" title={title}>
-              {title}
-            </span>
-            {counts.tools > 0 && (
-              <button
-                type="button"
-                className="jump"
-                onClick={jumpToNextActivity}
-                title="Scroll to the next tool call"
-              >
-                Next tool call ↓
-              </button>
-            )}
-          </>
-        )}
+  const overviewList = data && (
+    <dl className="overview">
+      <div>
+        <dt>People</dt>
+        <dd>
+          {owners.length ? memberNames(owners, data.members).join(", ") : "—"}
+        </dd>
       </div>
+      <div>
+        <dt>Started</dt>
+        <dd>{dateTime(started)}</dd>
+      </div>
+      <div>
+        <dt>Last action</dt>
+        <dd>{dateTime(last)}</dd>
+      </div>
+      <div>
+        <dt>Working</dt>
+        <dd title="Recorded work intervals">
+          {formatSessionDuration(data.timing?.workMs ?? null)}
+        </dd>
+      </div>
+      <div>
+        <dt>Waiting</dt>
+        <dd title="Recorded waiting intervals">
+          {formatSessionDuration(data.timing?.waitingMs ?? null)}
+        </dd>
+      </div>
+      <div>
+        <dt>Duration</dt>
+        <dd title="First to last recorded activity">
+          {formatSessionDuration(
+            started && last ? Date.parse(last) - Date.parse(started) : null,
+          )}
+        </dd>
+      </div>
+      <div>
+        <dt>Events</dt>
+        <dd>
+          {data.events.length}
+          {data.nextCursor ? "+" : ""}
+        </dd>
+      </div>
+      <div>
+        <dt>Prompts · tool steps</dt>
+        <dd>
+          {counts.prompts} · {counts.tools}
+        </dd>
+      </div>
+      {models.length > 0 && (
+        <div>
+          <dt>Model</dt>
+          <dd>{models.join(", ")}</dd>
+        </div>
+      )}
+    </dl>
+  );
+  return (
+    <div className="session-view mx-auto flex w-full max-w-[1440px] flex-col">
+      <WorkspaceViewSlot name="heading">
+        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 text-[15px] font-semibold">
+          <a
+            className="back text-muted-foreground hover:text-foreground"
+            href={backHref(from)}
+            onClick={onLinkClick}
+          >
+            Sessions
+          </a>
+          <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+          <span className="truncate" title={data ? title : undefined}>
+            {data ? title : "Session"}
+          </span>
+        </nav>
+      </WorkspaceViewSlot>
+      {data && counts.tools > 0 && (
+        <WorkspaceViewSlot name="toolbar">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="jump"
+            onClick={jumpToNextActivity}
+            title="Scroll to the next tool call"
+          >
+            Next tool call
+            <ArrowDown aria-hidden="true" />
+          </Button>
+        </WorkspaceViewSlot>
+      )}
       {error && (
-        <div role="alert" className="load-error">
+        <div role="alert" className="load-error px-5 md:px-9">
           <span>
             {error instanceof SignedOut
               ? "Taking you to sign in…"
               : error.message}
           </span>
           {!(error instanceof SignedOut) && (
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setAttempt((value) => value + 1)}
             >
               Retry
-            </button>
+            </Button>
           )}
         </div>
       )}
-      {!data && !error && <p role="status">Loading session…</p>}
+      {!data && !error && (
+        <div role="status" aria-label="Loading session…" className="flex flex-col gap-4 px-5 py-4 md:px-9">
+          <span className="sr-only">Loading session…</span>
+          <Skeleton className="h-8 w-2/3" />
+          <Skeleton className="h-4 w-80 max-w-full" />
+          <Skeleton className="h-40 w-full max-w-[760px]" />
+        </div>
+      )}
       {data && (
         <>
-          <div className="session-heading">
-            <h1>{title}</h1>
-            <p title={project ?? undefined}>
-              {[
-                harnessName(source),
-                project ? shortProject(project) : null,
-                text(catalog?.gitBranch),
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </p>
-          </div>
-          <dl className="overview">
-            <div>
-              <dt>People</dt>
-              <dd>
-                {owners.length
-                  ? memberNames(owners, data.members).join(", ")
-                  : "—"}
-              </dd>
-            </div>
-            <div>
-              <dt>Started</dt>
-              <dd>{dateTime(started)}</dd>
-            </div>
-            <div>
-              <dt>Last action</dt>
-              <dd>{dateTime(last)}</dd>
-            </div>
-            <div>
-              <dt>Working</dt>
-              <dd title="Recorded work intervals">
-                {formatSessionDuration(data.timing?.workMs ?? null)}
-              </dd>
-            </div>
-            <div>
-              <dt>Waiting</dt>
-              <dd title="Recorded waiting intervals">
-                {formatSessionDuration(data.timing?.waitingMs ?? null)}
-              </dd>
-            </div>
-            <div>
-              <dt>Duration</dt>
-              <dd title="First to last recorded activity">
-                {formatSessionDuration(
-                  started && last
-                    ? Date.parse(last) - Date.parse(started)
-                    : null,
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>Events</dt>
-              <dd>
-                {data.events.length}
-                {data.nextCursor ? "+" : ""}
-              </dd>
-            </div>
-            <div>
-              <dt>Prompts · tool steps</dt>
-              <dd>
-                {counts.prompts} · {counts.tools}
-              </dd>
-            </div>
-            {models.length > 0 && (
-              <div>
-                <dt>Model</dt>
-                <dd>{models.join(", ")}</dd>
-              </div>
-            )}
-          </dl>
-          {data.catalog?.parents.length || data.catalog?.children.length ? (
-            <section className="subagents" aria-label="Related sessions">
-              {data.catalog.parents.map((edge) => (
-                <a
-                  key={`p:${edge.parentSessionId}`}
-                  href={sessionHref(edge.parentSessionId, source)}
-                  onClick={onLinkClick}
+          <header
+            id="session-start"
+            tabIndex={-1}
+            className="session-heading flex shrink-0 scroll-mt-24 flex-col gap-4 border-b border-border px-5 py-4 md:px-9"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <h1
+                  className="line-clamp-2 min-w-0 max-w-full text-xl font-semibold leading-8 tracking-tight"
+                  title={title}
                 >
-                  ↑ Parent session
-                </a>
-              ))}
-              {data.catalog.children.length > 0 && (
-                <>
-                  <h2>Subagents</h2>
-                  <ul>
-                    {data.catalog.children.map((edge) => (
-                      <li key={`c:${edge.childSessionId}`}>
-                        <a
-                          href={sessionHref(edge.childSessionId, source)}
-                          onClick={onLinkClick}
-                        >
-                          {edge.childAgentName ||
-                            edge.childAgentType ||
-                            "Subagent"}
-                        </a>
-                        <span className="dim">
-                          {[
-                            edge.childAgentName &&
-                            edge.childAgentType !== edge.childAgentName
-                              ? edge.childAgentType
-                              : null,
-                            edge.childModel,
-                            edge.spawnedAt ? dateTime(edge.spawnedAt) : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </span>
-                      </li>
+                  {title}
+                </h1>
+                <p
+                  aria-label="Session identity"
+                  className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground"
+                  title={project ?? undefined}
+                >
+                  <span className="flex shrink-0 items-center gap-2">
+                    <HarnessMark source={source} />
+                    {harnessName(source)}
+                  </span>
+                  {[project ? shortProject(project) : null, text(catalog?.gitBranch)]
+                    .filter(Boolean)
+                    .map((part) => (
+                      <span key={part} className="flex items-center gap-3">
+                        <span aria-hidden="true">·</span>
+                        {part}
+                      </span>
                     ))}
-                  </ul>
-                </>
-              )}
-            </section>
-          ) : null}
-          {resume && (
-            <div className="resume">
-              <code>{resume}</code>
-              <button
-                type="button"
-                onClick={() => void navigator.clipboard?.writeText(resume)}
-              >
-                Copy resume command
-              </button>
+                </p>
+              </div>
+              <div className="flex items-start gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-expanded={showDetails}
+                  aria-controls="session-details"
+                  onClick={() => setShowDetails((value) => !value)}
+                >
+                  <PanelRight aria-hidden="true" />
+                  Details
+                </Button>
+                {resume && <CopyResumeCommand command={resume} />}
+              </div>
             </div>
-          )}
-          {copied && (
-            <p role="status" className="dim small">
-              Link copied
-            </p>
-          )}
-          <Transcript
-            cells={cells}
-            events={replay}
-            members={data.members}
-            source={source}
-            onCite={(anchor) => void cite(anchor)}
-          />
-          {data.nextCursor && (
-            <button
-              className="more"
-              type="button"
-              onClick={() => void loadMore()}
-              disabled={more}
+          </header>
+          <div className="flex min-w-0 flex-col xl:flex-row">
+            <aside
+              id="session-details"
+              hidden={!showDetails}
+              aria-label="Session overview"
+              className={`min-w-0 flex-col gap-5 border-b border-border px-5 py-5 xl:sticky xl:top-0 xl:order-last xl:w-[288px] xl:shrink-0 xl:self-start xl:border-b-0 xl:border-l ${showDetails ? "flex" : "hidden"}`}
             >
-              {more ? "Loading…" : "Load later events"}
-            </button>
-          )}
+              <h2 className="text-xs font-medium text-muted-foreground">
+                Session overview
+              </h2>
+              {overviewList}
+              {data.catalog?.parents.length || data.catalog?.children.length ? (
+                <section className="subagents" aria-label="Related sessions">
+                  {data.catalog.parents.map((edge) => (
+                    <a
+                      key={`p:${edge.parentSessionId}`}
+                      href={sessionHref(edge.parentSessionId, source)}
+                      onClick={onLinkClick}
+                    >
+                      ↑ Parent session
+                    </a>
+                  ))}
+                  {data.catalog.children.length > 0 && (
+                    <>
+                      <h2>Subagents</h2>
+                      <ul>
+                        {data.catalog.children.map((edge) => (
+                          <li key={`c:${edge.childSessionId}`}>
+                            <a
+                              href={sessionHref(edge.childSessionId, source)}
+                              onClick={onLinkClick}
+                            >
+                              {edge.childAgentName ||
+                                edge.childAgentType ||
+                                "Subagent"}
+                            </a>
+                            <span className="dim">
+                              {[
+                                edge.childAgentName &&
+                                edge.childAgentType !== edge.childAgentName
+                                  ? edge.childAgentType
+                                  : null,
+                                edge.childModel,
+                                edge.spawnedAt ? dateTime(edge.spawnedAt) : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </section>
+              ) : null}
+            </aside>
+            <section
+              aria-label="Conversation"
+              data-session-messages
+              className="min-w-0 flex-1 px-5 py-5 md:px-9"
+            >
+              {copied && (
+                <p role="status" className="dim small mb-4">
+                  Link copied
+                </p>
+              )}
+              {replay.length === 0 && (
+                <div className="flex flex-col items-center gap-3 py-16 text-center">
+                  <MessageSquare
+                    className="size-7 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <h3 className="font-medium">No conversation recorded yet</h3>
+                  <p className="max-w-xs text-sm leading-6 text-muted-foreground">
+                    Messages will appear here once this session syncs from your
+                    computer.
+                  </p>
+                </div>
+              )}
+              <div className="mx-auto max-w-[760px] pb-4">
+                <Transcript
+                  cells={cells}
+                  events={replay}
+                  members={data.members}
+                  source={source}
+                  onCite={(anchor) => void cite(anchor)}
+                />
+                {data.nextCursor && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="more"
+                    onClick={() => void loadMore()}
+                    disabled={more}
+                  >
+                    {more ? "Loading…" : "Load later events"}
+                  </Button>
+                )}
+              </div>
+            </section>
+          </div>
         </>
       )}
     </div>
   );
 }
+
+/** Hosted copy-resume-command.tsx. */
+function CopyResumeCommand({ command }: { command: string }) {
+  const [status, setStatus] = useState("");
+  return (
+    <div className="flex max-w-xs flex-col items-start gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        aria-label="Resume session: copy terminal command"
+        title="Copy resume command. Paste it in a terminal on the original computer."
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(command);
+            setStatus("Copied resume command");
+          } catch {
+            setStatus(
+              "Could not copy. Select the command below to copy it manually.",
+            );
+          }
+        }}
+      >
+        <Play aria-hidden="true" />
+        Resume
+      </Button>
+      <span role="status" className="text-xs text-muted-foreground empty:hidden">
+        {status}
+      </span>
+      {status.startsWith("Could not") ? (
+        <code className="w-full select-all whitespace-pre-wrap break-all text-xs">
+          {command}
+        </code>
+      ) : null}
+    </div>
+  );
+}
+
+/** Hosted session identity row: the harness's onboarding icon. */
+function HarnessMark({ source }: { source: string }) {
+  const key = toolKey(source);
+  return KNOWN_ICONS.has(key) ? (
+    <img
+      src={`${import.meta.env.BASE_URL}onboarding-icons/${key}.svg`}
+      className="size-4"
+      alt=""
+    />
+  ) : null;
+}
+const KNOWN_ICONS = new Set([
+  "claude",
+  "codex",
+  "devin",
+  "gemini",
+  "cursor",
+  "opencode",
+  "grok",
+  "muse",
+  "capy",
+  "chatgpt",
+  "mcp",
+]);

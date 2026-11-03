@@ -10,6 +10,7 @@ import {
   usePolling,
   type Tone,
 } from "./format";
+import { Badge as HostedBadge } from "../shell/ui";
 
 export function Badge({
   tone = "default",
@@ -18,7 +19,12 @@ export function Badge({
   tone?: Tone;
   children: ReactNode;
 }) {
-  return <span className={`badge badge-${tone}`}>{children}</span>;
+  // Hosted ui/badge.tsx; tones are its variants.
+  return (
+    <HostedBadge variant={tone} data-tone={tone}>
+      {children}
+    </HostedBadge>
+  );
 }
 
 export function StatusBadge({ status }: { status: string }) {

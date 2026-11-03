@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getAccount, SignedOut } from "../api/client";
-import type { Account } from "../api/contracts";
 import { FlowDetailPage } from "./pages/flow-detail";
 import { NewFlowPage } from "./pages/flow-editor";
-import { FlowsOverview } from "./pages/overview";
+import { FlowsOverview, FlowsSidebar } from "./pages/overview";
 import { RunDetailPage } from "./pages/run-detail";
 import { AddWorkerPage, WorkerDetailPage, WorkersPage } from "./pages/workers";
 import "./flows.css";
-import { appPath, loginHref } from "../app-path";
+import { loginHref } from "../app-path";
 
 type Route =
   | { kind: "flows" }
@@ -43,18 +42,8 @@ export function parseFlowsRoute(path: string): Route {
   return { kind: "flows" };
 }
 
-const SECTIONS = [
-  { href: "#/flows", label: "All flows", match: ["flows", "new-flow", "flow"] },
-  { href: "#/flows/runs", label: "Run history", match: ["runs", "run"] },
-  {
-    href: "#/flows/workers",
-    label: "Workers",
-    match: ["workers", "add-worker", "worker"],
-  },
-];
 
 export function FlowsApp({ path }: { path: string }) {
-  const [account, setAccount] = useState<Account | null>(null);
   // Kept apart from page errors: a page's successful poll clears its own
   // error, and must not hide a failed account request.
   const [accountError, setAccountError] = useState<Error | null>(null);
@@ -84,7 +73,7 @@ export function FlowsApp({ path }: { path: string }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    getAccount(controller.signal).then(setAccount, (caught: Error) => {
+    getAccount(controller.signal).then(undefined, (caught: Error) => {
       if (!controller.signal.aborted) setAccountError(caught);
     });
     return () => controller.abort();
@@ -133,58 +122,25 @@ export function FlowsApp({ path }: { path: string }) {
       break;
   }
 
+  const overview = current.kind === "flows" || current.kind === "runs";
+  const section =
+    current.kind === "run" || current.kind === "runs"
+      ? "runs"
+      : current.kind.includes("worker")
+        ? "workers"
+        : "flows";
   return (
-    <div className="dashboard">
-      <header>
-        <a className="brand" href={appPath()}>
-          <img src={`${import.meta.env.BASE_URL}mark.svg`} alt="" />
-          <img
-            className="wordmark"
-            src={`${import.meta.env.BASE_URL}wordmark.svg`}
-            alt="Agent Relay"
-          />
-        </a>
-        <nav className="top-nav" aria-label="Primary">
-          <a href={appPath()}>Sessions</a>
-          <a href="#/flows" aria-current="page">
-            Flows
-          </a>
-          <a href="#/settings/workspace">Settings</a>
-          {account && <span>{account.user.name}</span>}
-        </nav>
-      </header>
-      <main className="flows-main">
-        <div className="flows-layout">
-          <nav className="flows-nav" aria-label="Flows">
-            <h4>Flows</h4>
-            <p>Manage your flows and follow their runs.</p>
-            {SECTIONS.map((section) => (
-              <a
-                key={section.href}
-                href={section.href}
-                aria-current={
-                  section.match.includes(current.kind) ? "page" : undefined
-                }
-              >
-                {section.label}
-              </a>
-            ))}
-            {account?.currentWorkspace && (
-              <span className="workspace">{account.currentWorkspace.name}</span>
-            )}
-          </nav>
-          <div className="flows-content">
-            {error && (
-              <p role="alert">
-                {error instanceof SignedOut
-                  ? "Taking you to sign in…"
-                  : error.message}
-              </p>
-            )}
-            {page}
-          </div>
-        </div>
-      </main>
+    <div className={overview ? "flows-main" : "flows-main flows-page"}>
+      {/* The overview renders this with its counts. */}
+      {!overview && <FlowsSidebar current={section} />}
+      {error && (
+        <p role="alert" className={overview ? "px-6 pt-6" : "mb-4"}>
+          {error instanceof SignedOut
+            ? "Taking you to sign in…"
+            : error.message}
+        </p>
+      )}
+      {page}
     </div>
   );
 }

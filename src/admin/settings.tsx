@@ -7,33 +7,41 @@ import { OrganizationSection, WorkspaceSection } from "./organization";
 import { TokensSection } from "./tokens";
 import { useLoad } from "./use-load";
 import "./admin.css";
-import { appPath, loginHref } from "../app-path";
+import { loginHref } from "../app-path";
+import {
+  Building2,
+  KeyRound,
+  LockKeyhole,
+  Plug,
+  Search,
+  SunMoon,
+  Users2,
+} from "lucide-react";
+import { ThemeSelector } from "../shell/theme-selector";
+import { Button, Skeleton } from "../shell/ui";
+import s from "./settings.module.css";
 
-/** Hosted settings-layout.tsx sections, minus billing/appearance/development. */
+/** Hosted settings-layout.tsx sections, minus billing/development. */
 export const SETTINGS_SECTIONS = [
-  { id: "workspace", label: "Workspace", group: "Workspace", adminOnly: false },
-  {
-    id: "connections",
-    label: "Connections",
-    group: "Workspace",
-    adminOnly: false,
-  },
-  { id: "tokens", label: "API tokens", group: "Workspace", adminOnly: true },
-  {
-    id: "environment",
-    label: "Environment",
-    group: "Workspace",
-    adminOnly: false,
-  },
-  {
-    id: "organization",
-    label: "Organization",
-    group: "Organization",
-    adminOnly: false,
-  },
-  { id: "members", label: "Members", group: "Organization", adminOnly: false },
+  { id: "appearance", label: "Appearance", group: "Preferences", adminOnly: false, icon: SunMoon },
+  { id: "workspace", label: "Workspace", group: "Workspace", adminOnly: false, icon: Building2 },
+  { id: "connections", label: "Connections", group: "Workspace", adminOnly: false, icon: Plug },
+  { id: "tokens", label: "API tokens", group: "Workspace", adminOnly: true, icon: KeyRound },
+  { id: "environment", label: "Environment", group: "Workspace", adminOnly: false, icon: LockKeyhole },
+  { id: "organization", label: "Organization", group: "Organization", adminOnly: false, icon: Building2 },
+  { id: "members", label: "Members", group: "Organization", adminOnly: false, icon: Users2 },
 ] as const;
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
+
+const DESCRIPTIONS: Record<SettingsSectionId, string> = {
+  appearance: "Make Relay feel right for you.",
+  workspace: "Your workspace and the agents connected to it.",
+  connections: "Tools and model accounts available to your workspace.",
+  tokens: "Keys that give your tools access to this workspace.",
+  environment: "Encrypted variables and API keys your Flow runs receive.",
+  organization: "Your organization’s identity and shared settings.",
+  members: "The people who share this workspace.",
+};
 
 export function settingsHash(section: SettingsSectionId) {
   return `#/settings/${section}`;
@@ -58,79 +66,83 @@ export function Settings(props: { section: string }) {
   const shown = visible.filter((item) =>
     item.label.toLowerCase().includes(filter.trim().toLowerCase()),
   );
-  const groups = [...new Set(shown.map((item) => item.group))];
+  const groups = ["Preferences", "Workspace", "Organization"];
+  const activeLabel = visible.find((item) => item.id === active)?.label;
 
   return (
-    <div className="dashboard">
-      <header>
-        <a className="brand" href={appPath()}>
-          <img src={`${import.meta.env.BASE_URL}mark.svg`} alt="" />
-          <img
-            className="wordmark"
-            src={`${import.meta.env.BASE_URL}wordmark.svg`}
-            alt="Agent Relay"
-          />
-        </a>
-        <nav className="top-nav" aria-label="Primary">
-          <a href={appPath()}>Sessions</a>
-          <a href="#/flows">Flows</a>
-          <a href={settingsHash("workspace")} aria-current="page">
-            Settings
-          </a>
-        </nav>
-      </header>
-      <main className="settings">
-        <div className="heading">
-          <div>
-            <h1>Settings</h1>
-            {context && (
-              <p>
-                {context.currentOrganization.name} ·{" "}
-                {context.currentWorkspace.name}
-              </p>
-            )}
-          </div>
-        </div>
-        {error && !(error instanceof SignedOut) && (
-          <p role="alert">
-            {error.message}{" "}
-            <button type="button" onClick={reload}>
-              Try again
-            </button>
-          </p>
-        )}
-        {error instanceof SignedOut && (
-          <p role="alert">Taking you to sign in…</p>
-        )}
-        {!context && !error && <p role="status">Loading settings…</p>}
-        {context && (
-          <div className="settings-layout">
-            <nav aria-label="Settings">
-              <input
-                type="search"
-                placeholder="Search settings…"
-                aria-label="Search settings"
-                value={filter}
-                onChange={(event) => setFilter(event.target.value)}
-              />
-              {groups.map((group) => (
-                <div key={group}>
-                  <h4>{group}</h4>
-                  {shown
-                    .filter((item) => item.group === group)
-                    .map((item) => (
-                      <a
-                        key={item.id}
-                        href={settingsHash(item.id)}
-                        aria-current={item.id === active ? "page" : undefined}
-                      >
-                        {item.label}
-                      </a>
-                    ))}
+    <div className={`${s.page} settings`}>
+      <div className={s.workspace}>
+        <aside className={s.sidebar} aria-label="Settings navigation">
+          <label className={s.search} data-slot="input-group">
+            <Search size={15} aria-hidden="true" />
+            <input
+              data-slot="input-group-control"
+              type="search"
+              placeholder="Search settings…"
+              aria-label="Search settings"
+              className="h-8 bg-transparent outline-none placeholder:text-muted-foreground"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            />
+          </label>
+          <nav className={s.tabs} aria-label="Settings">
+            {groups.map((group) => {
+              const items = shown.filter((item) => item.group === group);
+              if (!items.length) return null;
+              return (
+                <div key={group} role="group" aria-label={`${group} settings`}>
+                  <p className={s.groupLabel}>{group}</p>
+                  {items.map(({ id, label, icon: Icon }) => (
+                    <a
+                      key={id}
+                      href={settingsHash(id)}
+                      className={s.tab}
+                      data-state={id === active ? "active" : "inactive"}
+                      aria-current={id === active ? "page" : undefined}
+                    >
+                      <Icon size={16} aria-hidden="true" />
+                      {label}
+                    </a>
+                  ))}
                 </div>
-              ))}
-            </nav>
-            <div className="settings-panel">
+              );
+            })}
+          </nav>
+          {shown.length === 0 && (
+            <p className={s.noResults} role="status">
+              No settings found.
+            </p>
+          )}
+        </aside>
+        <div className={s.detail}>
+          <header className={s.heading}>
+            <h1>{activeLabel ?? "Settings"}</h1>
+            <p>{DESCRIPTIONS[active]}</p>
+          </header>
+          {error && !(error instanceof SignedOut) && (
+            <p role="alert">
+              {error.message}{" "}
+              <Button variant="outline" size="sm" onClick={reload}>
+                Try again
+              </Button>
+            </p>
+          )}
+          {error instanceof SignedOut && (
+            <p role="alert">Taking you to sign in…</p>
+          )}
+          {active === "appearance" && <ThemeSelector />}
+          {active !== "appearance" && !context && !error && (
+            <div role="status" aria-label="Loading settings…" className="flex flex-col gap-4">
+              <span className="sr-only">Loading settings…</span>
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          )}
+          {context && active !== "appearance" && (
+            <div
+              className={s.content}
+              data-section={active}
+            >
               {active === "workspace" && <WorkspaceSection context={context} />}
               {active === "connections" && (
                 <ConnectionsSection workspaceId={context.currentWorkspace.id} />
@@ -160,9 +172,9 @@ export function Settings(props: { section: string }) {
                 />
               )}
             </div>
-          </div>
-        )}
-      </main>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

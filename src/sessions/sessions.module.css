@@ -1,0 +1,473 @@
+.sessions {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.heading {
+  min-width: 0;
+}
+.heading h1 {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 21px;
+}
+.heading p {
+  margin: 2px 0 0;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 16px;
+}
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.filterSection {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+.sectionLabel {
+  padding: 0 8px;
+  margin: 0 0 4px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.filterGroup {
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+}
+.filterRow {
+  width: 100%;
+  height: 30px;
+  min-height: 30px;
+  justify-content: flex-start;
+  gap: 9px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 400;
+}
+.filterName {
+  flex: 1;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.count {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.tableToolbar {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  justify-content: flex-end;
+  min-width: 0;
+  margin-bottom: -6px;
+}
+.tableSurface {
+  flex: 1;
+  overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
+  font-size: 13px;
+}
+.sessionRow {
+  position: relative;
+  height: 64px;
+}
+.sessionLink,
+.sessionLink:hover {
+  color: inherit;
+  text-decoration: none;
+}
+.sessionLink::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+}
+.sessionLink > span {
+  position: relative;
+  z-index: 1;
+}
+.sessionLink:focus-visible {
+  outline: none;
+}
+.sessionLink:focus-visible::after {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.sessionRow:hover,
+.sessionRow:focus-within {
+  background: var(--accent);
+}
+
+.sessionsTable {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.searchInput.searchInput {
+  font-size: 12px;
+}
+
+.filterRow [data-slot="avatar"] {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  flex: 0 0 18px;
+}
+.filterRow [data-slot="avatar-fallback"] {
+  font-size: 10px;
+}
+
+.identityStack {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  isolation: isolate;
+}
+.identityStack .identityAvatar,
+.identityTool {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border: 2px solid var(--background);
+  border-radius: 50%;
+  background: var(--background);
+}
+.identityStack > * + * {
+  margin-left: -9px;
+  transition: margin-left 150ms ease;
+}
+.sessionRow:hover .identityStack > * + *,
+.sessionRow:focus-within .identityStack > * + * {
+  margin-left: 3px;
+}
+.identityTool {
+  display: grid;
+  place-items: center;
+}
+.identityTool img,
+.identityTool svg {
+  width: 18px;
+  height: 18px;
+}
+.identityAvatar [data-slot="avatar-fallback"] {
+  font-size: 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .identityStack > * + * {
+    transition: none;
+  }
+}
+
+.groupHeaderCell {
+  padding: 12px 0 0;
+  text-align: left;
+}
+.sessionGroup:first-of-type .groupHeaderCell {
+  padding-top: 4px;
+}
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 9px 12px;
+  background: var(--muted);
+}
+.groupTitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground);
+}
+.groupCount {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.historyHeading {
+  margin: 32px 0 12px;
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
+}
+
+.clearSearch {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  text-decoration: none;
+}
+.clearSearch:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+
+.historyHeadingRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 32px 0 12px;
+}
+.historyHeadingRow .historyHeading {
+  margin: 0;
+}
+.searchLoadingBars {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+  color: var(--muted-foreground);
+}
+.searchLoadingBars > span {
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: currentColor;
+  animation: searchBarPulse 800ms ease-in-out infinite;
+}
+.searchLoadingBars > span:nth-child(2) {
+  animation-delay: 120ms;
+}
+.searchLoadingBars > span:nth-child(3) {
+  animation-delay: 240ms;
+}
+@keyframes searchBarPulse {
+  0%,
+  100% {
+    transform: scaleY(0.4);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .searchLoadingBars > span {
+    animation: none;
+  }
+}
+
+.resizableHeader {
+  position: relative;
+  user-select: none;
+}
+.columnResizeHandle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.columnResizeHandle::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  right: 1px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.columnResizeHandle:hover::after,
+.columnResizeHandle:focus-visible::after,
+.columnResizeHandle:active::after {
+  background: var(--primary);
+}
+
+.searchControl {
+  flex: 1;
+  min-width: 0;
+}
+.searchBar {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--background);
+  padding-right: 4px;
+}
+.searchTrigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  color: var(--muted-foreground);
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+.searchTrigger span {
+  flex: 1;
+}
+.searchTrigger kbd {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 11px;
+}
+.searchChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: 8px;
+}
+.searchChips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 8px;
+  background: var(--muted);
+  font-size: 11px;
+}
+.searchPanel.searchPanel {
+  top: 12vh;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: min(640px, calc(100vw - 24px));
+  max-height: min(640px, 80dvh);
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: none;
+}
+.searchForm {
+  padding: 12px;
+}
+.searchSuggestions {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+}
+.suggestionSection {
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  padding: 14px 12px 6px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+.suggestion {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 5px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.suggestion:hover,
+.suggestion[data-highlighted="true"] {
+  background: var(--accent);
+}
+.suggestion code {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.searchHelp {
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.searchHelp > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.searchHelp p {
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+.searchHelp button {
+  color: var(--primary);
+}
+
+/* Keep the desktop selection and harness lanes visible in every column layout. */
+.selectionCell {
+  width: 44px;
+  padding: 0;
+  text-align: center;
+}
+.selectionCheckbox {
+  position: relative;
+  z-index: 2;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  vertical-align: middle;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.selectionCheckbox:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.harnessIconCell {
+  padding: 0 8px 0 4px;
+}
+.harnessIconCell .identityTool img,
+.harnessIconCell .identityTool svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+.sessionRow[data-selected="true"] {
+  background: color-mix(in srgb, var(--primary) 18%, var(--background));
+}
+.sessionTitle {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.executionDetails {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 400;
+}
+.selectionToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--muted);
+  font-size: 12px;
+}

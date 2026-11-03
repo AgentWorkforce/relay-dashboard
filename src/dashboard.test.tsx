@@ -216,9 +216,7 @@ it("applies person and status filters in the browser and free text on the server
   ).not.toBeInTheDocument();
   const list = [...calls].reverse().find((url) => url.pathname === base)!;
   expect(list.searchParams.get("q")).toBe("loader");
-  fireEvent.change(screen.getByLabelText("Person"), {
-    target: { value: "u1" },
-  });
+  fireEvent.click(screen.getByRole("button", { name: "Alex" }));
   expect(screen.getByLabelText("Search sessions")).toHaveValue(
     "loader is:finished person:u1",
   );
@@ -244,9 +242,9 @@ it("renders the transcript with tool calls, results, diffs, timing, and subagent
   expect(
     await screen.findByRole("heading", { name: "Fix session loading" }),
   ).toBeInTheDocument();
-  expect(
-    screen.getByText("Codex · acme/relay · main"),
-  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Session identity")).toHaveTextContent(
+    "Codex·acme/relay·main",
+  );
   expect(screen.getByText("7m")).toBeInTheDocument();
   expect(screen.getByText("5m")).toBeInTheDocument();
   expect(screen.getAllByText("Please fix the loader")).toHaveLength(1);
@@ -256,14 +254,23 @@ it("renders the transcript with tool calls, results, diffs, timing, and subagent
     screen.getByText("Prompts · tool steps").nextElementSibling,
   ).toHaveTextContent("1 · 3");
   expect(
-    screen.getByRole("button", { name: "Next tool call ↓" }),
+    screen.getByRole("button", { name: "Next tool call" }),
   ).toBeInTheDocument();
   expect(screen.getAllByText("Alex").length).toBeGreaterThan(0);
   expect(screen.getByRole("link", { name: "reviewer" })).toHaveAttribute(
     "href",
     "/?session=child-1&source=codex",
   );
-  expect(screen.getByText("cd /work/relay && codex resume s/1")).toBeInTheDocument();
+  const resume = screen.getByRole("button", {
+    name: "Resume session: copy terminal command",
+  });
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  await act(async () => fireEvent.click(resume));
+  expect(writeText).toHaveBeenCalledWith("cd /work/relay && codex resume s/1");
 
   const activity = screen.getByText(/Activity · 2 steps/);
   fireEvent.click(activity);
@@ -379,7 +386,7 @@ it("offers retry only after a load error, and keeps list filters on the way back
   render(<Dashboard />);
   const retry = await screen.findByRole("button", { name: "Retry" });
   expect(screen.getByRole("alert")).toHaveTextContent("Couldn’t load");
-  expect(screen.getByRole("link", { name: "← Sessions" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "Sessions" })).toHaveAttribute(
     "href",
     "/?q=is%3Aactive",
   );

@@ -2,7 +2,19 @@
 // dashboard: free text goes to RelayHistory; `harness:`, `project:`, `is:`,
 // `person:`, `updated:`, and `created:` tokens filter rows (hosted applies
 // person and status in the browser too).
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  CircleCheck,
+  CirclePause,
+  FolderGit2,
+  Inbox,
+  RefreshCw,
+  Search,
+  Terminal,
+  Users,
+  X,
+  Zap,
+} from "lucide-react";
 import { useLoad } from "./use-load";
 import { listSessions, searchSessions, type SearchMatch } from "./api";
 import { ActivityPanel } from "./ActivityPanel";
@@ -17,7 +29,8 @@ import {
   sessionKey,
   sessionTitle,
   shortDate,
-  toolColor,
+  toolKey,
+  dateTime,
   workStates,
   type Member,
   type SessionRow,
@@ -40,6 +53,48 @@ import {
   sessionHref,
 } from "./route";
 import { SignedOut } from "../api/client";
+import { InitialsAvatar } from "../shell/account-menu";
+import { Button, buttonClass, Skeleton } from "../shell/ui";
+import { WorkspaceViewSlot } from "../shell/view-slots";
+import styles from "./sessions.module.css";
+
+// Hosted session-table-data.ts: status dot colors and harness icons.
+const STATUS_COLORS = {
+  active: "var(--status-info)",
+  idle: "var(--status-warning)",
+  finished: "var(--status-success)",
+} as const;
+const HARNESS_ICONS = new Set([
+  "claude",
+  "codex",
+  "devin",
+  "gemini",
+  "cursor",
+  "opencode",
+  "grok",
+  "grok-bot",
+  "muse",
+  "capy",
+  "chatgpt",
+  "mcp",
+]);
+// Hosted ui/toggle.tsx (ToggleGroupItem) classes.
+const TOGGLE =
+  "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-[color,box-shadow] outline-none hover:bg-muted hover:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 bg-transparent";
+
+/** Hosted relativeTime(): "Just now", "12m ago", "3h ago", "2d ago"… */
+export function relativeTime(value: string | null, now: number) {
+  if (!value || !Number.isFinite(Date.parse(value))) return "—";
+  const minutes = Math.max(0, Math.floor((now - Date.parse(value)) / 60_000));
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
+  if (minutes < 10080) return `${Math.floor(minutes / 1440)}d ago`;
+  const days = Math.floor(minutes / 1440);
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
+}
 
 type Tab = "sessions" | "activity" | "search";
 
@@ -111,34 +166,50 @@ export function SessionsPage({
   }, [debounced, tab]);
 
   return (
-    <>
-      <div className="heading">
-        <div>
+    <section className={styles.sessions}>
+      <WorkspaceViewSlot name="heading">
+        <div className={styles.heading}>
           <h1>Sessions</h1>
         </div>
-      </div>
-      <nav className="tabs" aria-label="Sessions views">
-        {(["sessions", "search", "activity"] as const).map((name) => (
-          <a
-            key={name}
-            href={listHref(query, name)}
-            aria-current={tab === name ? "page" : undefined}
-            onClick={onLinkClick}
-          >
-            {name === "sessions"
-              ? "Sessions"
-              : name === "search"
-                ? "Search messages"
-                : "Activity"}
-          </a>
-        ))}
-      </nav>
-      <SearchBox query={query} onChange={setQuery} tab={tab} />
+      </WorkspaceViewSlot>
+      <WorkspaceViewSlot name="toolbar">
+        <nav
+          className="flex items-center gap-1"
+          aria-label="Sessions views"
+        >
+          {(["sessions", "search", "activity"] as const).map((name) => (
+            <a
+              key={name}
+              href={listHref(query, name)}
+              aria-current={tab === name ? "page" : undefined}
+              onClick={onLinkClick}
+              data-slot="button"
+              className={buttonClass(
+                "ghost",
+                "sm",
+                "text-xs font-medium text-muted-foreground aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground",
+              )}
+            >
+              {name === "sessions"
+                ? "Sessions"
+                : name === "search"
+                  ? "Search messages"
+                  : "Activity"}
+            </a>
+          ))}
+        </nav>
+      </WorkspaceViewSlot>
+      {tab !== "sessions" && (
+        <div className={styles.tableToolbar}>
+          <SearchBox query={query} onChange={setQuery} tab={tab} />
+        </div>
+      )}
       {tab !== "sessions" && <UnusedFilters query={query} view={tab} />}
       {tab === "sessions" && (
         <SessionList
           workspaceId={workspaceId}
           query={debounced}
+          liveQuery={query}
           onQuery={setQuery}
           onSignedOut={onSignedOut}
         />
@@ -157,10 +228,26 @@ export function SessionsPage({
           onSignedOut={onSignedOut}
         />
       )}
-    </>
+    </section>
   );
 }
 
+/** Hosted dashboard/sessions/loading.tsx: table-shaped skeleton rows. */
+export function SessionsSkeleton({ label = "Loading sessions…" }: { label?: string }) {
+  return (
+    <div role="status" aria-label={label} className="flex flex-col gap-4">
+      <span className="sr-only">{label}</span>
+      <Skeleton className="h-10 w-full" />
+      <div className="flex flex-col gap-2">
+        {Array.from({ length: 8 }, (_, row) => (
+          <Skeleton key={row} className="h-14 w-full" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Hosted session-search.tsx search bar (the inline field, without the command panel). */
 function SearchBox({
   query,
   onChange,
@@ -172,33 +259,40 @@ function SearchBox({
 }) {
   const filters = parseSessionQuery(query).filters;
   return (
-    <div className="search">
-      <input
-        type="search"
-        aria-label="Search sessions"
-        placeholder={
-          tab === "search"
-            ? "Search prompts, replies, and tool output…"
-            : "Search sessions, or filter with harness: project: is: person: updated:"
-        }
-        value={query}
-        onChange={(event) => onChange(event.target.value)}
-      />
-      {filters.length > 0 && (
-        <ul className="chips" aria-label="Active filters">
-          {filters.map((filter) => (
-            <li key={filter.raw}>
-              <button
-                type="button"
-                aria-label={`Remove filter ${filter.raw}`}
-                onClick={() => onChange(removeSessionFilter(query, filter.raw))}
-              >
-                {filter.raw} ×
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+    <div className={styles.searchControl}>
+      <div className={styles.searchBar}>
+        <label className={styles.searchTrigger}>
+          <Search className="size-4 shrink-0" aria-hidden="true" />
+          <input
+            type="search"
+            aria-label="Search sessions"
+            className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+            placeholder={
+              tab === "search"
+                ? "Search prompts, replies, and tool output…"
+                : "Search sessions, or filter with harness: project: is: person: updated:"
+            }
+            value={query}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        </label>
+        {filters.length > 0 && (
+          <ul className={styles.searchChips} aria-label="Active filters">
+            {filters.map((filter) => (
+              <li key={filter.raw}>
+                <button
+                  type="button"
+                  aria-label={`Remove filter ${filter.raw}`}
+                  onClick={() => onChange(removeSessionFilter(query, filter.raw))}
+                >
+                  {filter.raw}
+                  <X className="size-3" aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
@@ -216,14 +310,34 @@ function UnusedFilters({
   );
   if (!unused.length) return null;
   return (
-    <p className="dim">
+    <p className="text-xs text-muted-foreground">
       Not applied in {view === "search" ? "message search" : "activity"}:{" "}
       {unused.map((filter) => filter.raw).join(" ")}
     </p>
   );
 }
 
-function FilterBar({
+const STATUS_ICONS = {
+  active: Zap,
+  idle: CirclePause,
+  finished: CircleCheck,
+} as const;
+
+function HarnessIcon({ source, className }: { source: string; className?: string }) {
+  const key = toolKey(source);
+  return HARNESS_ICONS.has(key) ? (
+    <img
+      src={`${import.meta.env.BASE_URL}onboarding-icons/${key === "grok-bot" ? "grok" : key}.svg`}
+      alt=""
+      className={className}
+    />
+  ) : (
+    <Terminal aria-hidden="true" className={className} />
+  );
+}
+
+/** Hosted sessions-table.tsx sidebar filters: People, Status, Harness, Project. */
+function SidebarFilters({
   rows,
   members,
   query,
@@ -237,57 +351,120 @@ function FilterBar({
   now: number;
 }) {
   const suggestions = sessionSuggestions(rows, members, now);
-  const options = (field: string) =>
-    suggestions.filter((suggestion) => suggestion.field === field);
-  const select = (field: string, label: string) => (
-    <label>
-      <span>{label}</span>
-      <select
-        value={filterValue(query, field)}
-        onChange={(event) =>
-          onQuery(setSessionFilter(query, field, event.target.value || null))
-        }
+  const count = (field: string, value: string | null) =>
+    rows.filter((row) =>
+      matchesSessionFilters(row, setSessionFilter(query, field, value), now),
+    ).length;
+  const present = new Set(rows.map((row) => toolKey(row.source)));
+  const section = (
+    field: string,
+    title: string,
+    allLabel: string,
+    AllIcon: typeof Users,
+    options: { value: string; title: string; icon: ReactNode }[],
+  ) => {
+    const active = filterValue(query, field);
+    const row = (value: string, label: string, icon: ReactNode) => (
+      <button
+        key={value || "all"}
+        type="button"
+        data-slot="toggle"
+        data-state={active === value ? "on" : "off"}
+        aria-pressed={active === value}
+        aria-label={label}
+        className={`${TOGGLE} ${styles.filterRow}`}
+        onClick={() => onQuery(setSessionFilter(query, field, value || null))}
       >
-        <option value="">Any</option>
-        {options(field).map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.title}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+        {icon}
+        <span className={styles.filterName}>{label}</span>
+        <span className={styles.count}>{count(field, value || null)}</span>
+      </button>
+    );
+    return (
+      <div className={styles.filterSection}>
+        <h2 className={styles.sectionLabel}>{title}</h2>
+        <div
+          role="group"
+          aria-label={`Filter by ${title.toLowerCase()}`}
+          className={`flex flex-col gap-1 ${styles.filterGroup}`}
+        >
+          {row("", allLabel, <AllIcon aria-hidden="true" />)}
+          {options.map((option) => row(option.value, option.title, option.icon))}
+        </div>
+      </div>
+    );
+  };
+  const of = (field: string) => suggestions.filter((item) => item.field === field);
   return (
-    <div className="filters">
-      {select("harness", "Agent")}
-      {select("project", "Project")}
-      {select("person", "Person")}
-      {select("is", "Status")}
-      {select("updated", "Updated")}
-    </div>
-  );
-}
-
-function StatusBadge({ row, now }: { row: SessionRow; now: number }) {
-  const key = sessionActivity(row, now);
-  return (
-    <span
-      className={`status status-${key}`}
-      title={workStates[key].description}
-    >
-      {workStates[key].label}
-    </span>
+    <WorkspaceViewSlot name="sidebar">
+      <div className={styles.filters}>
+        {members.length > 0 &&
+          section(
+            "person",
+            "People",
+            "Everyone",
+            Users,
+            of("person").map((item) => ({
+              value: item.value,
+              title: item.title,
+              icon: <InitialsAvatar name={item.title} size={18} />,
+            })),
+          )}
+        {section(
+          "is",
+          "Status",
+          "All sessions",
+          Inbox,
+          of("is").map((item) => {
+            const Icon = STATUS_ICONS[item.value as keyof typeof STATUS_ICONS];
+            return {
+              value: item.value,
+              title: item.title,
+              icon: <Icon aria-hidden="true" />,
+            };
+          }),
+        )}
+        {section(
+          "harness",
+          "Harness",
+          "All harnesses",
+          Terminal,
+          of("harness")
+            .filter((item) => present.has(item.value))
+            .map((item) => ({
+              value: item.value,
+              title: item.title,
+              icon: <HarnessIcon source={item.value} className="size-4 shrink-0" />,
+            })),
+        )}
+        {of("project").length > 0 &&
+          section(
+            "project",
+            "Project",
+            "All projects",
+            FolderGit2,
+            of("project").map((item) => ({
+              value: item.value,
+              title: item.title,
+              icon: <FolderGit2 aria-hidden="true" />,
+            })),
+          )}
+      </div>
+    </WorkspaceViewSlot>
   );
 }
 
 function SessionList({
   workspaceId,
   query,
+  liveQuery,
   onQuery,
   onSignedOut,
 }: {
   workspaceId: string;
   query: string;
+  /** The undebounced query, shown in the search field. */
+  liveQuery: string;
   onQuery: (value: string) => void;
   onSignedOut: () => void;
 }) {
@@ -357,121 +534,240 @@ function SessionList({
   }
 
   const visible = rows.filter((row) => matchesSessionFilters(row, query, now));
+  const people = new Map(members.map((member) => [member.id, member.name]));
+  const identityCount = Math.max(1, ...visible.map((row) => row.userIds.length + 1));
+  const identityColumnWidth = 12 + 22 + (identityCount - 1) * 13;
   return (
     <>
-      <div className="list-actions">
-        <FilterBar
-          rows={rows}
-          members={members}
-          query={query}
-          onQuery={onQuery}
-          now={now}
-        />
-        <button onClick={() => setReload((value) => value + 1)} disabled={busy}>
+      <SidebarFilters
+        rows={rows}
+        members={members}
+        query={query}
+        onQuery={onQuery}
+        now={now}
+      />
+      <div
+        className={styles.tableToolbar}
+        role="group"
+        aria-label="Session view controls"
+      >
+        <SearchBox query={liveQuery} onChange={onQuery} tab="sessions" />
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-[38px]"
+          onClick={() => setReload((value) => value + 1)}
+          disabled={busy}
+        >
+          <RefreshCw aria-hidden="true" />
           Refresh
-        </button>
+        </Button>
       </div>
+      {busy && rows.length > 0 && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Updating sessions… Showing previous results.
+        </p>
+      )}
       {error && (
         <p role="alert">
           {error instanceof SignedOut ? "Taking you to sign in…" : error.message}
         </p>
       )}
-      {busy && rows.length === 0 && !error && (
-        <p role="status">Loading sessions…</p>
-      )}
-      {!busy && !error && visible.length === 0 && (
-        <p>
-          {rows.length
-            ? "No sessions match these filters."
-            : "No sessions yet."}
-        </p>
-      )}
-      {visible.length > 0 && (
-        <div className="table-scroll">
-          <table className="session-table">
-            <thead>
-              <tr>
-                <th scope="col">Session</th>
-                <th scope="col">Project</th>
-                <th scope="col">Agent</th>
-                <th scope="col">People</th>
-                <th scope="col">Status</th>
-                <th scope="col">Events</th>
-                <th scope="col">Updated</th>
+      {busy && rows.length === 0 && !error && <SessionsSkeleton />}
+      {(!busy || rows.length > 0) && (!error || rows.length > 0) && (
+        <div className={styles.tableSurface}>
+          <table
+            className={`w-full caption-bottom text-sm ${styles.sessionsTable}`}
+            style={{ minWidth: 44 + identityColumnWidth + 940 }}
+          >
+            <caption className="sr-only">
+              Coding sessions, most recently updated first
+            </caption>
+            <colgroup>
+              <col style={{ width: identityColumnWidth }} />
+              <col style={{ width: "38%" }} />
+              <col style={{ width: "19%" }} />
+              <col style={{ width: "13%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "12%" }} />
+            </colgroup>
+            <thead className="text-muted-foreground">
+              <tr className="border-b border-border">
+                <th>
+                  <span className="sr-only">Session identity</span>
+                </th>
+                {["Session", "Project", "Status", "People", "Events", "Updated"].map(
+                  (label) => (
+                    <th
+                      key={label}
+                      scope="col"
+                      className={`${styles.resizableHeader} h-9 px-3 text-left text-xs font-medium`}
+                    >
+                      <span className="truncate">{label}</span>
+                    </th>
+                  ),
+                )}
               </tr>
             </thead>
             <tbody>
-              {visible.map((row) => (
-                <tr key={sessionKey(row)}>
-                  <td className="session-cell">
-                    <a
-                      href={sessionHref(
-                        row.sessionId,
-                        row.source,
-                        null,
-                        listState(query, "sessions"),
-                      )}
-                      onClick={onLinkClick}
-                    >
-                      {sessionTitle(row)}
-                    </a>
-                    {row.parentSessionIds.length > 0 && (
-                      <span className="tag">Subagent</span>
-                    )}
-                    {row.childSessionCount > 0 && (
-                      <span className="tag">
-                        {row.childSessionCount}{" "}
-                        {row.childSessionCount === 1 ? "subagent" : "subagents"}
+              {visible.map((row) => {
+                const title = sessionTitle(row);
+                const project = projectLabel(row);
+                const key = sessionActivity(row, now);
+                const names = row.userIds.map(
+                  (id) => people.get(id) || "Unknown teammate",
+                );
+                const identityLabel = [harnessName(row.source), ...names].join(
+                  " · ",
+                );
+                return (
+                  <tr key={sessionKey(row)} className={styles.sessionRow}>
+                    <td className={styles.harnessIconCell}>
+                      <span
+                        className={styles.identityStack}
+                        role="img"
+                        aria-label={identityLabel}
+                        title={identityLabel}
+                      >
+                        {names.map((name, index) => (
+                          <InitialsAvatar
+                            key={`${row.userIds[index]}`}
+                            name={name}
+                            size={22}
+                            className={styles.identityAvatar}
+                          />
+                        ))}
+                        <span className={styles.identityTool} aria-hidden="true">
+                          <HarnessIcon source={row.source} className="size-5 shrink-0" />
+                        </span>
                       </span>
-                    )}
-                    {row.search?.snippet && (
-                      <span className="snippet">{row.search.snippet}</span>
-                    )}
-                  </td>
+                    </td>
+                    <td className="px-3 py-2">
+                      <a
+                        href={sessionHref(
+                          row.sessionId,
+                          row.source,
+                          null,
+                          listState(query, "sessions"),
+                        )}
+                        onClick={onLinkClick}
+                        title={title}
+                        aria-label={title}
+                        className={`${styles.sessionLink} flex min-w-0 items-center gap-2 font-medium`}
+                      >
+                        <span className={styles.sessionTitle}>
+                          <span className="truncate">{title}</span>
+                          <span className={styles.executionDetails}>
+                            {[harnessName(row.source), row.models[0]]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        </span>
+                      </a>
+                      {(row.parentSessionIds.length > 0 ||
+                        row.childSessionCount > 0) && (
+                        <span className="relative z-10 mt-1 flex gap-2 text-xs text-muted-foreground">
+                          {row.parentSessionIds.length > 0 && <span>Subagent</span>}
+                          {row.childSessionCount > 0 && (
+                            <span>
+                              {row.childSessionCount}{" "}
+                              {row.childSessionCount === 1 ? "subagent" : "subagents"}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                      {row.search?.snippet && (
+                        <span className="relative z-10 mt-1 block truncate text-xs text-muted-foreground">
+                          {row.search.snippet}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span
+                        className="block truncate text-muted-foreground"
+                        title={project?.detail || project?.name}
+                      >
+                        {project?.name ?? "Not recorded"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <span
+                        className="inline-flex items-center gap-2.5 whitespace-nowrap text-muted-foreground"
+                        title={workStates[key].description}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="size-2 shrink-0 rounded-full"
+                          style={{ background: STATUS_COLORS[key] }}
+                        />
+                        {workStates[key].label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <span
+                        className="block truncate text-muted-foreground"
+                        title={names.join(", ")}
+                      >
+                        {names.length ? names.join(", ") : "—"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className="tabular-nums text-muted-foreground">
+                        {row.eventCount ?? "—"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <time
+                        className="relative z-10 whitespace-nowrap text-muted-foreground"
+                        dateTime={row.lastTs ?? undefined}
+                        title={dateTime(row.lastTs)}
+                      >
+                        {relativeTime(row.lastTs, now)}
+                      </time>
+                    </td>
+                  </tr>
+                );
+              })}
+              {visible.length === 0 && !busy && (
+                <tr>
                   <td
-                    className="project-cell"
-                    title={projectLabel(row)?.detail}
+                    colSpan={7}
+                    className="px-5 py-12 text-center text-muted-foreground"
                   >
-                    {projectLabel(row)?.name ?? "—"}
-                  </td>
-                  <td>
-                    <span className="harness">
-                      <i
-                        style={{ background: toolColor(row.source) }}
-                        aria-hidden="true"
-                      />
-                      {harnessName(row.source)}
-                    </span>
-                  </td>
-                  <td>
-                    {row.userIds.length
-                      ? memberNames(row.userIds, members).join(", ")
-                      : "—"}
-                  </td>
-                  <td>
-                    <StatusBadge row={row} now={now} />
-                  </td>
-                  <td>{row.eventCount ?? "—"}</td>
-                  <td>
-                    <time dateTime={row.lastTs ?? undefined}>
-                      {shortDate(row.lastTs)}
-                    </time>
+                    {rows.length ? (
+                      "No sessions match these filters."
+                    ) : (
+                      <div className="flex flex-col items-center gap-4">
+                        <p>
+                          No sessions yet. Connect your computer to start
+                          syncing.
+                        </p>
+                      </div>
+                    )}
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
       )}
-      {cursor && (
-        <button
-          className="more"
-          onClick={() => void loadMore()}
-          disabled={busy}
-        >
-          {busy ? "Loading…" : "Load more"}
-        </button>
-      )}
+      <footer className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span>
+          {visible.length} {visible.length === 1 ? "session" : "sessions"}
+          {cursor ? " loaded · Filters apply to loaded sessions" : ""}
+        </span>
+        {cursor && (
+          <button
+            type="button"
+            className="underline-offset-4 hover:text-foreground hover:underline"
+            onClick={() => void loadMore()}
+            disabled={busy}
+          >
+            {busy ? "Loading…" : "Older sessions"}
+          </button>
+        )}
+      </footer>
     </>
   );
 }
