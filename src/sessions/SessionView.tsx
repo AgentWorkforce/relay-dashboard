@@ -314,12 +314,14 @@ export function SessionView({
               ? "Taking you to sign in…"
               : error.message}
           </span>
-          <button
-            type="button"
-            onClick={() => setAttempt((value) => value + 1)}
-          >
-            Retry
-          </button>
+          {!(error instanceof SignedOut) && (
+            <button
+              type="button"
+              onClick={() => setAttempt((value) => value + 1)}
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
       {!data && !error && <p role="status">Loading session…</p>}

@@ -490,6 +490,7 @@ it("links a search match without a citation path to its session", async () => {
         sessionId: "s/1",
         source: "codex",
         ts: "2026-11-02T18:00:00.000Z",
+        userId: "u1",
         kind: "prompt",
         content: "Please fix the loader",
       },
