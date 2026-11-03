@@ -376,7 +376,11 @@ export function toolCells(step: { call: ReplayEvent; result: ReplayEvent | null 
         ? {
             ...cell,
             rows: cell.rows.map((row) =>
-              (row.verb === "Search" || row.verb === "List") && row.path ? { ...row, path: relative(row.path) } : row,
+              row.verb === "Search" && row.path
+                ? { ...row, path: relative(row.path) }
+                : row.verb === "List"
+                  ? { ...row, detail: relative(row.detail) }
+                  : row,
             ),
           }
         : cell,
