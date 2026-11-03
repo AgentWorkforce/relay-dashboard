@@ -28,7 +28,9 @@ DASHBOARD_BASE_PATH=/ DASHBOARD_RUNTIME_CONFIG_URL=/runtime-config.js npm run bu
 ```
 
 `DASHBOARD_BASE_PATH` sets the asset base (default `/dashboard/`) and must match
-the runtime `appPath`. `DASHBOARD_RUNTIME_CONFIG_URL` adds the config script to
+the runtime `appPath`. The SPA reads `appPath` and `loginPath`; it always calls
+the API at `/cloud/api` on its own origin, so route that prefix to relaycontrol
+(`apiBasePath` in the config is informational). `DASHBOARD_RUNTIME_CONFIG_URL` adds the config script to
 `index.html`; leave it unset for hosted builds. Routes are `#/flows…`,
 `#/settings/<section>`, and query parameters for sessions, so no history
 fallback is needed.
