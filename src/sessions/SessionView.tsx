@@ -347,6 +347,7 @@ export function SessionView({
                         </a>
                         <span className="dim">
                           {[
+                            edge.childAgentName &&
                             edge.childAgentType !== edge.childAgentName
                               ? edge.childAgentType
                               : null,
