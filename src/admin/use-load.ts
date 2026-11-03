@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { loginHref } from "../app-path";
 import { SignedOut } from "./api";
+
+/** Sends the user to sign in (and back here) once a request returns 401. */
+export function redirectIfSignedOut(error: unknown): boolean {
+  if (!(error instanceof SignedOut)) return false;
+  window.location.replace(loginHref());
+  return true;
+}
 
 /**
  * Loads data with abort-on-unmount and an explicit reload. A reload does not
@@ -38,7 +46,11 @@ export function useLoad<T>(load: (signal: AbortSignal) => Promise<T>) {
           setData(value);
           setError(null);
         }),
-      (failure: Error) => settle(() => setError(failure)),
+      (failure: Error) =>
+        settle(() => {
+          redirectIfSignedOut(failure);
+          setError(failure);
+        }),
     );
     // `load` is recreated each render by callers; reload is explicit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -56,8 +68,9 @@ export function formatDate(value?: string | null) {
 }
 
 export function message(error: unknown) {
-  if (error instanceof SignedOut)
-    return "Your session has expired. Reload the page and sign in again.";
+  // Every settings mutation reports failures through message(): an expired
+  // session there goes to sign in, like the initial settings load.
+  if (redirectIfSignedOut(error)) return "Your session has expired. Taking you to sign in…";
   return error instanceof Error && error.message
     ? error.message
     : "Something went wrong.";

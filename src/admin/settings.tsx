@@ -7,6 +7,7 @@ import { OrganizationSection, WorkspaceSection } from "./organization";
 import { TokensSection } from "./tokens";
 import { useLoad } from "./use-load";
 import "./admin.css";
+import { appPath, loginHref } from "../app-path";
 
 /** Hosted settings-layout.tsx sections, minus billing/appearance/development. */
 export const SETTINGS_SECTIONS = [
@@ -47,8 +48,7 @@ export function Settings(props: { section: string }) {
   const [filter, setFilter] = useState("");
 
   useEffect(() => {
-    if (error instanceof SignedOut)
-      window.location.replace("/login?next=%2Fdashboard%2F");
+    if (error instanceof SignedOut) window.location.replace(loginHref());
   }, [error]);
 
   const manage = context ? canManage(context.currentOrganization.role) : false;
@@ -63,7 +63,7 @@ export function Settings(props: { section: string }) {
   return (
     <div className="dashboard">
       <header>
-        <a className="brand" href="/dashboard/">
+        <a className="brand" href={appPath()}>
           <img src={`${import.meta.env.BASE_URL}mark.svg`} alt="" />
           <img
             className="wordmark"
@@ -72,7 +72,7 @@ export function Settings(props: { section: string }) {
           />
         </a>
         <nav className="top-nav" aria-label="Primary">
-          <a href="/dashboard/">Sessions</a>
+          <a href={appPath()}>Sessions</a>
           <a href="#/flows">Flows</a>
           <a href={settingsHash("workspace")} aria-current="page">
             Settings

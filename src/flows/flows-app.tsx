@@ -7,6 +7,7 @@ import { FlowsOverview } from "./pages/overview";
 import { RunDetailPage } from "./pages/run-detail";
 import { AddWorkerPage, WorkerDetailPage, WorkersPage } from "./pages/workers";
 import "./flows.css";
+import { appPath, loginHref } from "../app-path";
 
 type Route =
   | { kind: "flows" }
@@ -89,8 +90,7 @@ export function FlowsApp({ path }: { path: string }) {
     return () => controller.abort();
   }, []);
   useEffect(() => {
-    if (error instanceof SignedOut)
-      window.location.replace("/login?next=%2Fdashboard%2F");
+    if (error instanceof SignedOut) window.location.replace(loginHref());
   }, [error]);
 
   let page;
@@ -136,7 +136,7 @@ export function FlowsApp({ path }: { path: string }) {
   return (
     <div className="dashboard">
       <header>
-        <a className="brand" href="/dashboard/">
+        <a className="brand" href={appPath()}>
           <img src={`${import.meta.env.BASE_URL}mark.svg`} alt="" />
           <img
             className="wordmark"
@@ -145,7 +145,7 @@ export function FlowsApp({ path }: { path: string }) {
           />
         </a>
         <nav className="top-nav" aria-label="Primary">
-          <a href="/dashboard/">Sessions</a>
+          <a href={appPath()}>Sessions</a>
           <a href="#/flows" aria-current="page">
             Flows
           </a>

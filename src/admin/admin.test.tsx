@@ -219,7 +219,18 @@ it("environment: masked values only, add/replace and two-step delete for admins"
   fireEvent.change(screen.getByLabelText("Name"), {
     target: { value: "ANTHROPIC_API_KEY" },
   });
-  expect(screen.getByRole("button", { name: "Replace" })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Value"), {
+    target: { value: "replacement-value" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Replace" }));
+  expect(
+    await screen.findByText("Replaced ANTHROPIC_API_KEY."),
+  ).toBeInTheDocument();
+  expect(
+    calls.filter((call) => call.method === "POST").at(-1)!.body,
+  ).toMatchObject({ name: "ANTHROPIC_API_KEY", value: "replacement-value" });
+  expect(document.body.textContent).not.toContain("replacement-value");
+  expect(screen.getByLabelText("Value")).toHaveValue("");
   fireEvent.change(screen.getByLabelText("Name"), {
     target: { value: "NEW_KEY" },
   });
