@@ -54,23 +54,26 @@ const SECTIONS = [
 
 export function FlowsApp({ path }: { path: string }) {
   const [account, setAccount] = useState<Account | null>(null);
-  // Errors are tagged with the route that raised them, so a failed request
-  // on one page doesn't leave its alert on the next page.
-  const [failure, setFailure] = useState<{ error: Error; path: string } | null>(
+  // Each route change is a new visit. Errors are tagged with the visit that
+  // raised them, so a failed request doesn't leave its alert on the next
+  // page, nor resurface when the user comes back to the failed route.
+  const [visit, setVisit] = useState({ path, id: 0 });
+  if (visit.path !== path) setVisit({ path, id: visit.id + 1 });
+  const [failure, setFailure] = useState<{ error: Error; visit: number } | null>(
     null,
   );
-  const pathRef = useRef(path);
+  const visitRef = useRef(visit.id);
   useEffect(() => {
-    pathRef.current = path;
-  }, [path]);
+    visitRef.current = visit.id;
+  }, [visit.id]);
   const setError = useCallback(
     (next: Error | null) =>
-      setFailure(next ? { error: next, path: pathRef.current } : null),
+      setFailure(next ? { error: next, visit: visitRef.current } : null),
     [],
   );
   const error =
     failure &&
-    (failure.error instanceof SignedOut || failure.path === path)
+    (failure.error instanceof SignedOut || failure.visit === visit.id)
       ? failure.error
       : null;
   const current = parseFlowsRoute(path);

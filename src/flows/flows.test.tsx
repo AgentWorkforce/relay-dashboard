@@ -114,15 +114,20 @@ it("encodes opaque ids in flow and run links", async () => {
       createdAt: "2026-11-03T08:00:00.000Z",
       updatedAt: "2026-11-03T08:00:00.000Z",
       stepCount: 1,
-      runCount: 0,
-      lastRun: null,
+      runCount: 1,
+      lastRun: {
+        runId: "team/run",
+        status: "completed",
+        createdAt: "2026-11-03T08:00:00.000Z",
+      },
     },
   ]);
   render(<App />);
-  expect(await screen.findByRole("link", { name: "slashed" })).toHaveAttribute(
-    "href",
-    "#/flows/f/team%2Fflow",
-  );
+  const flowLink = await screen.findByRole("link", { name: "slashed" });
+  expect(flowLink).toHaveAttribute("href", "#/flows/f/team%2Fflow");
+  expect(
+    within(flowLink.closest("tr")!).getByRole("link", { name: "Completed" }),
+  ).toHaveAttribute("href", "#/flows/runs/team%2Frun");
 });
 
 it("keeps the flows list when run history fails to load", async () => {
@@ -141,6 +146,14 @@ it("keeps the flows list when run history fails to load", async () => {
     window.dispatchEvent(new HashChangeEvent("hashchange"));
   });
   expect(await screen.findByText("No workers registered yet.")).toBeVisible();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  // Coming back is a new visit: while it loads, the old alert stays gone.
+  api.listFlows.mockReturnValue(new Promise(() => undefined));
+  await act(async () => {
+    window.location.hash = "#/flows";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  });
+  expect(await screen.findByText("Loading your flows…")).toBeVisible();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
