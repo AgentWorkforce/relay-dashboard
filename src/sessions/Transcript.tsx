@@ -582,7 +582,9 @@ export function Transcript({
         const cell = group[0]!;
         if (isAgentActivity(cell))
           return (
-            <ActivityGroup key={group[group.length - 1]!.id} cells={group} />
+            // The first cell is stable as later pages append steps, so an
+            // expanded group stays open.
+            <ActivityGroup key={group[0]!.id} cells={group} />
           );
         const message = isHumanMessage(cell) || cell.kind === "assistant";
         return (

@@ -93,9 +93,14 @@ export function toReplayEvent(value: unknown): ReplayEvent | null {
 
 function filesystemPath(value: unknown): string | null {
   const path = str(value);
-  // Canonical owner/repo aliases are not local checkout directories.
-  return path && /^(\/|\.\.?\/)/.test(path) ? path : null;
+  // Canonical owner/repo aliases are not local checkout directories; absolute,
+  // relative, home (`~/`), and Windows drive (`C:/`, `C:\`) paths are.
+  return path && /^(\/|\.\.?\/|~\/|[A-Za-z]:[\\/])/.test(path) ? path : null;
 }
+
+// Claude Code records under several source names.
+const CLAUDE_SOURCES = new Set(["claude", "claude-code", "claude-terminal", "claude-cloud"]);
+export const isClaudeSource = (source: string | null | undefined) => CLAUDE_SOURCES.has(source ?? "");
 
 const REASONING_TYPES = new Set(["thinking", "reasoning", "agent_reasoning"]);
 
@@ -132,6 +137,8 @@ export function toReplayTurn(value: unknown): ReplayEvent | null {
     eventId: str(value.id),
     userId: value.actorRole === "steerer" ? null : str(value.sessionOwner),
     kind: role === "user" ? "prompt" : role,
+    // System turns render as context; keep the role the transcript checks.
+    actorRole: role === "system" ? (str(value.actorRole) ?? "system") : value.actorRole,
     type: str(metadata.kind) ?? "",
     source: str(metadata.nativeCli) ?? str(metadata.source),
     model: metadata.model,
@@ -265,7 +272,7 @@ export function resumeCommand(
   const id = shellQuote(native?.nativeResumeId ?? sessionId);
   let command: string;
   // Mirrors ai-hist-core::resume_command; Codex also gets the requested cwd prefix.
-  switch (source) {
+  switch (isClaudeSource(source) ? "claude" : source) {
     case "claude":
       command = `claude --resume ${id}`;
       break;
@@ -283,5 +290,9 @@ export function resumeCommand(
       return null;
   }
   const projectPath = events.find((event) => event.projectPath)?.projectPath;
-  return projectPath ? `cd ${shellQuote(projectPath)} && ${command}` : command;
+  // Leave a leading `~/` unquoted so the shell still expands it.
+  const cwd = projectPath?.startsWith("~/")
+    ? `~/${shellQuote(projectPath.slice(2))}`
+    : projectPath && shellQuote(projectPath);
+  return cwd ? `cd ${cwd} && ${command}` : command;
 }

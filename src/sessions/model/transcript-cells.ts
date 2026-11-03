@@ -376,7 +376,7 @@ export function toolCells(step: { call: ReplayEvent; result: ReplayEvent | null 
         ? {
             ...cell,
             rows: cell.rows.map((row) =>
-              row.verb === "Search" && row.path ? { ...row, path: relative(row.path) } : row,
+              (row.verb === "Search" || row.verb === "List") && row.path ? { ...row, path: relative(row.path) } : row,
             ),
           }
         : cell,
@@ -426,7 +426,8 @@ function rawToolCells(step: { call: ReplayEvent; result: ReplayEvent | null }): 
     return [{
       kind: "notice",
       text: chars ? `Interacted with background terminal, sent ${JSON.stringify(chars.slice(0, 80))}` : "Waited for background terminal",
-      output: null,
+      // Keep the terminal output the call returned.
+      output: text?.trim() ? text : null,
     }];
   }
 

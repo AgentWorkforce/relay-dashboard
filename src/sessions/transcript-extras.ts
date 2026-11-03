@@ -64,7 +64,10 @@ export function withRecordedFileEdits(
       .filter(
         (path) =>
           !shown.has(path) &&
-          ![...shown].some((seen) => path.endsWith(`/${seen}`)),
+          // An absolute path outside the project root is matched by suffix
+          // only; project-relative paths must match exactly.
+          !(path.startsWith("/") &&
+            [...shown].some((seen) => path.endsWith(`/${seen}`))),
       );
     if (!files.length) return [];
     return [
