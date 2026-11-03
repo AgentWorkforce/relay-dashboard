@@ -37,16 +37,17 @@ export type SessionRow = {
   search: { snippet: string | null; matchedBy: string[] } | null;
 };
 
+// Colors are brand.css tokens, so they follow the light and dark themes.
 export const tools: Record<string, { label: string; color: string }> = {
-  claude: { label: "Claude Code", color: "#d97745" },
-  codex: { label: "Codex", color: "#4a90e2" },
-  devin: { label: "Devin", color: "#5bb98c" },
-  gemini: { label: "Gemini CLI", color: "#8b78da" },
-  cursor: { label: "Cursor", color: "#43a99a" },
-  opencode: { label: "OpenCode", color: "#ba9055" },
-  grok: { label: "Grok", color: "#737373" },
-  muse: { label: "Muse", color: "#c76fa8" },
-  capy: { label: "Capy", color: "#7f9c4a" },
+  claude: { label: "Claude Code", color: "var(--harness-claude)" },
+  codex: { label: "Codex", color: "var(--harness-codex)" },
+  devin: { label: "Devin", color: "var(--harness-devin)" },
+  gemini: { label: "Gemini CLI", color: "var(--harness-gemini)" },
+  cursor: { label: "Cursor", color: "var(--harness-cursor)" },
+  opencode: { label: "OpenCode", color: "var(--harness-opencode)" },
+  grok: { label: "Grok", color: "var(--harness-grok)" },
+  muse: { label: "Muse", color: "var(--harness-muse)" },
+  capy: { label: "Capy", color: "var(--harness-capy)" },
 };
 const aliases: Record<string, string> = {
   "claude-code": "claude",
@@ -62,7 +63,7 @@ export const harnessSources = (key: string) => [
 export const harnessName = (source: string) =>
   tools[toolKey(source)]?.label ?? source;
 export const toolColor = (source: string) =>
-  tools[toolKey(source)]?.color ?? "#9ca3af";
+  tools[toolKey(source)]?.color ?? "var(--harness-other)";
 
 const text = (value: unknown) =>
   typeof value === "string" && value.trim() ? value.trim() : null;

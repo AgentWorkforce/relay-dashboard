@@ -20,7 +20,12 @@ import {
   type Member,
 } from "./data";
 import { buildTranscript } from "./model/transcript-cells";
-import { mergeReplay, messageRole, resumeCommand } from "./model/replay-model";
+import {
+  mergeReplay,
+  messageRole,
+  replayTurnAliases,
+  resumeCommand,
+} from "./model/replay-model";
 import {
   collapseHistoryCopies,
   transcriptCounts,
@@ -175,16 +180,25 @@ export function SessionView({
   useEffect(() => {
     if (!initial) return;
     const hash = window.location.hash.slice(1);
+    // mergeReplayStreams renders a message under its turn id when a turn
+    // replaces the event; follow the same pairing to the turn's anchor.
+    const alias = event
+      ? replayTurnAliases(initial.events, initial.turns).get(event)
+      : undefined;
+    const ids = [event, alias ?? null].filter((id): id is string => !!id);
     const candidates = [
       hash,
-      ...(event
-        ? [`message-${event}`, `cell-${event}`, `cell-${event}:0`]
-        : []),
+      ...ids.flatMap((id) => [`message-${id}`, `cell-${id}`, `cell-${id}:0`]),
     ].filter(Boolean);
     const target = candidates
       .map((id) => document.getElementById(id))
       .find(Boolean);
-    if (target) {
+    // Context and image cells keep their content in a closed disclosure,
+    // which opens when the hash names it.
+    const closed = target?.querySelector(":scope > details:not([open])");
+    if (target && closed && !hash) {
+      window.location.hash = target.id;
+    } else if (target) {
       target.scrollIntoView?.({ block: "start" });
     } else if (event && !hash.startsWith(`cell-${event}:`)) {
       // Tool activity is collapsed; opening it is driven by the hash. An
@@ -386,7 +400,7 @@ export function SessionView({
               </dd>
             </div>
             <div>
-              <dt>Prompts · tool calls</dt>
+              <dt>Prompts · tool steps</dt>
               <dd>
                 {counts.prompts} · {counts.tools}
               </dd>

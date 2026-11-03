@@ -176,6 +176,32 @@ export function mergeReplay(
   );
 }
 
+/**
+ * Self-host addition: which event id each turn replaced in mergeReplay, using
+ * the same pairing (same kind and instant, first come first paired, unique
+ * ids per stream), so a citation to the event can find the turn's anchor.
+ */
+export function replayTurnAliases(
+  events: unknown[],
+  turns: unknown[],
+): Map<string, string> {
+  const rows = new Map<string, ReplayEvent>();
+  for (const row of events.map(toReplayEvent)) if (row) rows.set(row.eventId, row);
+  const buckets = new Map<string, string[]>();
+  for (const row of rows.values()) {
+    const key = `${row.kind}:${Date.parse(row.ts)}`;
+    buckets.set(key, [...(buckets.get(key) ?? []), row.eventId]);
+  }
+  const unique = new Map<string, ReplayEvent>();
+  for (const turn of turns.map(toReplayTurn)) if (turn) unique.set(turn.eventId, turn);
+  const aliases = new Map<string, string>();
+  for (const turn of unique.values()) {
+    const eventId = buckets.get(`${turn.kind}:${Date.parse(turn.ts)}`)?.shift();
+    if (eventId !== undefined) aliases.set(eventId, turn.eventId);
+  }
+  return aliases;
+}
+
 export function mergeReplayStreams(
   events: ReplayEvent[],
   turns: ReplayEvent[],

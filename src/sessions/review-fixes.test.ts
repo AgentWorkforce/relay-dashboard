@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useLoad } from "./use-load";
-import { resumeCommand, toReplayEvent, toReplayTurn, type ReplayEvent } from "./model/replay-model";
+import { mergeReplay, replayTurnAliases, resumeCommand, toReplayEvent, toReplayTurn, type ReplayEvent } from "./model/replay-model";
 import { displayUserMessage } from "./model/transcript-display";
 import { buildTranscript } from "./model/transcript-cells";
 
@@ -75,4 +75,28 @@ it("keeps background-terminal output", () => {
   expect(cells.find((cell) => cell.kind === "notice")).toMatchObject({
     output: "server listening on 3000",
   });
+});
+
+it("aliases cited events to turns with the merge's FIFO pairing", () => {
+  const ts = "2026-11-02T10:00:00.000Z";
+  const events = [
+    { eventId: "e1", ts, kind: "prompt", source: "codex", content: "one" },
+    { eventId: "e2", ts, kind: "prompt", source: "codex", content: "two" },
+    { eventId: "a1", ts, kind: "assistant", source: "codex", content: "ok" },
+  ];
+  const turns = [
+    { id: "t-assistant", role: "assistant", ts, content: "ok" },
+    { id: "t1", role: "user", ts, content: "one" },
+    { id: "t2", role: "user", ts, content: "two" },
+  ];
+  const aliases = replayTurnAliases(events, turns);
+  expect(aliases.get("e1")).toBe("t1");
+  expect(aliases.get("e2")).toBe("t2");
+  expect(aliases.get("a1")).toBe("t-assistant");
+  // The transcript renders exactly those turn ids.
+  expect(
+    mergeReplay(events, turns)
+      .map((row) => row.eventId)
+      .sort(),
+  ).toEqual(["t-assistant", "t1", "t2"]);
 });

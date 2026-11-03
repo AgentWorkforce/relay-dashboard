@@ -230,6 +230,7 @@ it("environment: masked values only, add/replace and two-step delete for admins"
     calls.filter((call) => call.method === "POST").at(-1)!.body,
   ).toMatchObject({ name: "ANTHROPIC_API_KEY", value: "replacement-value" });
   expect(document.body.textContent).not.toContain("replacement-value");
+  expect(screen.getByLabelText("Value")).toHaveValue("");
   fireEvent.change(screen.getByLabelText("Name"), {
     target: { value: "NEW_KEY" },
   });
