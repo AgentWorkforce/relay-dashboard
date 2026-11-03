@@ -1,0 +1,167 @@
+name: Container Image
+
+# Builds the self-hosted dashboard image. Pull requests build and smoke-test
+# linux/amd64 without pushing. Publishing is manual (or a v* tag), only from
+# a reviewed commit on main, to ghcr.io/agentworkforce/relay-dashboard for
+# linux/amd64 and linux/arm64 with an SBOM, max-mode provenance and a signed
+# GitHub build-provenance attestation. Pin the printed digest, never a tag.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/container.yml"
+      - ".dockerignore"
+      - "Dockerfile"
+      - "docker/**"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "public/**"
+      - "src/**"
+      - "tsconfig.json"
+      - "vite.config.ts"
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/agentworkforce/relay-dashboard
+
+jobs:
+  validate:
+    name: Build and smoke-test linux/amd64 image
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: relay-dashboard:ci
+          build-args: SOURCE_REVISION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test the chart's runtime contract
+        run: |
+          set -euo pipefail
+          # Same shape as the chart: read-only root, uid 101, html and /tmp as
+          # writable volumes populated by the copy-dashboard init step.
+          html="$RUNNER_TEMP/dashboard-html"
+          mkdir -p "$html" && chmod 0777 "$html"
+          docker run --rm --read-only --user 101:101 \
+            -v "$html:/work" relay-dashboard:ci \
+            sh -ec 'cp -a /usr/share/nginx/html/. /work/'
+          docker run -d --name dashboard --read-only --user 101:101 \
+            --tmpfs /tmp:uid=101,gid=101 \
+            -v "$html:/usr/share/nginx/html" \
+            -e DASHBOARD_PUBLIC_URL=https://dashboard.example.test \
+            -e DASHBOARD_APP_PATH=/ \
+            -e DASHBOARD_API_BASE_PATH=/cloud/api \
+            -e DASHBOARD_LOGIN_PATH=/login \
+            -p 8080:8080 relay-dashboard:ci
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8080/healthz && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8080/runtime-config.js | tee /tmp/runtime-config.js
+          grep -q '__AGENT_RELAY_DASHBOARD_CONFIG__' /tmp/runtime-config.js
+          grep -qF 'apiBasePath: "/cloud/api"' /tmp/runtime-config.js
+          curl -fsS http://127.0.0.1:8080/ | grep -q '<div id="root"'
+          curl -fsS http://127.0.0.1:8080/some/client/route | grep -q '<div id="root"'
+          docker logs dashboard
+          docker rm -f dashboard
+
+  publish:
+    name: Publish multi-platform image
+    # Manual publication is intentionally restricted to the reviewed main branch.
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the source commit is reviewed on main
+        run: |
+          git fetch --no-tags origin main
+          source_commit=$(git rev-parse "${GITHUB_SHA}^{commit}")
+          if ! git merge-base --is-ancestor "$source_commit" origin/main; then
+            echo "Refusing to publish $source_commit because it is not on main" >&2
+            exit 1
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,format=long,prefix=sha-
+            type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          labels: |
+            org.opencontainers.image.title=Agent Relay dashboard
+            org.opencontainers.image.description=Self-hosted Agent Relay dashboard
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Build and publish image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: SOURCE_REVISION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+      - name: Attest published image
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Record immutable image reference
+        run: echo "Published \`${IMAGE}@${{ steps.build.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
