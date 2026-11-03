@@ -1,10 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { Dashboard } from "./dashboard";
+import { App } from "./app";
 import "@fontsource-variable/inter";
 import "./styles.css";
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <Dashboard />
+    <App />
   </React.StrictMode>,
 );
