@@ -83,7 +83,13 @@ export function Dashboard() {
             alt="Agent Relay"
           />
         </a>
-        {account && <span>{account.user.name}</span>}
+        <nav className="top-nav" aria-label="Primary">
+          <a href="/dashboard/" aria-current="page">
+            Sessions
+          </a>
+          <a href="#/settings/workspace">Settings</a>
+          {account && <span>{account.user.name}</span>}
+        </nav>
       </header>
       <main>
         <div className="heading">
