@@ -29,10 +29,12 @@ export function ConnectionsSection(props: { workspaceId: string }) {
    */
   function watchPopup(provider: Provider) {
     if (timer.current !== null) window.clearInterval(timer.current);
-    const deadline = Date.now() + 10 * 60_000;
+    let ticks = 0;
+    const maxTicks = (10 * 60_000) / 2_000;
     timer.current = window.setInterval(() => {
+      ticks += 1;
       const closed = !popup.current || popup.current.closed;
-      if (closed || Date.now() > deadline) {
+      if (closed || ticks > maxTicks) {
         if (timer.current !== null) window.clearInterval(timer.current);
         timer.current = null;
         reload();
