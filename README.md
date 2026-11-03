@@ -1,8 +1,12 @@
 # Agent Relay Dashboard
 
-A React/Vite page that lists sessions from Cloud. It uses agentrelay.com’s
-existing login and HttpOnly session cookie. Clicking a session opens its Cloud
-conversation. No separate authentication, preview mode, or production-data proxy.
+A React/Vite page for Agent Relay sessions: the session list with filters,
+full transcripts (prompts, replies, tool calls and results, diffs, subagents),
+message search, and team activity. It uses the existing login and HttpOnly
+session cookie and reads only the `/cloud/api` session routes, which scope every
+read to the signed-in workspace. Session links are `?session=<id>&source=<source>`
+on the app's base path; hosted `/dashboard/sessions/<id>?source=` links also open.
+No separate authentication, preview mode, or production-data proxy.
 
 ## Run
 

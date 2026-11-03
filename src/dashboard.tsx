@@ -1,81 +1,57 @@
-import { useEffect, useRef, useState } from "react";
-import { getAccount, getSessions, SignedOut } from "./api/client";
-import type { Account, Session } from "./api/contracts";
-import {
-  conversationUrl,
-  harnessName,
-  sessionDate,
-  sessionKey,
-} from "./sessions";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { getAccount, SignedOut } from "./api/client";
+import type { Account } from "./api/contracts";
+import { parseRoute, type SessionRoute } from "./sessions/route";
+import { SessionsPage } from "./sessions/SessionsPage";
+import "./sessions/sessions.css";
+import { appPath, loginHref } from "./app-path";
+
+// The transcript renderer (Markdown, diff parsing) loads with the first session opened.
+const SessionView = lazy(() =>
+  import("./sessions/SessionView").then((module) => ({
+    default: module.SessionView,
+  })),
+);
+
+function useRoute(): SessionRoute {
+  const [route, setRoute] = useState(() => parseRoute(window.location));
+  useEffect(() => {
+    const update = () => setRoute(parseRoute(window.location));
+    window.addEventListener("popstate", update);
+    return () => window.removeEventListener("popstate", update);
+  }, []);
+  return route;
+}
 
 export function Dashboard() {
   const [account, setAccount] = useState<Account | null>(null);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [busy, setBusy] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const [reload, setReload] = useState(0);
-  const controller = useRef<AbortController | null>(null);
+  const route = useRoute();
   const workspace = account?.currentWorkspace;
 
   useEffect(() => {
     const attempt = new AbortController();
-    controller.current = attempt;
-    async function load() {
-      try {
-        const account = await getAccount(attempt.signal);
-        const page = account.currentWorkspace
-          ? await getSessions(account.currentWorkspace.id, null, attempt.signal)
-          : { items: [], nextCursor: null };
-        if (attempt.signal.aborted) return;
-        setAccount(account);
-        setSessions(page.items);
-        setCursor(page.nextCursor);
-      } catch (error) {
-        if (!attempt.signal.aborted) setError(error as Error);
-      } finally {
-        if (!attempt.signal.aborted) setBusy(false);
-      }
-    }
-    void load();
+    getAccount(attempt.signal)
+      .then((value) => {
+        if (!attempt.signal.aborted) setAccount(value);
+      })
+      .catch((reason: Error) => {
+        if (!attempt.signal.aborted) setError(reason);
+      });
     return () => attempt.abort();
-  }, [reload]);
+  }, []);
 
+  const signedOut = useCallback(() => setError(new SignedOut()), []);
   useEffect(() => {
-    if (error instanceof SignedOut)
-      window.location.replace("/login?next=%2Fdashboard%2F");
+    if (error instanceof SignedOut) {
+      window.location.replace(loginHref());
+    }
   }, [error]);
 
-  async function loadMore() {
-    if (!workspace || !cursor || !controller.current || busy) return;
-    const signal = controller.current.signal;
-    setBusy(true);
-    setError(null);
-    try {
-      const page = await getSessions(workspace.id, cursor, signal);
-      if (signal.aborted) return;
-      setSessions((rows) => [
-        ...new Map(
-          [...rows, ...page.items].map((row) => [sessionKey(row), row]),
-        ).values(),
-      ]);
-      setCursor(page.nextCursor);
-    } catch (error) {
-      if (!signal.aborted) setError(error as Error);
-    } finally {
-      if (!signal.aborted) setBusy(false);
-    }
-  }
-
-  function refresh() {
-    setError(null);
-    setBusy(true);
-    setReload((value) => value + 1);
-  }
   return (
     <div className="dashboard">
       <header>
-        <a className="brand" href="/dashboard/">
+        <a className="brand" href={appPath()}>
           <img src={`${import.meta.env.BASE_URL}mark.svg`} alt="" />
           <img
             className="wordmark"
@@ -84,24 +60,19 @@ export function Dashboard() {
           />
         </a>
         <nav className="top-nav" aria-label="Primary">
-          <a href="/dashboard/" aria-current="page">
+          <a href={appPath()} aria-current="page">
             Sessions
           </a>
           <a href="#/flows">Flows</a>
           <a href="#/settings/workspace">Settings</a>
-          {account && <span>{account.user.name}</span>}
+          {account && (
+            <span>
+              {[workspace?.name, account.user.name].filter(Boolean).join(" · ")}
+            </span>
+          )}
         </nav>
       </header>
-      <main>
-        <div className="heading">
-          <div>
-            <h1>Sessions</h1>
-            {workspace && <p>{workspace.name}</p>}
-          </div>
-          <button onClick={refresh} disabled={busy}>
-            Refresh
-          </button>
-        </div>
+      <main className={route.view === "session" ? "wide" : undefined}>
         {error && (
           <p role="alert">
             {error instanceof SignedOut
@@ -109,41 +80,27 @@ export function Dashboard() {
               : error.message}
           </p>
         )}
-        {busy && !account && <p role="status">Loading sessions…</p>}
-        {!busy && !error && account && sessions.length === 0 && (
-          <p>
-            {workspace ? "No sessions yet." : "You don’t have a workspace yet."}
-          </p>
+        {!account && !error && <p role="status">Loading sessions…</p>}
+        {account && !workspace && <p>You don’t have a workspace yet.</p>}
+        {workspace && route.view === "list" && (
+          <SessionsPage
+            key={route.tab}
+            workspaceId={workspace.id}
+            initialQuery={route.q}
+            tab={route.tab}
+            onSignedOut={signedOut}
+          />
         )}
-        {workspace && sessions.length > 0 && (
-          <ul className="sessions">
-            {sessions.map((row) => (
-              <li key={sessionKey(row)}>
-                <a href={conversationUrl(workspace.id, row)}>
-                  <div>
-                    <strong>{row.summary?.trim() || "Untitled session"}</strong>
-                    <span>
-                      {[harnessName(row.source), row.project?.name]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                  </div>
-                  <time dateTime={row.lastTs || undefined}>
-                    {sessionDate(row.lastTs)}
-                  </time>
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
-        {cursor && (
-          <button
-            className="more"
-            onClick={() => void loadMore()}
-            disabled={busy}
-          >
-            {busy ? "Loading…" : "Load more"}
-          </button>
+        {workspace && route.view === "session" && (
+          <Suspense fallback={<p role="status">Loading session…</p>}>
+            <SessionView
+              workspaceId={workspace.id}
+              sessionId={route.sessionId}
+              source={route.source}
+              event={route.event}
+              from={route.from}
+            />
+          </Suspense>
         )}
       </main>
     </div>
