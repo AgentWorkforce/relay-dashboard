@@ -8,8 +8,11 @@ import {
   sessionHref,
 } from "./route";
 import {
+  compareDate,
+  matchesSearchFilters,
   matchesSessionFilters,
   parseSessionQuery,
+  sessionSuggestions,
   setSessionFilter,
 } from "./query";
 import { sessionRow } from "./data";
@@ -108,4 +111,41 @@ it("returns from a session to the list with its filters", () => {
     "/?tab=search&q=fix+is%3Aactive",
   );
   expect(backHref(null)).toBe("/");
+});
+
+it("keeps malformed citation paths non-navigable", () => {
+  expect(citationHref("http://[bad", "e1")).toBeNull();
+});
+
+it("never matches a complete date filter against a missing row date", () => {
+  expect(compareDate(null, ">=2026-11-01")).toBe(false);
+  expect(compareDate("not a date", "2026-11-01")).toBe(false);
+  expect(compareDate("2026-11-02T00:00:00Z", ">=2026-11-01")).toBe(true);
+  // Still being typed: don't hide anything.
+  expect(compareDate(null, ">=2026-11")).toBeNull();
+});
+
+it("lists aliased harness sources once", () => {
+  const rows = [
+    sessionRow({ sessionId: "a", source: "claude-terminal" }),
+    sessionRow({ sessionId: "b", source: "claude" }),
+  ];
+  const harnesses = sessionSuggestions(rows, [], Date.now()).filter(
+    (s) => s.field === "harness" && s.title === "Claude Code",
+  );
+  expect(harnesses.map((s) => s.value)).toEqual(["claude"]);
+});
+
+it("applies search-view filters to message matches", () => {
+  const match = {
+    source: "claude-terminal",
+    projectId: "acme/relay",
+    userId: "u1",
+    ts: "2026-11-02T10:00:00Z",
+  };
+  expect(matchesSearchFilters(match, "loader harness:claude")).toBe(true);
+  expect(matchesSearchFilters(match, "project:relay person:u1")).toBe(true);
+  expect(matchesSearchFilters(match, "person:u2")).toBe(false);
+  expect(matchesSearchFilters(match, "-project:relay")).toBe(false);
+  expect(matchesSearchFilters(match, "is:active")).toBe(true);
 });
