@@ -4,7 +4,7 @@ import type { TranscriptCell } from "./model/transcript-cells";
 
 const TOOL_KINDS = new Set(["exec", "explored", "edited", "called", "web"]);
 
-/** Prompts and tool calls shown in the transcript. */
+/** Prompts and tool steps shown in the transcript (display cells: merged reads count once). */
 export function transcriptCounts(cells: TranscriptCell[]) {
   let prompts = 0;
   let tools = 0;

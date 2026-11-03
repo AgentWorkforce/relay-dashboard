@@ -253,7 +253,7 @@ it("renders the transcript with tool calls, results, diffs, timing, and subagent
   expect(screen.queryByText(/session_event|history/)).not.toBeInTheDocument();
   expect(screen.getByText("loader")).toBeInTheDocument();
   expect(
-    screen.getByText("Prompts · tool calls").nextElementSibling,
+    screen.getByText("Prompts · tool steps").nextElementSibling,
   ).toHaveTextContent("1 · 3");
   expect(
     screen.getByRole("button", { name: "Next tool call ↓" }),
@@ -545,4 +545,34 @@ it("retries a failed account load", async () => {
   expect(
     await screen.findByRole("link", { name: "Fix session loading" }),
   ).toBeInTheDocument();
+});
+
+it("opens a cited system-prompt cell's disclosure", async () => {
+  respond(/\/sessions\/s%2F1\/events$/, () => ({
+    events: [
+      ...transcript,
+      {
+        eventId: "ctx",
+        ts: "2026-11-02T17:59:59.000Z",
+        kind: "session_event",
+        type: "user",
+        actorRole: "system",
+        source: "codex",
+        content: "You are a careful assistant.",
+      },
+    ],
+    members,
+    nextCursor: null,
+    error: false,
+  }));
+  window.history.replaceState(
+    null,
+    "",
+    "/?session=s%2F1&source=codex&event=ctx",
+  );
+  render(<Dashboard />);
+  await screen.findByText("loader");
+  if (document.getElementById("cell-ctx")?.querySelector("details")) {
+    await vi.waitFor(() => expect(window.location.hash).toBe("#cell-ctx"));
+  }
 });
