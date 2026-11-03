@@ -118,6 +118,7 @@ export function FlowsApp({ path }: { path: string }) {
           <a href="#/flows" aria-current="page">
             Flows
           </a>
+          <a href="#/settings/workspace">Settings</a>
           {account && <span>{account.user.name}</span>}
         </nav>
       </header>
