@@ -48,9 +48,15 @@ export function removeSessionFilter(query: string, token: string) {
   return parts.join(" ");
 }
 
-function compareDate(stamp: string | null, value: string) {
+/**
+ * Compare a row date with an `updated:`/`created:` value. `null` means the
+ * value is still being typed (rows stay visible); a row without a valid date
+ * never matches a complete value, as on the hosted dashboard.
+ */
+export function compareDate(stamp: string | null, value: string) {
   const match = value.match(/^(>=|<=|>|<|=)?(\d{4}-\d{2}-\d{2})$/);
-  if (!match || !stamp || !Number.isFinite(Date.parse(stamp))) return null;
+  if (!match || !Number.isFinite(Date.parse(match[2]!))) return null;
+  if (!stamp || !Number.isFinite(Date.parse(stamp))) return false;
   const date = new Date(stamp).toISOString().slice(0, 10);
   const day = match[2]!;
   switch (match[1]) {
@@ -128,9 +134,10 @@ export function sessionSuggestions(
   members: Member[],
   now: number,
 ): SearchSuggestion[] {
+  // Aliased sources (claude-terminal, claude-code) share one harness entry.
   const sources = new Set([
     ...Object.keys(tools),
-    ...rows.map((row) => row.source),
+    ...rows.map((row) => toolKey(row.source)),
   ]);
   return [
     ...[...sources].sort().map((value) => ({
@@ -198,4 +205,47 @@ export function filterValue(query: string, field: string): string {
       (filter) => filter.field === field && !filter.exclude,
     )?.value ?? ""
   );
+}
+
+/** Fields each non-list view can honour; other tokens are listed as unused. */
+export const VIEW_FIELDS: Record<"search" | "activity", Set<string>> = {
+  search: new Set(["harness", "project", "person", "updated"]),
+  activity: new Set(),
+};
+
+/** Apply the search view's filter tokens to message matches. */
+export function matchesSearchFilters(
+  match: {
+    source: string | null;
+    projectId: string | null;
+    userId: string | null;
+    ts: string;
+  },
+  query: string,
+) {
+  return parseSessionQuery(query).filters.every(({ field, value, exclude }) => {
+    const v = value.toLowerCase();
+    if (!v || !VIEW_FIELDS.search.has(field)) return true;
+    let matches: boolean | null = false;
+    switch (field) {
+      case "harness":
+        matches =
+          !!match.source &&
+          (match.source.toLowerCase() === v ||
+            toolKey(match.source) === v ||
+            harnessName(match.source).toLowerCase() === v);
+        break;
+      case "project":
+        matches = !!match.projectId?.toLowerCase().includes(v);
+        break;
+      case "person":
+        matches = match.userId === value;
+        break;
+      case "updated":
+        matches = compareDate(match.ts, value);
+        break;
+    }
+    if (matches === null) return true;
+    return exclude ? !matches : matches;
+  });
 }

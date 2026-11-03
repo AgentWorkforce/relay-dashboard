@@ -1,7 +1,8 @@
 // Team activity: active conversations per UTC day, stacked by agent harness
 // (the hosted dashboard's TeamActivity chart), plus output totals when the
 // RelayHistory build serves them.
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { SignedOut } from "../api/client";
 import { useLoad } from "./use-load";
 import { sessionActivity, sessionOutput, type ActivityDay } from "./api";
 import { harnessName, toolColor, toolKey } from "./data";
@@ -37,9 +38,11 @@ export function byHarness(days: ActivityDay[]) {
 export function ActivityPanel({
   workspaceId,
   query,
+  onSignedOut,
 }: {
   workspaceId: string;
   query: string;
+  onSignedOut?: () => void;
 }) {
   const [range, setRange] = useState<(typeof RANGES)[number]>(30);
   const window = activityWindow(range);
@@ -52,12 +55,18 @@ export function ActivityPanel({
     ),
   );
   // Output metrics are optional: older RelayHistory builds do not serve them.
-  const outputs = useLoad(key, (signal) =>
+  // They are workspace-wide (the endpoint takes no query), so they are not
+  // shown beside a filtered chart.
+  const filtered = !!query.trim();
+  const outputs = useLoad(filtered ? null : key, (signal) =>
     sessionOutput(workspaceId, window, signal).catch(() => null),
   );
   const days = activity.data ?? null;
-  const output = outputs.data ?? null;
+  const output = filtered ? null : (outputs.data ?? null);
   const error = activity.error;
+  useEffect(() => {
+    if (error instanceof SignedOut) onSignedOut?.();
+  }, [error, onSignedOut]);
 
   const chart = days ? byHarness(days) : null;
   const max = chart ? Math.max(1, ...chart.rows.map((row) => row.total)) : 1;
@@ -79,7 +88,11 @@ export function ActivityPanel({
           ))}
         </div>
       </div>
-      {error && <p role="alert">{error.message}</p>}
+      {error && (
+        <p role="alert">
+          {error instanceof SignedOut ? "Taking you to sign in…" : error.message}
+        </p>
+      )}
       {!days && !error && <p role="status">Loading activity…</p>}
       {chart && (
         <>

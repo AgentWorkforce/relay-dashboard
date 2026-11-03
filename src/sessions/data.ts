@@ -54,6 +54,11 @@ const aliases: Record<string, string> = {
   "claude-cloud": "claude",
 };
 export const toolKey = (source: string) => aliases[source] ?? source;
+/** Every raw source that shares this harness key (itself included). */
+export const harnessSources = (key: string) => [
+  key,
+  ...Object.keys(aliases).filter((alias) => aliases[alias] === key),
+];
 export const harnessName = (source: string) =>
   tools[toolKey(source)]?.label ?? source;
 export const toolColor = (source: string) =>

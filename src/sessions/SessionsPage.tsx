@@ -8,6 +8,7 @@ import { listSessions, searchSessions, type SearchMatch } from "./api";
 import { ActivityPanel } from "./ActivityPanel";
 import {
   harnessName,
+  harnessSources,
   memberNames,
   projectLabel,
   promptLabel,
@@ -23,7 +24,9 @@ import {
 } from "./data";
 import {
   filterValue,
+  matchesSearchFilters,
   matchesSessionFilters,
+  VIEW_FIELDS,
   parseSessionQuery,
   removeSessionFilter,
   sessionSuggestions,
@@ -52,15 +55,29 @@ function serverFilters(q: string) {
   const updated = parsed.filters.find(
     (filter) => filter.field === "updated" && !filter.exclude,
   );
-  const date = updated?.value.match(/^(>=|>)?(\d{4}-\d{2}-\d{2})$/);
+  const date = updated?.value.match(/^(>=|<=|>|<|=)?(\d{4}-\d{2}-\d{2})$/);
+  const op = date?.[1] ?? "=";
+  const day = date?.[2];
+  // `until` is a superset bound (the next midnight); rows are still filtered
+  // exactly in the browser.
+  const nextDay =
+    day && Number.isFinite(Date.parse(day))
+      ? new Date(Date.parse(day) + 86_400_000).toISOString().slice(0, 10)
+      : undefined;
+  const harness = single("harness");
   return {
     q: parsed.text.trim() || undefined,
-    source: single("harness"),
-    since: date ? date[2] : undefined,
+    // A harness with aliased sources (claude, claude-terminal…) is filtered in
+    // the browser so the server doesn't drop the aliases.
+    source:
+      harness && harnessSources(harness).length === 1 ? harness : undefined,
+    project: single("project"),
+    since: day && (op === ">=" || op === ">" || op === "=") ? day : undefined,
+    until: day && (op === "<=" || op === "<" || op === "=") ? nextDay : undefined,
   };
 }
 
-function useSignedOut(error: Error | null, onSignedOut: () => void) {
+function useSignedOut(error: Error | null | undefined, onSignedOut: () => void) {
   useEffect(() => {
     if (error instanceof SignedOut) onSignedOut();
   }, [error, onSignedOut]);
@@ -117,6 +134,7 @@ export function SessionsPage({
         ))}
       </nav>
       <SearchBox query={query} onChange={setQuery} tab={tab} />
+      {tab !== "sessions" && <UnusedFilters query={query} view={tab} />}
       {tab === "sessions" && (
         <SessionList
           workspaceId={workspaceId}
@@ -136,6 +154,7 @@ export function SessionsPage({
         <ActivityPanel
           workspaceId={workspaceId}
           query={parseSessionQuery(debounced).text}
+          onSignedOut={onSignedOut}
         />
       )}
     </>
@@ -181,6 +200,26 @@ function SearchBox({
         </ul>
       )}
     </div>
+  );
+}
+
+/** Tokens a view can't apply are named, rather than shown as if active. */
+function UnusedFilters({
+  query,
+  view,
+}: {
+  query: string;
+  view: "search" | "activity";
+}) {
+  const unused = parseSessionQuery(query).filters.filter(
+    (filter) => filter.value && !VIEW_FIELDS[view].has(filter.field),
+  );
+  if (!unused.length) return null;
+  return (
+    <p className="dim">
+      Not applied in {view === "search" ? "message search" : "activity"}:{" "}
+      {unused.map((filter) => filter.raw).join(" ")}
+    </p>
   );
 }
 
@@ -259,13 +298,18 @@ function SessionList({
     nextCursor: string | null;
   } | null>(null);
   const [moreBusy, setMoreBusy] = useState(false);
-  const [moreError, setMoreError] = useState<Error | null>(null);
+  const [moreFailure, setMoreFailure] = useState<{
+    key: string;
+    error: Error;
+  } | null>(null);
   const filters = useMemo(() => serverFilters(query), [query]);
   const key = JSON.stringify([workspaceId, filters, reload]);
   const page = useLoad(key, (signal) =>
     listSessions(workspaceId, filters, null, signal),
   );
-  useSignedOut(page.error, onSignedOut);
+  // A load-more failure belongs to the request it was raised for.
+  const moreError = moreFailure?.key === key ? moreFailure.error : null;
+  useSignedOut(page.error ?? moreError, onSignedOut);
   const extra = appended?.key === key ? appended : null;
   const rows = useMemo(
     () =>
@@ -292,7 +336,7 @@ function SessionList({
   async function loadMore() {
     if (!cursor || busy) return;
     setMoreBusy(true);
-    setMoreError(null);
+    setMoreFailure(null);
     try {
       const next = await listSessions(
         workspaceId,
@@ -306,7 +350,7 @@ function SessionList({
         nextCursor: next.nextCursor,
       });
     } catch (reason) {
-      setMoreError(reason as Error);
+      setMoreFailure({ key, error: reason as Error });
     } finally {
       setMoreBusy(false);
     }
@@ -327,7 +371,11 @@ function SessionList({
           Refresh
         </button>
       </div>
-      {error && <p role="alert">{error.message}</p>}
+      {error && (
+        <p role="alert">
+          {error instanceof SignedOut ? "Taking you to sign in…" : error.message}
+        </p>
+      )}
       {busy && rows.length === 0 && !error && (
         <p role="status">Loading sessions…</p>
       )}
@@ -442,16 +490,23 @@ function MessageSearch({
   const page = useLoad(key, (signal) =>
     searchSessions(workspaceId, filters, null, signal),
   );
-  useSignedOut(page.error, onSignedOut);
   const [appended, setAppended] = useState<{
     key: string;
     matches: SearchMatch[];
     nextCursor: string | null;
   } | null>(null);
   const [moreBusy, setMoreBusy] = useState(false);
-  const [moreError, setMoreError] = useState<Error | null>(null);
+  const [moreFailure, setMoreFailure] = useState<{
+    key: string | null;
+    error: Error;
+  } | null>(null);
+  const moreError = moreFailure?.key === key ? moreFailure.error : null;
+  useSignedOut(page.error ?? moreError, onSignedOut);
   const extra = appended && appended.key === key ? appended : null;
-  const matches = [...(page.data?.matches ?? []), ...(extra?.matches ?? [])];
+  const matches = [
+    ...(page.data?.matches ?? []),
+    ...(extra?.matches ?? []),
+  ].filter((match) => matchesSearchFilters(match, query));
   const members = page.data?.members ?? [];
   const cursor = extra ? extra.nextCursor : (page.data?.nextCursor ?? null);
   const busy = page.loading || moreBusy;
@@ -460,7 +515,7 @@ function MessageSearch({
   async function loadMore() {
     if (!cursor || !key) return;
     setMoreBusy(true);
-    setMoreError(null);
+    setMoreFailure(null);
     try {
       const next = await searchSessions(
         workspaceId,
@@ -474,7 +529,7 @@ function MessageSearch({
         nextCursor: next.nextCursor,
       });
     } catch (reason) {
-      setMoreError(reason as Error);
+      setMoreFailure({ key, error: reason as Error });
     } finally {
       setMoreBusy(false);
     }
@@ -488,16 +543,30 @@ function MessageSearch({
     );
   return (
     <>
-      {error && <p role="alert">{error.message}</p>}
+      {error && (
+        <p role="alert">
+          {error instanceof SignedOut ? "Taking you to sign in…" : error.message}
+        </p>
+      )}
       {busy && matches.length === 0 && <p role="status">Searching…</p>}
       {!busy && !error && matches.length === 0 && <p>No messages match.</p>}
       <ul className="matches">
         {matches.map((match) => {
-          const href = citationHref(
-            match.citationPath,
-            match.eventId,
-            listState(query, "search"),
-          );
+          // Without a citation path, link the match's session directly.
+          const href =
+            citationHref(
+              match.citationPath,
+              match.eventId,
+              listState(query, "search"),
+            ) ??
+            (match.sessionId && match.source
+              ? sessionHref(
+                  match.sessionId,
+                  match.source,
+                  match.eventId,
+                  listState(query, "search"),
+                )
+              : null);
           const who =
             match.actorRole === "user" || match.kind === "prompt"
               ? ((match.userId
