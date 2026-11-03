@@ -1,0 +1,44 @@
+/* Canonical primary button from agentrelay.com/web/app/globals.css (.btn-primary)
+   and public/brand.css (--r-md). Keep the brand treatment independent of theme accents. */
+.primary.primary {
+  background: #2d6a9c;
+  color: #fff;
+  border: 1.5px solid #234969;
+  border-radius: var(--radius-bubble, 10px 10px 10px 3px);
+  /* Dimensions come from the shared Button size variants, matching form controls. */
+  font-family: var(--font-geist-sans), sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  line-height: 1.4;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    color 0.2s,
+    transform 0.15s,
+    box-shadow 0.2s;
+}
+.primary.primary:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: #4a90c2;
+  border-color: #234969;
+}
+.primary.primary[data-size^="icon"] {
+  padding: 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  .primary.primary:hover:not(:disabled):not([aria-disabled="true"]) {
+    transform: translateY(-1px);
+  }
+}
+.primary.primary:active:not(:disabled):not([aria-disabled="true"]) {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .primary.primary {
+    transition: none;
+  }
+  .primary.primary:hover:not(:disabled):not([aria-disabled="true"]),
+  .primary.primary:active:not(:disabled):not([aria-disabled="true"]) {
+    transform: none;
+  }
+}

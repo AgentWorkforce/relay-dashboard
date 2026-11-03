@@ -7,6 +7,9 @@
   - Keep the semantic token names; that is the main design pattern in the current site.
 */
 
+/* Self-host: hosted Cloud's globals.css tokens (unlayered) take precedence;
+   this file supplies the brand scales plus status and harness tokens. */
+@layer legacy {
 :root {
   /* ── Shape ──
      Agent Relay's one shape rule: every interactive element and every content
@@ -305,4 +308,5 @@
   --harness-grok: #9a9a9a;
   --harness-muse: #dc8bbe;
   --harness-capy: #9bb963;
+}
 }

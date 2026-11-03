@@ -1,0 +1,162 @@
+.airframe {
+  --background: #f7f8fa;
+  --foreground: #17202a;
+  --card: #ffffff;
+  --card-foreground: #17202a;
+  --popover: #ffffff;
+  --popover-foreground: #17202a;
+  --primary: #2b6a93;
+  --primary-foreground: #ffffff;
+  --secondary: #eef2f5;
+  --secondary-foreground: #17202a;
+  --muted: #eef2f5;
+  --muted-foreground: #687684;
+  --accent: #e6f0f7;
+  --accent-foreground: #214f6d;
+  --border: #dce2e7;
+  --input: #dce2e7;
+  --ring: #2b6a93;
+  --text-secondary: #52616e;
+  --text-muted: #687684;
+  --text-faint: #8795a0;
+  --surface-page: #ffffff;
+  --surface-card: #ffffff;
+  --surface-glass: rgba(255, 255, 255, 0.92);
+  --surface-soft: #eef2f5;
+  --surface-muted: #e9eef2;
+  --surface-strong: #ffffff;
+  --border-default: #dce2e7;
+  --border-strong: #b8c3cc;
+  --border-soft: #e5e9ed;
+  --shadow-color: rgba(23, 32, 42, 0.1);
+  --status-info: #2b6a93;
+  --status-info-soft: #e6f0f7;
+  --bg: var(--background);
+  --bg-elevated: var(--surface-page);
+  --fg: var(--foreground);
+  --fg-muted: var(--text-secondary);
+  --fg-faint: var(--text-faint);
+  --primary-bg: var(--primary);
+  --primary-fg: var(--primary-foreground);
+  --line: var(--border-default);
+  --surface: var(--surface-soft);
+  --section-bg: var(--surface-strong);
+  --card-bg: var(--surface-card);
+  --card-border: var(--border-default);
+  --card-hover-border: var(--border-strong);
+  --note-bg: #e6f0f7;
+  --dashboard-shell-bg: #f7f8fa;
+  --dashboard-canvas: #ffffff;
+  --dashboard-panel: #ffffff;
+  --dashboard-panel-soft: #eef2f5;
+  --dashboard-sidebar: #f3f5f7;
+  --dashboard-sidebar-accent: #e6ebef;
+  --dashboard-sidebar-foreground: #17202a;
+  --dashboard-sidebar-muted: #687684;
+  --dashboard-border: #dce2e7;
+  --dashboard-border-strong: #b8c3cc;
+  --dashboard-muted: #687684;
+  --dashboard-shadow: rgba(23, 32, 42, 0.1);
+  --nav-logo-wordmark: #17202a;
+  --nav-logo-mark: #2b6a93;
+  --sidebar: #f3f5f7;
+  --sidebar-foreground: #17202a;
+  --sidebar-primary: #2b6a93;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e6ebef;
+  --sidebar-accent-foreground: #17202a;
+  --sidebar-border: #dce2e7;
+  --sidebar-ring: #2b6a93;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--dashboard-shell-bg);
+  color: var(--foreground);
+}
+
+:global(html[data-theme="dark"]) .airframe {
+  --background: #080d12;
+  --foreground: #e8f0f5;
+  --card: #111b23;
+  --card-foreground: #e8f0f5;
+  --popover: #111b23;
+  --popover-foreground: #e8f0f5;
+  --primary: #75b9e3;
+  --primary-foreground: #071219;
+  --secondary: #17232d;
+  --secondary-foreground: #e8f0f5;
+  --muted: #17232d;
+  --muted-foreground: #93a4b0;
+  --accent: #173247;
+  --accent-foreground: #dcecf5;
+  --border: #263641;
+  --input: #263641;
+  --ring: #75b9e3;
+  --text-secondary: #b0bdc6;
+  --text-muted: #93a4b0;
+  --text-faint: #71828e;
+  --surface-page: #0d151c;
+  --surface-card: #111b23;
+  --surface-glass: rgba(13, 21, 28, 0.94);
+  --surface-soft: #17232d;
+  --surface-muted: #121e27;
+  --surface-strong: #111b23;
+  --border-default: #263641;
+  --border-strong: #49616f;
+  --border-soft: #1f2d36;
+  --shadow-color: rgba(0, 0, 0, 0.34);
+  --status-info: #75b9e3;
+  --status-info-soft: #173247;
+  --note-bg: #173247;
+  --dashboard-shell-bg: #080d12;
+  --dashboard-canvas: #0d151c;
+  --dashboard-panel: #111b23;
+  --dashboard-panel-soft: #17232d;
+  --dashboard-sidebar: #0a1117;
+  --dashboard-sidebar-accent: #17232d;
+  --dashboard-sidebar-foreground: #e8f0f5;
+  --dashboard-sidebar-muted: #93a4b0;
+  --dashboard-border: #263641;
+  --dashboard-border-strong: #49616f;
+  --dashboard-muted: #93a4b0;
+  --dashboard-shadow: rgba(0, 0, 0, 0.34);
+  --nav-logo-wordmark: #e8f0f5;
+  --nav-logo-mark: #75b9e3;
+  --sidebar: #0a1117;
+  --sidebar-foreground: #e8f0f5;
+  --sidebar-primary: #75b9e3;
+  --sidebar-primary-foreground: #071219;
+  --sidebar-accent: #17232d;
+  --sidebar-accent-foreground: #e8f0f5;
+  --sidebar-border: #263641;
+  --sidebar-ring: #75b9e3;
+}
+
+.airframe :global([data-slot="card"]) {
+  border-radius: 0.5rem;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.airframe :global([data-slot="button"]),
+.airframe :global([data-slot="input"]),
+.airframe :global([data-slot="select-trigger"]),
+.airframe :global([data-slot="textarea"]) {
+  border-radius: 0.4rem;
+  box-shadow: none;
+}
+
+.airframe :global([data-sidebar="menu-button"]) {
+  border-radius: 0.4rem;
+}
+
+.airframe :global([data-slot="card-header"]) {
+  padding-bottom: 1rem;
+}
+
+.airframe :global([data-slot="table-header"]) {
+  background: var(--dashboard-panel-soft);
+}
+
+.airframe :global([data-slot="table-row"]:hover) {
+  background: color-mix(in srgb, var(--dashboard-panel-soft) 65%, transparent);
+}
