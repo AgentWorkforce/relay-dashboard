@@ -424,7 +424,7 @@ function EnrollmentSuccess({
         <h3>Or deploy the relayflows Helm chart</h3>
         <CopyableCommand
           label="Create the enrollment Secret"
-          command={`kubectl create secret generic relayflows-worker-enrollment --from-literal=AGENT_RELAY_WORKER_ENROLLMENT_TOKEN=${enrollment.token}`}
+          command={`kubectl create secret generic relayflows-worker-enrollment ${shellQuote(`--from-literal=AGENT_RELAY_WORKER_ENROLLMENT_TOKEN=${enrollment.token}`)}`}
         />
         <CopyableCommand label="values.yaml" command={helm} />
       </section>
