@@ -77,6 +77,9 @@ describe("review regressions", () => {
     "rg foo | awk '{ system(\"rm \" $1) }'",
     "sed -n '1e rm -rf /' notes.txt",
     "cat a &> out.txt",
+    "rg foo | sort -o matches.txt",
+    "rg foo | sort --output=matches.txt",
+    "rg foo | uniq - out.txt",
   ])("fails closed on %s", (command) => {
     expect(isExploring(parseCommand(command))).toBe(false);
   });
@@ -86,6 +89,7 @@ describe("review regressions", () => {
     expect(isExploring(parseCommand("rg foo | sed 's/a/b/g'"))).toBe(true);
     expect(isExploring(parseCommand("rg foo | awk '{print $1}'"))).toBe(true);
     expect(isExploring(parseCommand("rg foo src 2>&1 >&2"))).toBe(true);
+    expect(isExploring(parseCommand("rg foo | sort -u | uniq -c"))).toBe(true);
   });
 
   it("uses find's starting point, not its predicate, as the path", () => {

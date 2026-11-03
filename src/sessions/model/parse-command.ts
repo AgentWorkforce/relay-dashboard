@@ -200,8 +200,12 @@ function parseSegment(words: string[], cmd: string): ParsedCommand {
  */
 /** A piped `sed`/`awk` stage that only reshapes its input. */
 function readOnlyFormatter(name: string, words: string[]): boolean {
-  if (FORMATTERS.has(name)) return true;
   const rest = words.slice(1);
+  // `sort -o file` and `uniq in out` write files.
+  if (name === "sort" && rest.some((word) => /^(?:-o|--output(?:=.*)?|-[a-zA-Z]*o.*)$/.test(word)))
+    return false;
+  if (name === "uniq" && rest.filter((word) => !word.startsWith("-")).length > 1) return false;
+  if (FORMATTERS.has(name)) return true;
   if (name === "sed") {
     const flags = rest.filter((word) => word.startsWith("-"));
     const scripts = rest.filter((word) => !word.startsWith("-"));
