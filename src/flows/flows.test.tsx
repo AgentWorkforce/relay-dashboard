@@ -336,7 +336,7 @@ it("creates an enrollment token, shows it once with commands, and waits for regi
   ).toBeInTheDocument();
   expect(screen.getByText(/mode: cloudWorker/)).toBeInTheDocument();
   expect(
-    screen.getByText(/cloudUrl: https:\/\/api.example.company/),
+    screen.getByText(/cloudUrl: "https:\/\/api.example.company"/),
   ).toBeInTheDocument();
   expect(
     await screen.findByText(/Waiting for registration/),
