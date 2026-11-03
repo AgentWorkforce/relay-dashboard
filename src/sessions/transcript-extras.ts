@@ -109,6 +109,16 @@ export function withRecordedFileEdits(
  * never when their message, user, or tool-call identities disagree.
  */
 export function collapseHistoryCopies(events: ReplayEvent[]): ReplayEvent[] {
+  return reconcileHistoryCopies(events).events;
+}
+
+/** The surviving record for each collapsed history copy (by event id). */
+export function historyCopyTargets(events: ReplayEvent[]): Map<string, string> {
+  return reconcileHistoryCopies(events).copies;
+}
+
+function reconcileHistoryCopies(events: ReplayEvent[]) {
+  const copies = new Map<string, string>();
   const speaker = (event: ReplayEvent) =>
     messageRole(event) ??
     (event.actorRole ||
@@ -124,7 +134,7 @@ export function collapseHistoryCopies(events: ReplayEvent[]): ReplayEvent[] {
     projected.set(key, [...(projected.get(key) ?? []), event]);
   }
   const claimed = new Set<ReplayEvent>();
-  return events.filter((event) => {
+  const kept = events.filter((event) => {
     if (event.kind !== "history" || !event.content?.trim()) return true;
     const at = Date.parse(event.ts);
     const copy = (
@@ -143,6 +153,8 @@ export function collapseHistoryCopies(events: ReplayEvent[]): ReplayEvent[] {
       )[0];
     if (!copy) return true;
     claimed.add(copy);
+    copies.set(event.eventId, copy.eventId);
     return false;
   });
+  return { events: kept, copies };
 }

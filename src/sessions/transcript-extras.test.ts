@@ -3,6 +3,7 @@ import { toReplayEvent, type ReplayEvent } from "./model/replay-model";
 import { buildTranscript } from "./model/transcript-cells";
 import {
   collapseHistoryCopies,
+  historyCopyTargets,
   transcriptCounts,
   withRecordedFileEdits,
 } from "./transcript-extras";
@@ -152,4 +153,12 @@ it("matches a history copy whose speaker is only in its type", () => {
     }),
   ];
   expect(collapseHistoryCopies(events).map((e) => e.eventId)).toEqual(["p"]);
+});
+
+it("reports which record each collapsed history copy merged into", () => {
+  const events = [
+    event({ eventId: "p", ts: "2026-09-01T10:00:00.000Z", kind: "prompt", content: "go" }),
+    event({ eventId: "h", ts: "2026-09-01T10:00:00.400Z", kind: "history", type: "history", actorRole: "user", content: "go" }),
+  ];
+  expect(historyCopyTargets(events)).toEqual(new Map([["h", "p"]]));
 });
