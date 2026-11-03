@@ -434,6 +434,10 @@ it("shows the flow even when the worker list fails", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "workers unavailable",
   );
+  // Only "Any online worker" is offered while the list is unavailable.
+  expect(screen.getByLabelText("Worker").querySelectorAll("option")).toHaveLength(
+    1,
+  );
 });
 
 it("hides worker revocation from non-admins on the worker page", async () => {
