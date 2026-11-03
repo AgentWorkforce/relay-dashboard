@@ -20,7 +20,12 @@ import {
   type Member,
 } from "./data";
 import { buildTranscript } from "./model/transcript-cells";
-import { mergeReplay, messageRole, resumeCommand } from "./model/replay-model";
+import {
+  mergeReplay,
+  messageRole,
+  replayTurnAliases,
+  resumeCommand,
+} from "./model/replay-model";
 import {
   collapseHistoryCopies,
   transcriptCounts,
@@ -176,20 +181,11 @@ export function SessionView({
     if (!initial) return;
     const hash = window.location.hash.slice(1);
     // mergeReplayStreams renders a message under its turn id when a turn
-    // replaces the event; the turn at the same instant is the cited message.
-    const cited = event
-      ? initial.events.find((row) => String(row.eventId) === event)
+    // replaces the event; follow the same pairing to the turn's anchor.
+    const alias = event
+      ? replayTurnAliases(initial.events, initial.turns).get(event)
       : undefined;
-    const alias = cited
-      ? initial.turns.find(
-          (turn) =>
-            typeof turn.id === "string" &&
-            Date.parse(String(turn.ts)) === Date.parse(String(cited.ts)),
-        )?.id
-      : undefined;
-    const ids = [event, typeof alias === "string" ? alias : null].filter(
-      (id): id is string => !!id,
-    );
+    const ids = [event, alias ?? null].filter((id): id is string => !!id);
     const candidates = [
       hash,
       ...ids.flatMap((id) => [`message-${id}`, `cell-${id}`, `cell-${id}:0`]),

@@ -572,7 +572,14 @@ it("opens a cited system-prompt cell's disclosure", async () => {
   );
   render(<Dashboard />);
   await screen.findByText("loader");
-  if (document.getElementById("cell-ctx")?.querySelector("details")) {
-    await vi.waitFor(() => expect(window.location.hash).toBe("#cell-ctx"));
-  }
+  const cell = document.getElementById("cell-ctx");
+  expect(cell).not.toBeNull();
+  expect(cell!.querySelector(":scope > details")).not.toBeNull();
+  await vi.waitFor(() => expect(window.location.hash).toBe("#cell-ctx"));
+  await vi.waitFor(() =>
+    expect(cell!.querySelector(":scope > details")).toHaveAttribute("open"),
+  );
+  expect(
+    await screen.findByText("You are a careful assistant."),
+  ).toBeInTheDocument();
 });
