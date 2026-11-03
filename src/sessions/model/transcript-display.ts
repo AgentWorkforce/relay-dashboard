@@ -176,8 +176,13 @@ export function displayUserMessage(content: string | null): UserMessageDisplay {
     return { kind: "prompt", text: command, attachments: [] };
   }
 
+  // Combine both streams: an empty stdout must not hide a non-empty stderr.
+  const stdoutBlock = block(text, "local-command-stdout");
+  const stderrBlock = block(text, "local-command-stderr");
   const stdout =
-    block(text, "local-command-stdout") ?? block(text, "local-command-stderr");
+    stdoutBlock === null && stderrBlock === null
+      ? null
+      : [stdoutBlock, stderrBlock].filter((part) => part?.trim()).join("\n");
   if (stdout !== null) {
     const result = output(stdout);
     return result

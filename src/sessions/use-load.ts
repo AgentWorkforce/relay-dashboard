@@ -7,9 +7,9 @@ export type Load<T> = {
 };
 
 /**
- * Load data for a request key, aborting superseded requests. State is set only
- * from the request's own callbacks; a result whose key no longer matches is
- * treated as loading, so no synchronous reset is needed when the key changes.
+ * Load data for a request key, aborting superseded requests. State is set
+ * from the request's own callbacks and cleared when its key is torn down; a
+ * result whose key no longer matches is treated as loading.
  * A null key loads nothing.
  */
 export function useLoad<T>(
@@ -40,7 +40,12 @@ export function useLoad<T>(
           });
       },
     );
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      // A key that comes back later must load again, not report this result
+      // as settled while its new request is in flight.
+      setState((current) => (current?.key === key ? null : current));
+    };
   }, [key]);
   if (key === null) return { data: undefined, error: null, loading: false };
   const current = state?.key === key ? state : null;

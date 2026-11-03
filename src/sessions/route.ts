@@ -108,7 +108,13 @@ export function citationHref(
   from?: string | null,
 ) {
   if (!path) return null;
-  const url = new URL(path, "https://relay.invalid");
+  let url: URL;
+  try {
+    url = new URL(path, "https://relay.invalid");
+  } catch {
+    // A malformed citation stays non-navigable instead of breaking search.
+    return null;
+  }
   const route = parseRoute({ pathname: url.pathname, search: url.search });
   return route.view === "session"
     ? sessionHref(route.sessionId, route.source, event, from)

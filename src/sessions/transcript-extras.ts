@@ -1,5 +1,5 @@
 // Self-host additions on top of the hosted transcript model.
-import type { ReplayEvent } from "./model/replay-model";
+import { messageRole, type ReplayEvent } from "./model/replay-model";
 import type { TranscriptCell } from "./model/transcript-cells";
 
 const TOOL_KINDS = new Set(["exec", "explored", "edited", "called", "web"]);
@@ -64,7 +64,10 @@ export function withRecordedFileEdits(
       .filter(
         (path) =>
           !shown.has(path) &&
-          ![...shown].some((seen) => path.endsWith(`/${seen}`)),
+          // An absolute path outside the project root is matched by suffix
+          // only; project-relative paths must match exactly.
+          !(path.startsWith("/") &&
+            [...shown].some((seen) => path.endsWith(`/${seen}`))),
       );
     if (!files.length) return [];
     return [
@@ -102,24 +105,44 @@ export function withRecordedFileEdits(
  * same message. The hosted reconciliation pairs them only when their
  * attribution matches; a history copy without a user id would otherwise show
  * twice. Drop a history record when a projected record with the same speaker
- * and text lies within two seconds of it.
+ * and text lies within two seconds of it, pairing copies one to one, and
+ * never when their message, user, or tool-call identities disagree.
  */
 export function collapseHistoryCopies(events: ReplayEvent[]): ReplayEvent[] {
   const speaker = (event: ReplayEvent) =>
-    event.actorRole ||
-    (event.kind === "prompt" || event.kind === "user" ? "user" : event.kind);
-  const projected = new Map<string, number[]>();
+    messageRole(event) ??
+    (event.actorRole ||
+      (event.kind === "prompt" || event.kind === "user" ? "user" : event.kind));
+  const conflicts = (a: ReplayEvent, b: ReplayEvent) =>
+    (["messageId", "userId", "toolUseId"] as const).some(
+      (field) => !!a[field] && !!b[field] && a[field] !== b[field],
+    );
+  const projected = new Map<string, ReplayEvent[]>();
   for (const event of events) {
     if (event.kind === "history" || !event.content?.trim()) continue;
     const key = JSON.stringify([speaker(event), event.content.trim()]);
-    projected.set(key, [...(projected.get(key) ?? []), Date.parse(event.ts)]);
+    projected.set(key, [...(projected.get(key) ?? []), event]);
   }
+  const claimed = new Set<ReplayEvent>();
   return events.filter((event) => {
     if (event.kind !== "history" || !event.content?.trim()) return true;
-    const times = projected.get(
-      JSON.stringify([speaker(event), event.content.trim()]),
-    );
     const at = Date.parse(event.ts);
-    return !times?.some((time) => Math.abs(time - at) <= 2_000);
+    const copy = (
+      projected.get(JSON.stringify([speaker(event), event.content.trim()])) ??
+      []
+    )
+      .filter(
+        (candidate) =>
+          !claimed.has(candidate) &&
+          !conflicts(candidate, event) &&
+          Math.abs(Date.parse(candidate.ts) - at) <= 2_000,
+      )
+      .sort(
+        (a, b) =>
+          Math.abs(Date.parse(a.ts) - at) - Math.abs(Date.parse(b.ts) - at),
+      )[0];
+    if (!copy) return true;
+    claimed.add(copy);
+    return false;
   });
 }

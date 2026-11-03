@@ -1,6 +1,7 @@
 // Session detail: overview (who, where, when, how long), subagent links,
 // resume command, and the full transcript, as on the hosted session page.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { SignedOut } from "../api/client";
 import { useLoad } from "./use-load";
 import {
   sessionCatalog,
@@ -38,6 +39,9 @@ type Loaded = {
   catalog: SessionCatalog | null;
 };
 
+const MAX_TURN_PAGES = 50;
+const MAX_CITATION_PAGES = 20;
+
 const text = (value: unknown) =>
   typeof value === "string" && value.trim() ? value.trim() : null;
 
@@ -47,23 +51,31 @@ export function SessionView({
   source,
   event,
   from = null,
+  onSignedOut,
 }: {
   workspaceId: string;
   sessionId: string;
   source: string;
   event: string | null;
   from?: string | null;
+  onSignedOut?: () => void;
 }) {
   const [attempt, setAttempt] = useState(0);
   const [more, setMore] = useState(false);
-  const [moreError, setMoreError] = useState<Error | null>(null);
+  // A load-more failure belongs to the request key it was raised for.
+  const [moreFailure, setMoreFailure] = useState<{
+    key: string;
+    error: Error;
+  } | null>(null);
+  const moreRequest = useRef<AbortController | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [appended, setAppended] = useState<{
     key: string;
     events: Record<string, unknown>[];
     nextCursor: string | null;
   } | null>(null);
-  const key = JSON.stringify([workspaceId, sessionId, source, attempt]);
+  const key = JSON.stringify([workspaceId, sessionId, source, event, attempt]);
+  useEffect(() => () => moreRequest.current?.abort(), [key]);
   const loaded = useLoad<Loaded>(key, async (signal) => {
     const session = { sessionId, source };
     // Timing, turns, and catalog are enrichments; the transcript still renders without them.
@@ -72,12 +84,41 @@ export function SessionView({
         if (signal.aborted) throw reason;
         return fallback;
       });
+    // Turns supply prompts and replies the event stream may lack, so read
+    // every page of them (bounded) before rendering.
+    const allTurns = async () => {
+      const rows: Record<string, unknown>[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < MAX_TURN_PAGES; page += 1) {
+        const next = await sessionTurns(workspaceId, session, signal, cursor);
+        rows.push(...next.turns);
+        cursor = next.nextCursor;
+        if (!cursor) break;
+      }
+      return rows;
+    };
+    // A cited event can sit past the first page; keep reading until it loads.
+    const eventsThrough = async () => {
+      const first = await sessionEvents(workspaceId, session, null, signal);
+      const events = [...first.events];
+      let nextCursor = first.nextCursor;
+      for (
+        let page = 1;
+        event &&
+        nextCursor &&
+        page < MAX_CITATION_PAGES &&
+        !events.some((row) => String(row.eventId) === event);
+        page += 1
+      ) {
+        const next = await sessionEvents(workspaceId, session, nextCursor, signal);
+        events.push(...next.events);
+        nextCursor = next.nextCursor;
+      }
+      return { events, members: first.members, nextCursor };
+    };
     const [page, turns, timing, catalog] = await Promise.all([
-      sessionEvents(workspaceId, session, null, signal),
-      optional(sessionTurns(workspaceId, session, signal), {
-        turns: [],
-        nextCursor: null,
-      }),
+      eventsThrough(),
+      optional(allTurns(), []),
       optional(sessionTiming(workspaceId, session, signal), null),
       optional(sessionCatalog(workspaceId, session, signal), null),
     ]);
@@ -85,7 +126,7 @@ export function SessionView({
       events: page.events,
       members: page.members,
       nextCursor: page.nextCursor,
-      turns: turns.turns,
+      turns,
       timing,
       catalog,
     };
@@ -107,7 +148,11 @@ export function SessionView({
       nextCursor: extra.nextCursor,
     };
   }, [loaded.data, extra]);
+  const moreError = moreFailure?.key === key ? moreFailure.error : null;
   const error = loaded.error ?? moreError;
+  useEffect(() => {
+    if (error instanceof SignedOut) onSignedOut?.();
+  }, [error, onSignedOut]);
 
   const replay = useMemo(
     () => (data ? mergeReplay(data.events, data.turns) : []),
@@ -123,43 +168,59 @@ export function SessionView({
   );
   const counts = useMemo(() => transcriptCounts(cells), [cells]);
 
-  // Citation deep links: scroll to the cited event once the transcript renders.
+  // Citation deep links: scroll to the cited event once the session loads
+  // (not again after "Load later events"). A prompt renders as
+  // `message-<id>`, a reply as `cell-<id>`, and tool steps as `cell-<id>:<n>`.
+  const initial = loaded.data;
   useEffect(() => {
-    if (!data) return;
-    const anchor =
-      window.location.hash.slice(1) || (event ? `message-${event}` : "");
-    if (!anchor) return;
-    const target =
-      document.getElementById(anchor) ??
-      (event ? document.getElementById(`cell-${event}:0`) : null);
+    if (!initial) return;
+    const hash = window.location.hash.slice(1);
+    const candidates = [
+      hash,
+      ...(event
+        ? [`message-${event}`, `cell-${event}`, `cell-${event}:0`]
+        : []),
+    ].filter(Boolean);
+    const target = candidates
+      .map((id) => document.getElementById(id))
+      .find(Boolean);
     if (target) {
       target.scrollIntoView?.({ block: "start" });
-    } else if (event) {
-      // Tool activity is collapsed; opening it is driven by the hash.
+    } else if (event && !hash.startsWith(`cell-${event}:`)) {
+      // Tool activity is collapsed; opening it is driven by the hash. An
+      // explicit `cell-<id>:<n>` hash already names the step to open.
       window.location.hash = `cell-${event}:0`;
     }
-  }, [data, event]);
+  }, [initial, event]);
 
   async function loadMore() {
     if (!data?.nextCursor) return;
+    moreRequest.current?.abort();
+    const controller = new AbortController();
+    moreRequest.current = controller;
     setMore(true);
-    setMoreError(null);
+    setMoreFailure(null);
     try {
       const page = await sessionEvents(
         workspaceId,
         { sessionId, source },
         data.nextCursor,
-        new AbortController().signal,
+        controller.signal,
       );
+      if (controller.signal.aborted) return;
       setAppended({
         key,
         events: [...(extra?.events ?? []), ...page.events],
         nextCursor: page.nextCursor,
       });
     } catch (reason) {
-      setMoreError(reason as Error);
+      if (!controller.signal.aborted)
+        setMoreFailure({ key, error: reason as Error });
     } finally {
-      setMore(false);
+      if (moreRequest.current === controller) {
+        moreRequest.current = null;
+        setMore(false);
+      }
     }
   }
 
@@ -248,13 +309,19 @@ export function SessionView({
       </div>
       {error && (
         <div role="alert" className="load-error">
-          <span>{error.message}</span>
-          <button
-            type="button"
-            onClick={() => setAttempt((value) => value + 1)}
-          >
-            Retry
-          </button>
+          <span>
+            {error instanceof SignedOut
+              ? "Taking you to sign in…"
+              : error.message}
+          </span>
+          {!(error instanceof SignedOut) && (
+            <button
+              type="button"
+              onClick={() => setAttempt((value) => value + 1)}
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
       {!data && !error && <p role="status">Loading session…</p>}

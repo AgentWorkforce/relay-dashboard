@@ -64,6 +64,12 @@ it("falls back from title to task title to summary to the project and id", () =>
   expect(sessionTitle({ ...row, taskTitle: "Review the change" })).toBe(
     "Review the change",
   );
+  expect(
+    sessionTitle({ ...row, title: "Catalog title", taskTitle: "Task" }),
+  ).toBe("Catalog title");
+  expect(sessionTitle({ ...row, summary: "Fix the flaky loader" })).toBe(
+    "Fix the flaky loader",
+  );
 });
 
 it("shortens project paths and remotes, keeping the full value for tooltips", () => {

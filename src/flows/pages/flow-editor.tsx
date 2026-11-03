@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
+import { SignedOut } from "../../api/client";
 import { flowsApi } from "../api";
-import { go } from "../format";
+import { go, seg } from "../format";
 
 export const STARTER_FLOW = `version: '1.0'
 name: hello-flow
@@ -25,6 +26,7 @@ export function FlowForm({
   initial,
   submitLabel,
   onSubmit,
+  onError,
 }: {
   initial: {
     name: string;
@@ -34,6 +36,8 @@ export function FlowForm({
   };
   submitLabel: string;
   onSubmit: (value: typeof initial) => Promise<void>;
+  /** Receives an expired session, so the app can send the user to sign in. */
+  onError?: (error: Error) => void;
 }) {
   const [value, setValue] = useState(initial);
   const [busy, setBusy] = useState(false);
@@ -48,7 +52,8 @@ export function FlowForm({
     try {
       await onSubmit(value);
     } catch (caught) {
-      setError((caught as Error).message);
+      if (caught instanceof SignedOut && onError) onError(caught);
+      else setError((caught as Error).message);
     } finally {
       setBusy(false);
     }
@@ -81,12 +86,18 @@ export function FlowForm({
         Format
         <select
           value={value.fileType}
-          onChange={(event) =>
-            setValue({
-              ...value,
-              fileType: event.target.value as "yaml" | "ts",
-            })
-          }
+          onChange={(event) => {
+            const fileType = event.target.value as "yaml" | "ts";
+            // The YAML starter is not a TypeScript workflow; don't submit it
+            // under the wrong format. Edited sources are left alone.
+            const source =
+              fileType === "ts" && value.source === STARTER_FLOW
+                ? ""
+                : fileType === "yaml" && !value.source.trim()
+                  ? STARTER_FLOW
+                  : value.source;
+            setValue({ ...value, fileType, source });
+          }}
         >
           <option value="yaml">YAML workflow</option>
           <option value="ts">TypeScript workflow</option>
@@ -121,7 +132,11 @@ export function FlowForm({
   );
 }
 
-export function NewFlowPage() {
+export function NewFlowPage({
+  onError,
+}: {
+  onError: (error: Error | null) => void;
+}) {
   return (
     <>
       <div className="heading">
@@ -144,6 +159,7 @@ export function NewFlowPage() {
           source: STARTER_FLOW,
         }}
         submitLabel="Save flow"
+        onError={onError}
         onSubmit={async (value) => {
           const flow = await flowsApi.createFlow({
             name: value.name,
@@ -151,7 +167,7 @@ export function NewFlowPage() {
             fileType: value.fileType,
             source: value.source,
           });
-          go(`/flows/f/${flow.id}`);
+          go(`/flows/f/${seg(flow.id)}`);
         }}
       />
     </>

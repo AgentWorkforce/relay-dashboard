@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { flowsApi, type Flow, type RunPage } from "../api";
 import { Badge, StatusBadge, Tabs, Time } from "../components";
-import { usePolling } from "../format";
+import { plural, seg, usePolling } from "../format";
 
 type Tab = "flows" | "runs";
 
@@ -16,18 +16,30 @@ export function FlowsOverview({
   const [page, setPage] = useState<RunPage | null>(null);
   const [cursors, setCursors] = useState<Array<string | null>>([null]);
   const [status, setStatus] = useState("");
+  // The cursor and filter the shown page was loaded for; paging is disabled
+  // until the page for the current selection arrives, so a double click can't
+  // push the same cursor twice.
+  const [pageKey, setPageKey] = useState<string | null>(null);
   const cursor = cursors[cursors.length - 1] ?? null;
+  const key = `${status}\n${cursor ?? ""}`;
 
   usePolling(
     async (signal) => {
       try {
-        const [nextFlows, nextPage] = await Promise.all([
+        // Each list renders on its own tab, so one failing must not discard
+        // the other's result.
+        const [flowsResult, runsResult] = await Promise.allSettled([
           flowsApi.listFlows(signal),
           flowsApi.listRuns({ cursor, status: status || undefined }, signal),
         ]);
         if (signal.aborted) return;
-        setFlows(nextFlows);
-        setPage(nextPage);
+        if (flowsResult.status === "fulfilled") setFlows(flowsResult.value);
+        if (runsResult.status === "fulfilled") {
+          setPage(runsResult.value);
+          setPageKey(key);
+        }
+        if (flowsResult.status === "rejected") throw flowsResult.reason;
+        if (runsResult.status === "rejected") throw runsResult.reason;
         onError(null);
       } catch (error) {
         if (!signal.aborted) onError(error as Error);
@@ -104,15 +116,17 @@ export function FlowsOverview({
                 {flows.map((flow) => (
                   <tr key={flow.id}>
                     <td>
-                      <a href={`#/flows/f/${flow.id}`}>
+                      <a href={`#/flows/f/${seg(flow.id)}`}>
                         <strong>{flow.name}</strong>
                       </a>
                       <span className="sub">
                         {[
                           flow.description,
-                          `${flow.stepCount || "?"} steps`,
+                          flow.stepCount
+                            ? plural(flow.stepCount, "step")
+                            : "? steps",
                           flow.fileType.toUpperCase(),
-                          `${flow.runCount} runs`,
+                          plural(flow.runCount, "run"),
                         ]
                           .filter(Boolean)
                           .join(" · ")}
@@ -120,7 +134,7 @@ export function FlowsOverview({
                     </td>
                     <td>
                       {flow.lastRun ? (
-                        <a href={`#/flows/runs/${flow.lastRun.runId}`}>
+                        <a href={`#/flows/runs/${seg(flow.lastRun.runId)}`}>
                           <StatusBadge status={flow.lastRun.status} />
                         </a>
                       ) : (
@@ -131,7 +145,7 @@ export function FlowsOverview({
                       <Time value={flow.updatedAt} />
                     </td>
                     <td className="actions">
-                      <a href={`#/flows/f/${flow.id}`}>Open flow →</a>
+                      <a href={`#/flows/f/${seg(flow.id)}`}>Open flow →</a>
                     </td>
                   </tr>
                 ))}
@@ -178,16 +192,20 @@ export function FlowsOverview({
                 {page.runs.length} of {page.totalRuns} runs
               </span>
               <button
-                disabled={cursors.length <= 1}
+                disabled={cursors.length <= 1 || pageKey !== key}
                 onClick={() => setCursors(cursors.slice(0, -1))}
               >
                 Newer runs
               </button>
               <button
-                disabled={!page.nextCursor}
-                onClick={() =>
-                  page.nextCursor && setCursors([...cursors, page.nextCursor])
-                }
+                disabled={!page.nextCursor || pageKey !== key}
+                onClick={() => {
+                  const next = page.nextCursor;
+                  if (!next) return;
+                  setCursors((current) =>
+                    current.includes(next) ? current : [...current, next],
+                  );
+                }}
               >
                 Older runs
               </button>
@@ -213,7 +231,7 @@ export function RunList({ page }: { page: Pick<RunPage, "runs"> | null }) {
     <ul className="runs">
       {page.runs.map((run) => (
         <li key={run.runId}>
-          <a href={`#/flows/runs/${run.runId}`}>
+          <a href={`#/flows/runs/${seg(run.runId)}`}>
             <div>
               <strong>{run.workflowName}</strong>
               <span className="sub">

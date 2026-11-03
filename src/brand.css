@@ -181,6 +181,16 @@
   --syntax-string: #b45309;
   --syntax-method: #6b21a8;
   --syntax-comment: #9ca3af;
+  /* Status tones (badges, alerts, run states). Light foregrounds keep at
+     least 4.5:1 contrast on their soft backgrounds. */
+  --success-fg: #11704f;
+  --success-bg: rgba(29, 159, 115, 0.12);
+  --warning-fg: var(--secondary-700);
+  --warning-bg: rgba(193, 103, 75, 0.14);
+  --danger-fg: #b3262f;
+  --danger-bg: rgba(217, 91, 99, 0.14);
+  --info-fg: var(--primary-700);
+  --info-bg: rgba(74, 144, 194, 0.12);
 }
 
 :root[data-theme="dark"] {
@@ -267,4 +277,12 @@
   --syntax-string: #f2b17a;
   --syntax-method: #c9a7ff;
   --syntax-comment: #7c8a9b;
+  --success-fg: #63d18b;
+  --success-bg: rgba(99, 209, 139, 0.12);
+  --warning-fg: #ce9178;
+  --warning-bg: rgba(206, 145, 120, 0.14);
+  --danger-fg: #f0727f;
+  --danger-bg: rgba(240, 114, 127, 0.14);
+  --info-fg: #74b8e2;
+  --info-bg: rgba(116, 184, 226, 0.14);
 }

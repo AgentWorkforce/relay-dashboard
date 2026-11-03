@@ -2,6 +2,7 @@ import type { z } from "zod";
 import {
   adminContextSchema,
   apiTokensSchema,
+  connectSessionSchema,
   createdTokenSchema,
   envVarListSchema,
   envVarSchema,
@@ -82,7 +83,8 @@ export const adminApi = {
       body: { name, envVar: name, value, kind: "environment" },
     }),
   deleteEnv: (workspace: string, name: string) =>
-    call(`${ws(workspace)}/secrets/${enc(name)}`, envVarSchema, {
+    // The response body (the deleted record) isn't used; accept an empty one.
+    call(`${ws(workspace)}/secrets/${enc(name)}`, null, {
       method: "DELETE",
     }),
 
@@ -103,11 +105,11 @@ export const adminApi = {
     call(`${ws(workspace)}/integrations/${enc(provider)}/oauth-app`, null, {
       method: "DELETE",
     }),
-  connectSession: async (workspace: string, provider: string) =>
-    (await call(`${ws(workspace)}/integrations/connect-session`, null, {
+  connectSession: (workspace: string, provider: string) =>
+    call(`${ws(workspace)}/integrations/connect-session`, connectSessionSchema, {
       method: "POST",
       body: { allowedIntegrations: [provider] },
-    })) as { connectLink: string },
+    }),
   connectApiKey: (
     workspace: string,
     provider: string,

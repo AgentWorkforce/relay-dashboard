@@ -99,3 +99,57 @@ it("collapses a raw history copy into its projected message", () => {
   const cells = buildTranscript(collapseHistoryCopies(events.slice(0, 2)));
   expect(cells.filter((cell) => cell.kind === "user")).toHaveLength(1);
 });
+
+it("keeps rapid repeats and differently attributed copies", () => {
+  const row = (value: Record<string, unknown>) =>
+    event({
+      ts: "2026-09-01T10:00:00.000Z",
+      content: "yes",
+      ...value,
+    });
+  const events = [
+    row({ eventId: "p1", kind: "prompt", userId: "u1" }),
+    // Two history copies, one projected record: only one copy collapses.
+    row({ eventId: "h1", kind: "history", type: "history", actorRole: "user" }),
+    row({
+      eventId: "h2",
+      kind: "history",
+      type: "history",
+      actorRole: "user",
+      ts: "2026-09-01T10:00:01.000Z",
+    }),
+    // Same text from another person is a different message.
+    row({
+      eventId: "h3",
+      kind: "history",
+      type: "history",
+      actorRole: "user",
+      userId: "u2",
+    }),
+  ];
+  expect(collapseHistoryCopies(events).map((e) => e.eventId)).toEqual([
+    "p1",
+    "h2",
+    "h3",
+  ]);
+});
+
+it("matches a history copy whose speaker is only in its type", () => {
+  const events = [
+    event({
+      eventId: "p",
+      ts: "2026-09-01T10:00:00.000Z",
+      kind: "prompt",
+      content: "ship it",
+    }),
+    event({
+      eventId: "h",
+      ts: "2026-09-01T10:00:00.500Z",
+      kind: "history",
+      type: "user",
+      actorName: "Alex",
+      content: "ship it",
+    }),
+  ];
+  expect(collapseHistoryCopies(events).map((e) => e.eventId)).toEqual(["p"]);
+});

@@ -127,6 +127,9 @@ export function LogViewer({
   );
   const [error, setError] = useState<string | null>(null);
   const offset = useRef(0);
+  // Runtimes may upload the log just after reporting a terminal status, so
+  // after "Not captured" keep checking a few more times before stopping.
+  const [misses, setMisses] = useState(0);
   usePolling(
     async (signal) => {
       try {
@@ -138,6 +141,7 @@ export function LogViewer({
         if (signal.aborted) return;
         setError(null);
         if (!page.available) {
+          if (terminal) setMisses((value) => value + 1);
           setState(terminal ? "missing" : "loading");
           return;
         }
@@ -151,11 +155,15 @@ export function LogViewer({
       }
     },
     2_000,
-    state !== "done" && state !== "missing",
+    state !== "done" && !(state === "missing" && misses >= 3),
     [runId, step, terminal],
   );
   async function copy() {
-    await navigator.clipboard.writeText(content).catch(() => undefined);
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch {
+      // Clipboard unavailable (insecure context or denied permission).
+    }
   }
   return (
     <div className="log">
@@ -413,7 +421,9 @@ export function StepGraph({ steps }: { steps: Step[] }) {
               </text>
               <text x={12} y={39} className="node-sub">
                 {statusLabel(step.status)}
-                {step.durationMs ? ` · ${duration(step.durationMs)}` : ""}
+                {step.durationMs !== null && step.durationMs !== undefined
+                  ? ` · ${duration(step.durationMs)}`
+                  : ""}
               </text>
             </g>
           );

@@ -392,3 +392,157 @@ it("offers retry only after a load error, and keeps list filters on the way back
     screen.queryByRole("button", { name: "Retry" }),
   ).not.toBeInTheDocument();
 });
+
+it("reads every page of turns, not only the first", async () => {
+  respond(/\/sessions\/s%2F1\/turns$/, (url) =>
+    url.searchParams.get("cursor") === "t2"
+      ? {
+          turns: [
+            {
+              id: "turn-2",
+              role: "user",
+              content: "And the second page prompt",
+              createdAt: "2026-11-02T18:30:00.000Z",
+              ts: "2026-11-02T18:30:00.000Z",
+            },
+          ],
+          nextCursor: null,
+        }
+      : { turns: [], nextCursor: "t2" },
+  );
+  window.history.replaceState(null, "", "/?session=s%2F1&source=codex");
+  render(<Dashboard />);
+  expect(
+    await screen.findByText("And the second page prompt"),
+  ).toBeInTheDocument();
+  expect(
+    calls.some(
+      (url) =>
+        url.pathname.endsWith("/turns") &&
+        url.searchParams.get("cursor") === "t2",
+    ),
+  ).toBe(true);
+});
+
+it("scrolls an assistant-reply citation to its cell", async () => {
+  const scroll = vi.fn();
+  Element.prototype.scrollIntoView = scroll;
+  window.history.replaceState(
+    null,
+    "",
+    "/?session=s%2F1&source=codex&event=e5",
+  );
+  render(<Dashboard />);
+  await screen.findByText("loader");
+  await vi.waitFor(() => expect(scroll).toHaveBeenCalled());
+  expect(scroll.mock.contexts[0]).toBe(document.getElementById("cell-e5"));
+  expect(window.location.hash).toBe("");
+});
+
+it("loads later event pages until a cited event is found", async () => {
+  respond(/\/sessions\/s%2F1\/events$/, (url) =>
+    url.searchParams.get("cursor") === "p2"
+      ? {
+          events: transcript.slice(4),
+          members,
+          nextCursor: null,
+          error: false,
+        }
+      : {
+          events: transcript.slice(0, 4),
+          members,
+          nextCursor: "p2",
+          error: false,
+        },
+  );
+  window.history.replaceState(
+    null,
+    "",
+    "/?session=s%2F1&source=codex&event=e5",
+  );
+  render(<Dashboard />);
+  expect(await screen.findByText("loader")).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Load later events" }),
+  ).not.toBeInTheDocument();
+});
+
+it("sends an expired session on a transcript to sign in", async () => {
+  respond(
+    /\/sessions\/s%2F1\/events$/,
+    () => new Response("{}", { status: 401 }),
+  );
+  window.history.replaceState(null, "", "/?session=s%2F1&source=codex");
+  render(<Dashboard />);
+  expect(
+    (await screen.findAllByText("Taking you to sign in…")).length,
+  ).toBeGreaterThan(0);
+  expect(
+    screen.queryByRole("button", { name: "Retry" }),
+  ).not.toBeInTheDocument();
+});
+
+it("links a search match without a citation path to its session", async () => {
+  respond(/\/sessions\/search$/, () => ({
+    matches: [
+      {
+        eventId: "e1",
+        sessionId: "s/1",
+        source: "codex",
+        ts: "2026-11-02T18:00:00.000Z",
+        userId: "u1",
+        kind: "prompt",
+        content: "Please fix the loader",
+      },
+      {
+        eventId: "x1",
+        sessionId: "s2",
+        source: "claude",
+        userId: "u2",
+        ts: "2026-11-02T18:00:00.000Z",
+        kind: "prompt",
+        content: "Please fix the loader too",
+      },
+    ],
+    members,
+    nextCursor: null,
+  }));
+  window.history.replaceState(
+    null,
+    "",
+    "/?tab=search&q=loader%20person%3Au1%20is%3Aactive",
+  );
+  render(<Dashboard />);
+  const match = await screen.findByText("Please fix the loader");
+  expect(match.closest("a")).toHaveAttribute(
+    "href",
+    expect.stringMatching(/^\/\?session=s%2F1&source=codex&event=e1/),
+  );
+  // person:u1 filters the other person's match; is: is named as unused.
+  expect(
+    screen.queryByText("Please fix the loader too"),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByText(/Not applied in message search: is:active/),
+  ).toBeInTheDocument();
+});
+
+it("retries a failed account load", async () => {
+  let fail = true;
+  respond(/\/cloud\/api\/auth\/session/, () =>
+    fail
+      ? new Response("{}", { status: 500 })
+      : {
+          authenticated: true,
+          user: { id: "u1", name: "Alex" },
+          currentWorkspace: { id: W, name: "Workspace" },
+        },
+  );
+  render(<Dashboard />);
+  const retry = await screen.findByRole("button", { name: "Retry" });
+  fail = false;
+  fireEvent.click(retry);
+  expect(
+    await screen.findByRole("link", { name: "Fix session loading" }),
+  ).toBeInTheDocument();
+});

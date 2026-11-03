@@ -19,7 +19,7 @@ export const runSchema = z.object({
   workflow: z.string(),
   workflowName: z.string(),
   fileType: z.string(),
-  workflowFileName: z.string().optional(),
+  workflowFileName: text,
   dispatchType: z.string(),
   status: runStatusSchema,
   trigger: z.string(),

@@ -64,4 +64,36 @@ describe("review regressions", () => {
       { type: "search", query: "fetchReplay", path: "packages/web" },
     ]);
   });
+
+  it.each([
+    "cat safe.txt & rm -rf build",
+    "cat \"$(rm important)\"",
+    "cat `rm important`",
+    "diff <(cat a) b",
+    "find . -delete",
+    "find . -name x -exec rm {} \\;",
+    "fd foo -x rm",
+    "rg foo | sed -n '1w out.txt'",
+    "rg foo | awk '{ system(\"rm \" $1) }'",
+    "sed -n '1e rm -rf /' notes.txt",
+    "cat a &> out.txt",
+  ])("fails closed on %s", (command) => {
+    expect(isExploring(parseCommand(command))).toBe(false);
+  });
+
+  it("still elides read-only sed and awk formatters", () => {
+    expect(isExploring(parseCommand("rg foo | sed -n '1,20p'"))).toBe(true);
+    expect(isExploring(parseCommand("rg foo | sed 's/a/b/g'"))).toBe(true);
+    expect(isExploring(parseCommand("rg foo | awk '{print $1}'"))).toBe(true);
+    expect(isExploring(parseCommand("rg foo src 2>&1 >&2"))).toBe(true);
+  });
+
+  it("uses find's starting point, not its predicate, as the path", () => {
+    expect(parseCommand("find -name '*.md'")).toMatchObject([
+      { type: "search", query: "*.md", path: null },
+    ]);
+    expect(parseCommand("find src -type f")).toMatchObject([
+      { type: "list", path: "src" },
+    ]);
+  });
 });

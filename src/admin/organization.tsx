@@ -23,7 +23,7 @@ export function WorkspaceSection(props: { context: AdminContext }) {
         <dt>Your role</dt>
         <dd>{org.role}</dd>
       </dl>
-      {error && <p role="alert">{error.message}</p>}
+      {error && <p role="alert">{message(error)}</p>}
       {data && data.length > 1 && (
         <>
           <h3>All workspaces in {org.name}</h3>
@@ -59,7 +59,7 @@ export function OrganizationSection(props: {
     setBusy(true);
     setNotice(null);
     try {
-      await adminApi.renameOrganization(org.id, name);
+      await adminApi.renameOrganization(org.id, name.trim());
       setNotice({ kind: "status", text: "Organization renamed." });
       props.onRenamed();
     } catch (error) {

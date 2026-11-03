@@ -3,7 +3,7 @@
 import { displayUserMessage } from "./transcript-display";
 import { sessionImage } from "./session-image";
 import { isToolActivity, isToolResultEvent, isToolUseEvent, toolCorrelationId } from "./activity-summary";
-import { messageRole, type ReplayEvent } from "./replay-model";
+import { isClaudeSource, messageRole, type ReplayEvent } from "./replay-model";
 import { CaptureIndex, captureCluster, type CaptureCluster } from "./capture-index";
 
 const dated = (event: ReplayEvent) => Date.parse(event.ts) > 0;
@@ -27,7 +27,7 @@ function sharedIdentity(a: ReplayEvent, b: ReplayEvent): boolean {
  * insufficient: the recorded call must identify the same capture or instant.
  */
 function normalizeTool(event: ReplayEvent, calls: CaptureIndex, input: ReplayEvent[]): ReplayEvent {
-  if (event.source !== "claude" || !["session_event", "history"].includes(event.kind) ||
+  if (!isClaudeSource(event.source) || !["session_event", "history"].includes(event.kind) ||
       event.type !== "assistant" || isToolUseEvent(event)) return event;
   const match = calls.find(event, toolKey(event));
   const call = match ? input[match.survivor] : undefined;

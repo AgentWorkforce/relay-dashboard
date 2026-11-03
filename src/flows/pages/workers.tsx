@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { SignedOut } from "../../api/client";
 import {
   flowsApi,
   type Enrollment,
@@ -6,7 +7,15 @@ import {
   type Worker,
 } from "../api";
 import { Badge, CopyableCommand, Tile, Time } from "../components";
-import { fullTime, go, statusLabel, usePolling, workerTone } from "../format";
+import {
+  fullTime,
+  go,
+  seg,
+  shellQuote,
+  statusLabel,
+  usePolling,
+  workerTone,
+} from "../format";
 
 function hostSummary(worker: Worker): string {
   const info = worker.hostInfo;
@@ -35,7 +44,11 @@ export function WorkersPage({
 }) {
   const [workers, setWorkers] = useState<Worker[] | null>(null);
   const [tokens, setTokens] = useState<EnrollmentToken[] | null>(null);
-  const [canAdmin, setCanAdmin] = useState(true);
+  // Write controls appear only once the enrollment listing (admin-only)
+  // has succeeded.
+  const [canAdmin, setCanAdmin] = useState(false);
+  // Once enrollment listing is denied, stop asking on every poll.
+  const enrollmentsDenied = useRef(false);
   const [revision, setRevision] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -46,10 +59,15 @@ export function WorkersPage({
         if (signal.aborted) return;
         setWorkers(next);
         onError(null);
+        if (enrollmentsDenied.current) return;
         try {
           setTokens(await flowsApi.listEnrollments(signal));
+          setCanAdmin(true);
         } catch (error) {
-          if ((error as { status?: number }).status === 403) setCanAdmin(false);
+          if ((error as { status?: number }).status === 403) {
+            enrollmentsDenied.current = true;
+            setCanAdmin(false);
+          } else if (!signal.aborted) onError(error as Error);
         }
       } catch (error) {
         if (!signal.aborted) onError(error as Error);
@@ -70,6 +88,22 @@ export function WorkersPage({
     try {
       await flowsApi.revokeWorker(worker.id);
       setNotice(`${worker.name} was revoked.`);
+      setRevision((value) => value + 1);
+    } catch (error) {
+      setNotice((error as Error).message);
+    }
+  }
+
+  async function revokeToken(token: EnrollmentToken) {
+    if (
+      !window.confirm(
+        `Revoke enrollment token ${token.tokenHint}? It can no longer register a worker.`,
+      )
+    )
+      return;
+    try {
+      await flowsApi.revokeEnrollment(token.id);
+      setNotice(`Enrollment token ${token.tokenHint} was revoked.`);
       setRevision((value) => value + 1);
     } catch (error) {
       setNotice((error as Error).message);
@@ -119,7 +153,7 @@ export function WorkersPage({
             {workers.map((worker) => (
               <tr key={worker.id}>
                 <td>
-                  <a href={`#/flows/workers/${worker.id}`}>
+                  <a href={`#/flows/workers/${seg(worker.id)}`}>
                     <strong>{worker.name}</strong>
                   </a>
                 </td>
@@ -139,7 +173,7 @@ export function WorkersPage({
                 <td>{hostSummary(worker)}</td>
                 <td>
                   {worker.currentRunId ? (
-                    <a href={`#/flows/runs/${worker.currentRunId}`}>
+                    <a href={`#/flows/runs/${seg(worker.currentRunId)}`}>
                       {worker.currentRunId.slice(0, 8)}
                     </a>
                   ) : (
@@ -147,7 +181,7 @@ export function WorkersPage({
                   )}
                 </td>
                 <td className="actions">
-                  <a href={`#/flows/workers/${worker.id}`}>View</a>
+                  <a href={`#/flows/workers/${seg(worker.id)}`}>View</a>
                   {canAdmin && (
                     <button
                       className="danger ghost"
@@ -198,11 +232,7 @@ export function WorkersPage({
                     {token.status === "active" && (
                       <button
                         className="danger ghost"
-                        onClick={() =>
-                          void flowsApi
-                            .revokeEnrollment(token.id)
-                            .then(() => setRevision((value) => value + 1))
-                        }
+                        onClick={() => void revokeToken(token)}
                       >
                         Revoke
                       </button>
@@ -218,7 +248,11 @@ export function WorkersPage({
   );
 }
 
-export function AddWorkerPage() {
+export function AddWorkerPage({
+  onError,
+}: {
+  onError: (error: Error | null) => void;
+}) {
   const [name, setName] = useState("");
   const [tags, setTags] = useState("");
   const [expires, setExpires] = useState("60");
@@ -249,7 +283,8 @@ export function AddWorkerPage() {
     }
   }
 
-  if (enrollment) return <EnrollmentSuccess enrollment={enrollment} />;
+  if (enrollment)
+    return <EnrollmentSuccess enrollment={enrollment} onError={onError} />;
   return (
     <>
       <div className="heading">
@@ -315,20 +350,33 @@ export function AddWorkerPage() {
 
 function EnrollmentSuccess({
   enrollment,
+  onError,
 }: {
   enrollment: Enrollment & { name: string };
+  onError: (error: Error | null) => void;
 }) {
   const [worker, setWorker] = useState<Worker | null>(null);
   const [timedOut, setTimedOut] = useState(false);
+  // Bumped by "Keep waiting" to restart the 5-minute watch (Helm rollouts can
+  // take longer; the token stays valid until it expires).
+  const [watch, setWatch] = useState(0);
   const issuedAt = Date.parse(enrollment.createdAt);
   useEffect(() => {
     const timer = setTimeout(() => setTimedOut(true), 5 * 60_000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [watch]);
   usePolling(
     async (signal) => {
-      const workers = await flowsApi.listWorkers(signal).catch(() => null);
-      if (signal.aborted || !workers) return;
+      let workers: Worker[];
+      try {
+        workers = await flowsApi.listWorkers(signal);
+      } catch (error) {
+        // An expired session must reach the app's sign-in redirect; other
+        // failures are retried on the next poll.
+        if (!signal.aborted && error instanceof SignedOut) onError(error);
+        return;
+      }
+      if (signal.aborted) return;
       setWorker(
         workers.find(
           (candidate) =>
@@ -339,13 +387,13 @@ function EnrollmentSuccess({
     },
     3_000,
     !timedOut && worker?.status !== "online",
-    [],
+    [watch],
   );
   const helm = `relayflows:
   mode: cloudWorker
   worker:
-    name: ${enrollment.name}
-    cloudUrl: ${enrollment.cloudUrl}
+    name: ${JSON.stringify(enrollment.name)}
+    cloudUrl: ${JSON.stringify(enrollment.cloudUrl)}
   credentials:
     existingSecret: relayflows-worker-enrollment   # key AGENT_RELAY_WORKER_ENROLLMENT_TOKEN`;
   return (
@@ -376,7 +424,7 @@ function EnrollmentSuccess({
         <h3>Or deploy the relayflows Helm chart</h3>
         <CopyableCommand
           label="Create the enrollment Secret"
-          command={`kubectl create secret generic relayflows-worker-enrollment --from-literal=AGENT_RELAY_WORKER_ENROLLMENT_TOKEN=${enrollment.token}`}
+          command={`kubectl create secret generic relayflows-worker-enrollment ${shellQuote(`--from-literal=AGENT_RELAY_WORKER_ENROLLMENT_TOKEN=${enrollment.token}`)}`}
         />
         <CopyableCommand label="values.yaml" command={helm} />
       </section>
@@ -386,7 +434,16 @@ function EnrollmentSuccess({
         {!worker && timedOut && (
           <p role="alert">
             Timed out waiting for this worker. The token stays valid until it
-            expires.
+            expires.{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setTimedOut(false);
+                setWatch((value) => value + 1);
+              }}
+            >
+              Keep waiting
+            </button>
           </p>
         )}
         {worker && worker.status !== "online" && (
@@ -398,7 +455,8 @@ function EnrollmentSuccess({
         {worker?.status === "online" && (
           <p role="status">
             <WorkerBadge status="online" /> Online. The worker is ready to run
-            flows. <a href={`#/flows/workers/${worker.id}`}>View worker →</a>
+            flows.{" "}
+            <a href={`#/flows/workers/${seg(worker.id)}`}>View worker →</a>
           </p>
         )}
       </section>
@@ -415,6 +473,19 @@ export function WorkerDetailPage({
 }) {
   const [worker, setWorker] = useState<Worker | null>(null);
   const [missing, setMissing] = useState(false);
+  // Same permission probe as the workers list: enrollment tokens are
+  // admin-only, so only show Revoke when listing them succeeds.
+  const [canAdmin, setCanAdmin] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    flowsApi.listEnrollments(controller.signal).then(
+      () => {
+        if (!controller.signal.aborted) setCanAdmin(true);
+      },
+      () => undefined,
+    );
+    return () => controller.abort();
+  }, []);
   usePolling(
     async (signal) => {
       try {
@@ -465,7 +536,7 @@ export function WorkerDetailPage({
         <Tile label="Tags">{worker.tags.join(", ") || "None"}</Tile>
         <Tile label="Current run">
           {worker.currentRunId ? (
-            <a href={`#/flows/runs/${worker.currentRunId}`}>
+            <a href={`#/flows/runs/${seg(worker.currentRunId)}`}>
               {worker.currentRunId.slice(0, 8)}
             </a>
           ) : (
@@ -481,14 +552,14 @@ export function WorkerDetailPage({
         <h2>Local diagnostics</h2>
         <CopyableCommand
           label="Status"
-          command={`agent-relay cloud worker status --name ${worker.name}`}
+          command={`agent-relay cloud worker status --name ${shellQuote(worker.name)}`}
         />
         <CopyableCommand
           label="Logs"
-          command={`agent-relay cloud worker logs --name ${worker.name} --follow`}
+          command={`agent-relay cloud worker logs --name ${shellQuote(worker.name)} --follow`}
         />
       </section>
-      {worker.status !== "revoked" && (
+      {canAdmin && worker.status !== "revoked" && (
         <section className="panel danger-zone">
           <h2>Danger zone</h2>
           <p>
