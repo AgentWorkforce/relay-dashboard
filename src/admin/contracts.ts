@@ -69,7 +69,7 @@ export const providerSchema = z.object({
   categories: z.array(z.string()).optional(),
   docs: z.string().optional(),
   defaultScopes: z.array(z.string()).optional(),
-  appSetupUrl: z.string().optional(),
+  appSetupUrl: z.string().url().optional(),
   credentialFields: z.array(credentialFieldSchema).optional(),
   configured: z.boolean(),
   oauthApp: oauthAppSchema.nullable(),
@@ -124,4 +124,8 @@ export const workspaceSchema = z.object({
 });
 export const workspacesSchema = z.object({
   workspaces: z.array(workspaceSchema),
+});
+
+export const connectSessionSchema = z.object({
+  connectLink: z.string().url(),
 });

@@ -1,19 +1,4 @@
 /* admin lane: settings area. Uses brand.css semantic tokens only. */
-.top-nav {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-.top-nav a {
-  color: var(--fg-muted);
-}
-.top-nav a:hover,
-.top-nav a[aria-current="page"] {
-  color: var(--fg);
-}
-.top-nav span {
-  color: var(--fg-muted);
-}
 main.settings {
   max-width: 1180px;
 }
@@ -67,24 +52,24 @@ main.settings {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
-.card {
+.settings .card {
   border: 1px solid var(--card-border, var(--line));
   background: var(--card-bg, transparent);
   border-radius: var(--r-md);
   padding: 24px;
 }
-.card h2 {
+.settings .card h2 {
   font-size: 18px;
   font-weight: 550;
   letter-spacing: -0.02em;
   margin: 0 0 6px;
 }
-.card h3 {
+.settings .card h3 {
   font-size: 14px;
   font-weight: 550;
   margin: 20px 0 8px;
 }
-.card code {
+.settings .card code {
   font-size: 12.5px;
   background: var(--inline-code-bg, var(--nav-surface));
   color: var(--inline-code-fg, var(--fg));
@@ -92,15 +77,15 @@ main.settings {
   border-radius: 4px;
   overflow-wrap: anywhere;
 }
-.inline-form {
+.settings .inline-form {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 12px;
   margin: 18px 0;
 }
-.inline-form label,
-.stack label {
+.settings .inline-form label,
+.settings .stack label {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -108,7 +93,7 @@ main.settings {
   color: var(--fg-muted);
   flex: 1 1 180px;
 }
-.stack {
+.settings .stack {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -116,19 +101,19 @@ main.settings {
   padding-top: 16px;
   border-top: 1px solid var(--line);
 }
-button.primary {
+.settings button.primary {
   background: var(--primary);
   border-color: var(--primary);
   color: var(--primary-fg, #fff);
 }
-button.primary:hover {
+.settings button.primary:hover {
   background: var(--primary-hover, var(--primary));
 }
-button.danger {
+.settings button.danger {
   border-color: var(--status-red);
   color: var(--status-red);
 }
-.note {
+.settings .note {
   font-size: 13px;
 }
 .settings [role="status"] {
@@ -156,33 +141,39 @@ button.danger {
   border-bottom: 1px solid var(--line);
   vertical-align: top;
 }
-td.actions {
+.settings td.actions {
   text-align: right;
   white-space: nowrap;
 }
-td.actions button + button {
+.settings td.actions button + button {
   margin-left: 8px;
 }
-.badge {
+.settings .badge {
   display: inline-block;
   font-size: 11px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-xs);
   border: 1px solid var(--line);
   color: var(--fg-muted);
   margin-left: 8px;
   white-space: nowrap;
 }
-.badge.ok {
-  color: var(--status-green);
-  border-color: var(--status-green);
+.settings .badge.ok {
+  color: var(--success-fg);
+  background: var(--success-bg);
+  border-color: transparent;
 }
-.badge.error,
-.badge.warn {
-  color: var(--status-yellow);
-  border-color: var(--status-yellow);
+.settings .badge.warn {
+  color: var(--warning-fg);
+  background: var(--warning-bg);
+  border-color: transparent;
 }
-.callout {
+.settings .badge.error {
+  color: var(--danger-fg);
+  background: var(--danger-bg);
+  border-color: transparent;
+}
+.settings .callout {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -194,26 +185,26 @@ td.actions button + button {
   background: var(--note-bg, var(--nav-surface));
   font-size: 13px;
 }
-.copy {
+.settings .copy {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   max-width: 100%;
 }
-.copy button {
+.settings .copy button {
   padding: 3px 10px;
   font-size: 12px;
 }
-input.search {
+.settings input.search {
   width: 100%;
   margin: 4px 0 16px;
 }
-.provider-grid {
+.settings .provider-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
-.provider {
+.settings .provider {
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   padding: 18px;
@@ -221,48 +212,48 @@ input.search {
   flex-direction: column;
   gap: 8px;
 }
-.provider > header {
+.settings .provider > header {
   height: auto;
   padding: 0;
   border: 0;
 }
-.provider h3 {
+.settings .provider h3 {
   margin: 0;
   font-size: 15px;
 }
-.provider p {
+.settings .provider p {
   margin: 0;
   font-size: 13px;
 }
-.provider dl,
-dl.facts {
+.settings .provider dl,
+.settings dl.facts {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 4px 14px;
   margin: 4px 0;
   font-size: 12.5px;
 }
-dl.facts {
+.settings dl.facts {
   font-size: 13.5px;
   gap: 10px 20px;
   margin: 16px 0;
 }
-.provider dt,
-dl.facts dt {
+.settings .provider dt,
+.settings dl.facts dt {
   color: var(--fg-muted);
 }
-.provider dd,
-dl.facts dd {
+.settings .provider dd,
+.settings dl.facts dd {
   margin: 0;
   min-width: 0;
 }
-.row {
+.settings .row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 6px;
 }
-ul.plain {
+.settings ul.plain {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -278,14 +269,11 @@ ul.plain {
     flex-direction: row;
     flex-wrap: wrap;
   }
-  .provider-grid {
+  .settings .provider-grid {
     grid-template-columns: 1fr;
   }
   .settings table {
     display: block;
     overflow-x: auto;
-  }
-  .top-nav span {
-    display: none;
   }
 }

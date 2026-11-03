@@ -9,6 +9,8 @@ export function MembersSection(props: {
   organizationId: string;
   currentUserId: string;
   canManage: boolean;
+  /** Membership changes can change the viewer's own role and permissions. */
+  onChanged: () => void;
 }) {
   const { data, error, reload } = useLoad((signal) =>
     adminApi.members(props.organizationId, signal),
@@ -25,6 +27,7 @@ export function MembersSection(props: {
     try {
       await action();
       reload();
+      props.onChanged();
     } catch (error) {
       setFailure(message(error));
     } finally {
@@ -34,6 +37,10 @@ export function MembersSection(props: {
 
   function add(event: FormEvent) {
     event.preventDefault();
+    if (!email.trim() || !name.trim()) {
+      setFailure("Enter an email and a name.");
+      return;
+    }
     void run(async () => {
       await adminApi.putMember(props.organizationId, {
         email: email.trim(),
@@ -85,13 +92,17 @@ export function MembersSection(props: {
               ))}
             </select>
           </label>
-          <button className="primary" type="submit" disabled={busy}>
+          <button
+            className="primary"
+            type="submit"
+            disabled={busy || !email.trim() || !name.trim()}
+          >
             Add member
           </button>
         </form>
       )}
       {failure && <p role="alert">{failure}</p>}
-      {error && <p role="alert">{error.message}</p>}
+      {error && <p role="alert">{message(error)}</p>}
       {data && (
         <table>
           <thead>
@@ -141,14 +152,20 @@ export function MembersSection(props: {
                     {member.userId !== props.currentUserId && (
                       <button
                         disabled={busy}
-                        onClick={() =>
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Remove ${member.name} (${member.email}) from this organization?`,
+                            )
+                          )
+                            return;
                           void run(() =>
                             adminApi.removeMember(
                               props.organizationId,
                               member.userId,
                             ),
-                          )
-                        }
+                          );
+                        }}
                       >
                         Remove
                       </button>

@@ -83,7 +83,7 @@ beforeEach(() => {
   api.listEnrollments.mockResolvedValue([]);
 });
 
-it("routes flows hashes and keeps sessions as the default page", () => {
+it("parses flows hash routes, including malformed escapes", () => {
   expect(parseFlowsRoute("/flows")).toEqual({ kind: "flows" });
   expect(parseFlowsRoute("/flows/runs")).toEqual({ kind: "runs" });
   expect(parseFlowsRoute("/flows/runs/abc")).toEqual({
@@ -99,6 +99,62 @@ it("routes flows hashes and keeps sessions as the default page", () => {
     kind: "worker",
     id: "w1",
   });
+  // A malformed escape must not throw during render.
+  expect(parseFlowsRoute("/flows/f/%E0%A4%A")).toEqual({ kind: "flows" });
+});
+
+it("encodes opaque ids in flow and run links", async () => {
+  window.location.hash = "#/flows";
+  api.listFlows.mockResolvedValue([
+    {
+      id: "team/flow",
+      name: "slashed",
+      description: null,
+      fileType: "yaml",
+      createdAt: "2026-11-03T08:00:00.000Z",
+      updatedAt: "2026-11-03T08:00:00.000Z",
+      stepCount: 1,
+      runCount: 1,
+      lastRun: {
+        runId: "team/run",
+        status: "completed",
+        createdAt: "2026-11-03T08:00:00.000Z",
+      },
+    },
+  ]);
+  render(<App />);
+  const flowLink = await screen.findByRole("link", { name: "slashed" });
+  expect(flowLink).toHaveAttribute("href", "#/flows/f/team%2Fflow");
+  expect(
+    within(flowLink.closest("tr")!).getByRole("link", { name: "Completed" }),
+  ).toHaveAttribute("href", "#/flows/runs/team%2Frun");
+});
+
+it("keeps the flows list when run history fails to load", async () => {
+  window.location.hash = "#/flows";
+  api.listRuns.mockRejectedValue(new Error("runs unavailable"));
+  render(<App />);
+  expect(
+    await screen.findByRole("link", { name: "hello-selfhost" }),
+  ).toBeInTheDocument();
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "runs unavailable",
+  );
+  // The alert belongs to the page that failed, not the next one.
+  await act(async () => {
+    window.location.hash = "#/flows/workers";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  });
+  expect(await screen.findByText("No workers registered yet.")).toBeVisible();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  // Coming back is a new visit: while it loads, the old alert stays gone.
+  api.listFlows.mockReturnValue(new Promise(() => undefined));
+  await act(async () => {
+    window.location.hash = "#/flows";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  });
+  expect(await screen.findByText("Loading your flows…")).toBeVisible();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 it("makes Flows discoverable from the sessions page", async () => {
@@ -117,7 +173,7 @@ it("lists flows and run history from the API", async () => {
     await screen.findByRole("link", { name: "hello-selfhost" }),
   ).toHaveAttribute("href", "#/flows/f/f1");
   expect(
-    screen.getByText(/Deterministic smoke flow · 2 steps · YAML · 1 runs/),
+    screen.getByText(/Deterministic smoke flow · 2 steps · YAML · 1 run$/),
   ).toBeInTheDocument();
   await act(async () => {
     window.location.hash = "#/flows/runs";
@@ -237,9 +293,14 @@ it("cancels an active run and shows a failure panel for failed runs", async () =
     "href",
     "/cloud/api/v1/workflows/runs/r-active/artifacts/runner.log",
   );
+  const loadsBefore = api.getSteps.mock.calls.length;
   fireEvent.click(screen.getByRole("button", { name: "Cancel run" }));
   await vi.waitFor(() =>
     expect(api.cancelRun).toHaveBeenCalledWith("r-active"),
+  );
+  // Turning terminal stops polling but still refreshes the details once.
+  await vi.waitFor(() =>
+    expect(api.getSteps.mock.calls.length).toBeGreaterThan(loadsBefore),
   );
   unmount();
 
@@ -293,7 +354,7 @@ it("creates an enrollment token, shows it once with commands, and waits for regi
   ).toBeInTheDocument();
   expect(screen.getByText(/mode: cloudWorker/)).toBeInTheDocument();
   expect(
-    screen.getByText(/cloudUrl: https:\/\/api.example.company/),
+    screen.getByText(/cloudUrl: "https:\/\/api.example.company"/),
   ).toBeInTheDocument();
   expect(
     await screen.findByText(/Waiting for registration/),
@@ -323,6 +384,84 @@ it("lists workers with status and lets admins revoke", async () => {
   ).toBeInTheDocument();
   expect(screen.getByText("darwin / arm64 / v22")).toBeInTheDocument();
   expect(screen.getByText("Online")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Revoke" }));
   await vi.waitFor(() => expect(api.revokeWorker).toHaveBeenCalledWith("w1"));
+});
+
+it("confirms enrollment-token revocation and reports a failure", async () => {
+  window.location.hash = "#/flows/workers";
+  api.listEnrollments.mockResolvedValue([
+    {
+      id: "t1",
+      tokenHint: "sh_en_…abcd",
+      name: "box",
+      status: "active",
+      expiresAt: "2026-11-04T08:00:00.000Z",
+      createdAt: "2026-11-03T08:00:00.000Z",
+    },
+  ] as never);
+  api.revokeEnrollment.mockRejectedValue(new Error("revoke failed"));
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Revoke" }));
+  expect(confirm).toHaveBeenCalled();
+  expect(await screen.findByText("revoke failed")).toBeInTheDocument();
+});
+
+it("shows the flow even when the worker list fails", async () => {
+  window.location.hash = "#/flows/f/f1";
+  api.getFlow.mockResolvedValue({
+    flow: {
+      id: "f1",
+      name: "hello-selfhost",
+      description: null,
+      fileType: "yaml",
+      createdAt: "2026-11-03T08:00:00.000Z",
+      updatedAt: "2026-11-03T08:00:00.000Z",
+      stepCount: 1,
+      runCount: 0,
+      lastRun: null,
+      source: "version: '1.0'",
+      steps: [],
+    },
+    recentRuns: [],
+  } as never);
+  api.listWorkers.mockRejectedValue(new Error("workers unavailable"));
+  render(<App />);
+  expect(
+    await screen.findByRole("heading", { name: "hello-selfhost" }),
+  ).toBeInTheDocument();
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "workers unavailable",
+  );
+  // Only "Any online worker" is offered while the list is unavailable.
+  expect(screen.getByLabelText("Worker").querySelectorAll("option")).toHaveLength(
+    1,
+  );
+});
+
+it("hides worker revocation from non-admins on the worker page", async () => {
+  window.location.hash = "#/flows/workers/w1";
+  api.getWorker.mockResolvedValue({
+    id: "w1",
+    name: "e2e-worker",
+    displayName: "e2e-worker",
+    hostInfo: {},
+    tags: [],
+    status: "online",
+    lastSeen: null,
+    registeredAt: "2026-11-03T08:00:00.000Z",
+    currentRunId: null,
+  } as never);
+  api.listEnrollments.mockRejectedValue(
+    Object.assign(new Error("forbidden"), { status: 403 }),
+  );
+  render(<App />);
+  expect(
+    await screen.findByRole("heading", { name: "e2e-worker" }),
+  ).toBeInTheDocument();
+  await vi.waitFor(() => expect(api.listEnrollments).toHaveBeenCalled());
+  expect(
+    screen.queryByRole("button", { name: "Revoke worker" }),
+  ).not.toBeInTheDocument();
 });

@@ -68,9 +68,10 @@ export function duration(ms?: number | null): string {
   if (ms === null || ms === undefined || !Number.isFinite(ms)) return "—";
   if (ms < 1_000) return `${Math.round(ms)}ms`;
   const seconds = ms / 1_000;
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ${Math.round(seconds % 60)}s`;
+  const rounded = Math.round(seconds);
+  if (rounded < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const minutes = Math.floor(rounded / 60);
+  if (minutes < 60) return `${minutes}m ${rounded % 60}s`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
@@ -96,7 +97,10 @@ const EVENT_LABELS: Record<string, string> = {
   "relayflow.step.completed": "Step completed",
 };
 export const eventLabel = (type: string) =>
-  EVENT_LABELS[type] ?? statusLabel(type);
+  Object.hasOwn(EVENT_LABELS, type) ? EVENT_LABELS[type]! : statusLabel(type);
+
+export const plural = (count: number, one: string, many = `${one}s`) =>
+  `${count} ${count === 1 ? one : many}`;
 
 /** Hash routes keep the static SPA deployable under any prefix without rewrites. */
 export function useHashRoute(): string {
@@ -109,6 +113,16 @@ export function useHashRoute(): string {
     return () => window.removeEventListener("hashchange", update);
   }, []);
   return route;
+}
+
+/** One path segment of a hash route; ids are opaque, so always encode them. */
+export const seg = (value: string) => encodeURIComponent(value);
+
+/** POSIX shell single-quoting for copied commands. */
+export function shellQuote(value: string): string {
+  return /^[A-Za-z0-9_./:@=-]+$/.test(value)
+    ? value
+    : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 export const go = (route: string) => {
@@ -129,10 +143,14 @@ export function usePolling(
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let inFlight = false;
-    const tick = async () => {
+    // The first tick always runs: the effect re-runs when its inputs change
+    // (a run turning terminal included), and that change deserves one fresh
+    // load. Later ticks only run, or reschedule, while `active`.
+    const tick = async (first = false) => {
       if (inFlight || controller.signal.aborted) return;
+      if (!active && !first) return;
       if (document.visibilityState === "hidden") {
-        timer = setTimeout(tick, intervalMs);
+        if (active) timer = setTimeout(() => void tick(), intervalMs);
         return;
       }
       inFlight = true;
@@ -141,10 +159,10 @@ export function usePolling(
       } finally {
         inFlight = false;
         if (active && !controller.signal.aborted)
-          timer = setTimeout(tick, intervalMs);
+          timer = setTimeout(() => void tick(), intervalMs);
       }
     };
-    void tick();
+    void tick(true);
     return () => {
       controller.abort();
       if (timer) clearTimeout(timer);

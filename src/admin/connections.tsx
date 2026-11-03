@@ -13,20 +13,28 @@ export function ConnectionsSection(props: { workspaceId: string }) {
   const [notice, setNotice] = useState<Notice>(null);
   const popup = useRef<Window | null>(null);
   const timer = useRef<number | null>(null);
+  const mounted = useRef(true);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
       if (timer.current !== null) window.clearInterval(timer.current);
-    },
-    [],
-  );
+    };
+  }, []);
 
-  /** Polls while the provider window is open, then refreshes once. */
+  /**
+   * Refreshes while the provider window is open (bounded to 10 minutes),
+   * then once more when it closes.
+   */
   function watchPopup(provider: Provider) {
     if (timer.current !== null) window.clearInterval(timer.current);
+    let ticks = 0;
+    const maxTicks = (10 * 60_000) / 2_000;
     timer.current = window.setInterval(() => {
-      reload();
-      if (!popup.current || popup.current.closed) {
+      ticks += 1;
+      const closed = !popup.current || popup.current.closed;
+      if (closed || ticks > maxTicks) {
         if (timer.current !== null) window.clearInterval(timer.current);
         timer.current = null;
         reload();
@@ -34,7 +42,9 @@ export function ConnectionsSection(props: { workspaceId: string }) {
           kind: "status",
           text: `Finished connecting ${provider.displayName}? The list below shows the current status.`,
         });
+        return;
       }
+      reload();
     }, 2_000);
   }
 
@@ -46,11 +56,18 @@ export function ConnectionsSection(props: { workspaceId: string }) {
       "agent-relay-connect",
       "width=640,height=760",
     );
+    // The provider's pages must not be able to navigate this tab.
+    if (opened) opened.opener = null;
     try {
       const session = await adminApi.connectSession(
         props.workspaceId,
         provider.id,
       );
+      // Left the page while the session was being created: don't start work.
+      if (!mounted.current) {
+        opened?.close();
+        return;
+      }
       if (opened) {
         opened.location.href = session.connectLink;
         popup.current = opened;
@@ -107,7 +124,7 @@ export function ConnectionsSection(props: { workspaceId: string }) {
         onChange={(event) => setQuery(event.target.value)}
       />
       {notice && <p role={notice.kind}>{notice.text}</p>}
-      {error && <p role="alert">{error.message}</p>}
+      {error && <p role="alert">{message(error)}</p>}
       {data && !data.canManage && (
         <p className="note">
           Only organization owners and admins can connect or configure
@@ -299,7 +316,7 @@ function OAuthAppForm(props: {
     try {
       await adminApi.putOAuthApp(props.workspaceId, provider.id, {
         clientId: clientId.trim(),
-        ...(clientSecret ? { clientSecret } : {}),
+        ...(clientSecret.trim() ? { clientSecret: clientSecret.trim() } : {}),
         scopes: isDefault ? null : list,
       });
       props.onSaved();
@@ -384,7 +401,9 @@ function ApiKeyForm(props: {
     setBusy(true);
     setFailure(null);
     const credentials = Object.fromEntries(
-      Object.entries(values).filter(([, value]) => value.trim()),
+      Object.entries(values)
+        .map(([key, value]) => [key, value.trim()] as const)
+        .filter(([, value]) => value),
     );
     try {
       await adminApi.connectApiKey(
@@ -439,7 +458,8 @@ export function CopyField(props: { value: string; label: string }) {
         onClick={() => {
           void navigator.clipboard
             ?.writeText(props.value)
-            .then(() => setCopied(true));
+            .then(() => setCopied(true))
+            .catch(() => undefined);
         }}
       >
         {copied ? "Copied" : "Copy"}

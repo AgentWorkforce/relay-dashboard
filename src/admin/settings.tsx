@@ -92,7 +92,12 @@ export function Settings(props: { section: string }) {
           </div>
         </div>
         {error && !(error instanceof SignedOut) && (
-          <p role="alert">{error.message}</p>
+          <p role="alert">
+            {error.message}{" "}
+            <button type="button" onClick={reload}>
+              Try again
+            </button>
+          </p>
         )}
         {error instanceof SignedOut && (
           <p role="alert">Taking you to sign in…</p>
@@ -151,6 +156,7 @@ export function Settings(props: { section: string }) {
                   organizationId={context.currentOrganization.id}
                   currentUserId={context.user.id}
                   canManage={manage}
+                  onChanged={reload}
                 />
               )}
             </div>
