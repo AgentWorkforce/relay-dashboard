@@ -19,4 +19,18 @@ a login or backend.
 The same arrangement applies in production at agentrelay.com/dashboard/.
 `npm run build` produces static assets; `wrangler.jsonc` is the static host config.
 
+Self-hosted images serve the SPA at `/` next to a chart-rendered
+`/runtime-config.js` (`window.__AGENT_RELAY_DASHBOARD_CONFIG__` with `appPath`,
+`apiBasePath`, `loginPath`). Build them with:
+
+```sh
+DASHBOARD_BASE_PATH=/ DASHBOARD_RUNTIME_CONFIG_URL=/runtime-config.js npm run build
+```
+
+`DASHBOARD_BASE_PATH` sets the asset base (default `/dashboard/`) and must match
+the runtime `appPath`. `DASHBOARD_RUNTIME_CONFIG_URL` adds the config script to
+`index.html`; leave it unset for hosted builds. Routes are `#/flows…`,
+`#/settings/<section>`, and query parameters for sessions, so no history
+fallback is needed.
+
 `npm run check` runs lint, tests and the production build. Apache-2.0.
