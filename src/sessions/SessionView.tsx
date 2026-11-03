@@ -28,6 +28,7 @@ import {
 } from "./model/replay-model";
 import {
   collapseHistoryCopies,
+  historyCopyTargets,
   transcriptCounts,
   withRecordedFileEdits,
 } from "./transcript-extras";
@@ -185,7 +186,16 @@ export function SessionView({
     const alias = event
       ? replayTurnAliases(initial.events, initial.turns).get(event)
       : undefined;
-    const ids = [event, alias ?? null].filter((id): id is string => !!id);
+    // A cited raw history copy is collapsed into the projected record that
+    // survives; follow it there (and to that record's turn, if any).
+    const survivor = event
+      ? historyCopyTargets(mergeReplay(initial.events, initial.turns)).get(
+          alias ?? event,
+        )
+      : undefined;
+    const ids = [event, alias, survivor].filter(
+      (id): id is string => !!id,
+    );
     const candidates = [
       hash,
       ...ids.flatMap((id) => [`message-${id}`, `cell-${id}`, `cell-${id}:0`]),

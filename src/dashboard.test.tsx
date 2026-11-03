@@ -583,3 +583,19 @@ it("opens a cited system-prompt cell's disclosure", async () => {
     await screen.findByText("You are a careful assistant."),
   ).toBeInTheDocument();
 });
+
+it("sends a citation to a collapsed history copy to the surviving prompt", async () => {
+  const scroll = vi.fn();
+  Element.prototype.scrollIntoView = scroll;
+  window.history.replaceState(
+    null,
+    "",
+    "/?session=s%2F1&source=codex&event=e1-history",
+  );
+  render(<Dashboard />);
+  await screen.findByText("loader");
+  expect(document.getElementById("message-e1-history")).toBeNull();
+  await vi.waitFor(() => expect(scroll).toHaveBeenCalled());
+  expect(scroll.mock.contexts[0]).toBe(document.getElementById("message-e1"));
+  expect(window.location.hash).toBe("");
+});
