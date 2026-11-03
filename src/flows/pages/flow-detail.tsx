@@ -53,6 +53,9 @@ export function FlowDetailPage({
         setWorkers([]);
         onError(null);
       } else {
+        // Don't keep offering (or submitting) a worker from a stale list.
+        setWorkers([]);
+        setWorkerId("");
         onError(workersResult.reason as Error);
       }
     },
