@@ -245,7 +245,7 @@ it("renders the transcript with tool calls, results, diffs, timing, and subagent
     await screen.findByRole("heading", { name: "Fix session loading" }),
   ).toBeInTheDocument();
   expect(
-    screen.getByText("Codex · https://github.com/acme/relay · main"),
+    screen.getByText("Codex · acme/relay · main"),
   ).toBeInTheDocument();
   expect(screen.getByText("7m")).toBeInTheDocument();
   expect(screen.getByText("5m")).toBeInTheDocument();

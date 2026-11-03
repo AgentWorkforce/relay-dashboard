@@ -10,7 +10,14 @@ import {
   type SessionCatalog,
   type SessionTiming,
 } from "./api";
-import { dateTime, harnessName, memberNames, type Member } from "./data";
+import {
+  dateTime,
+  harnessName,
+  memberNames,
+  promptLabel,
+  shortProject,
+  type Member,
+} from "./data";
 import { buildTranscript } from "./model/transcript-cells";
 import { mergeReplay, messageRole, resumeCommand } from "./model/replay-model";
 import {
@@ -183,14 +190,14 @@ export function SessionView({
   }
 
   const catalog = data?.catalog?.catalog ?? null;
-  const firstPrompt = cells.find((cell) => cell.kind === "user");
   const title =
-    text(catalog?.title) ??
-    (firstPrompt?.kind === "user"
-      ? firstPrompt.text.split("\n")[0]!.slice(0, 160)
-      : null) ??
-    text(replay.find((row) => row.taskTitle)?.taskTitle) ??
-    "Untitled session";
+    promptLabel(catalog?.title, 160) ??
+    promptLabel(replay.find((row) => row.taskTitle)?.taskTitle, 160) ??
+    cells
+      .filter((cell) => cell.kind === "user")
+      .map((cell) => promptLabel(cell.kind === "user" ? cell.text : null, 160))
+      .find(Boolean) ??
+    `Session · ${sessionId.slice(0, 8)}`;
   const owners = [
     ...new Set(
       replay
@@ -255,8 +262,12 @@ export function SessionView({
         <>
           <div className="session-heading">
             <h1>{title}</h1>
-            <p>
-              {[harnessName(source), project, text(catalog?.gitBranch)]
+            <p title={project ?? undefined}>
+              {[
+                harnessName(source),
+                project ? shortProject(project) : null,
+                text(catalog?.gitBranch),
+              ]
                 .filter(Boolean)
                 .join(" · ")}
             </p>

@@ -72,7 +72,7 @@ export function Dashboard() {
           )}
         </nav>
       </header>
-      <main className={route.view === "session" ? "wide" : undefined}>
+      <main className="wide">
         {error && (
           <p role="alert">
             {error instanceof SignedOut

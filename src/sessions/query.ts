@@ -3,7 +3,7 @@
 // leading `-` to negate. Free text goes to RelayHistory; tokens filter rows.
 import {
   harnessName,
-  projectName,
+  projectLabel,
   sessionActivity,
   toolKey,
   tools,
@@ -84,9 +84,12 @@ export function matchesSessionFilters(
           harnessName(row.source).toLowerCase() === v;
         break;
       case "project":
-        matches = [row.projectId, row.project?.name].some((name) =>
-          name?.toLowerCase().includes(v),
-        );
+        matches = [
+          row.projectId,
+          row.project?.name,
+          projectLabel(row)?.name,
+          projectLabel(row)?.detail,
+        ].some((name) => name?.toLowerCase().includes(v));
         break;
       case "person":
         matches = row.userIds.includes(value);
@@ -144,7 +147,9 @@ export function sessionSuggestions(
     })),
     ...[
       ...new Set(
-        rows.map(projectName).filter((value): value is string => !!value),
+        rows
+          .map((row) => projectLabel(row)?.name)
+          .filter((value): value is string => !!value),
       ),
     ]
       .sort()

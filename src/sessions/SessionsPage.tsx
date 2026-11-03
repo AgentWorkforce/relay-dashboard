@@ -9,7 +9,9 @@ import { ActivityPanel } from "./ActivityPanel";
 import {
   harnessName,
   memberNames,
-  projectName,
+  projectLabel,
+  promptLabel,
+  shortProject,
   sessionActivity,
   sessionKey,
   sessionTitle,
@@ -378,7 +380,12 @@ function SessionList({
                       <span className="snippet">{row.search.snippet}</span>
                     )}
                   </td>
-                  <td>{projectName(row) ?? "—"}</td>
+                  <td
+                    className="project-cell"
+                    title={projectLabel(row)?.detail}
+                  >
+                    {projectLabel(row)?.name ?? "—"}
+                  </td>
                   <td>
                     <span className="harness">
                       <i
@@ -508,13 +515,22 @@ function MessageSearch({
                 }}
               >
                 <span className="match-meta">
-                  {[who, match.toolName, match.taskTitle, match.projectId]
+                  {[
+                    who,
+                    match.toolName,
+                    promptLabel(match.taskTitle),
+                    match.projectId ? shortProject(match.projectId) : null,
+                  ]
                     .filter(Boolean)
                     .join(" · ")}
                   <time dateTime={match.ts}>{shortDate(match.ts)}</time>
                 </span>
                 <span className="snippet">
-                  {match.content ?? "(no text)"}
+                  {(match.actorRole === "user" || match.kind === "prompt"
+                    ? promptLabel(match.content, 600)
+                    : null) ??
+                    match.content ??
+                    "(no text)"}
                   {match.contentTruncated ? "…" : ""}
                 </span>
               </a>
