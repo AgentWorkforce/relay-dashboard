@@ -1,3 +1,6 @@
+/* Session views live under main.wide; shared class names (.tabs, .chips,
+   .search, .back, .resume) are scoped there so they don't restyle flows or
+   admin pages. */
 main.wide {
   max-width: 1200px;
 }
@@ -38,23 +41,23 @@ main.wide {
 }
 
 /* Tabs, search, filters */
-.tabs {
+main.wide .tabs {
   display: flex;
   gap: 4px;
   border-bottom: 1px solid var(--line);
   margin-bottom: 20px;
 }
-.tabs a {
+main.wide .tabs a {
   padding: 10px 14px;
   color: var(--fg-muted);
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
 }
-.tabs a[aria-current="page"] {
+main.wide .tabs a[aria-current="page"] {
   color: var(--fg);
   border-bottom-color: var(--primary);
 }
-.search input {
+main.wide .search input {
   width: 100%;
   font: inherit;
   color: var(--fg);
@@ -63,7 +66,7 @@ main.wide {
   border-radius: var(--r-xs);
   padding: 10px 12px;
 }
-.chips {
+main.wide .chips {
   list-style: none;
   display: flex;
   flex-wrap: wrap;
@@ -71,7 +74,7 @@ main.wide {
   padding: 0;
   margin: 10px 0 0;
 }
-.chips button {
+main.wide .chips button {
   padding: 2px 10px;
   font-size: 12px;
   border-radius: 999px;
@@ -294,7 +297,7 @@ main.wide {
 }
 
 /* Session detail */
-.back {
+main.wide .back {
   color: var(--fg-muted);
   font-size: 13px;
 }
@@ -342,14 +345,14 @@ main.wide {
 .subagents a {
   color: var(--primary);
 }
-.resume {
+main.wide .resume {
   display: flex;
   align-items: center;
   gap: 12px;
   margin: 0 0 24px;
   flex-wrap: wrap;
 }
-.resume code {
+main.wide .resume code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   background: var(--code-bg);
