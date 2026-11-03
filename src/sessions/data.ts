@@ -1,6 +1,9 @@
 // Session row presentation, following the hosted dashboard's
 // session-table-data.ts (labels, work status, attribution).
-import { displayUserMessage } from "./model/transcript-display";
+import {
+  displayUserMessage,
+  promptTitleText,
+} from "./model/transcript-display";
 
 export type WorkState = {
   status: "active" | "idle" | "finished";
@@ -14,7 +17,9 @@ export type SessionRow = {
   source: string;
   title: string | null;
   summary: string | null;
+  taskTitle: string | null;
   projectId: string | null;
+  projectKey: string | null;
   project: { name: string } | null;
   firstTs: string | null;
   lastTs: string | null;
@@ -87,8 +92,11 @@ export function sessionRow(value: Record<string, unknown>): SessionRow {
     sessionId: String(value.sessionId),
     source: String(value.source),
     title: text(catalog.title) ?? text(value.title),
-    summary: text(value.summary) ?? text(value.taskTitle),
+    summary: text(value.summary),
+    taskTitle: text(value.taskTitle),
     projectId: text(value.projectId),
+    projectKey:
+      catalog.projectKeyMethod === "path" ? null : text(catalog.projectKey),
     project: project ? { name: project } : null,
     firstTs: text(value.firstTs) ?? text(catalog.firstActivityAt),
     lastTs: text(value.lastTs) ?? text(catalog.lastActivityAt),
@@ -111,20 +119,93 @@ export function sessionRow(value: Record<string, unknown>): SessionRow {
   };
 }
 
-/** Generated title first, then the recorded summary, as hosted does. */
+/**
+ * A one-line label from recorded prompt text, skipping injected wrappers
+ * (system reminders, slash-command blocks, "Caveat:" preambles, AGENTS.md and
+ * environment context, pasted-content tags). Mirrors the hosted
+ * session-presentation `shortLabel`; null when nothing a person typed remains.
+ */
+export function promptLabel(value: unknown, max = 90): string | null {
+  const raw = text(value);
+  if (!raw) return null;
+  const display = displayUserMessage(
+    raw.replace(/^## My request(?: for Codex)?:\s*\n/, ""),
+  );
+  if (display.kind !== "prompt") return null;
+  const cleaned = promptTitleText(display.text)
+    .replace(
+      /<(environment_context|INSTRUCTIONS|system-reminder|user_instructions|command-name|command-message|command-args|local-command-stdout|local-command-stderr)>[\s\S]*?<\/\1>/gi,
+      "",
+    )
+    .replace(/<\/?pasted[_-]content[^>]*>/gi, "");
+  const line = cleaned
+    .split(/\r?\n/)
+    .map((part) =>
+      part
+        .replace(/^\s*#+\s*/, "")
+        // Agent Relay deliveries: "Relay message from <sender> [<id>]: <text>".
+        .replace(/^Relay message from [^:\n]+?(?:\s*\[[^\]\n]+\])?:\s*/i, "")
+        // A relayed task often opens with "Repo: owner/name." before the ask.
+        .replace(/^Repo:\s*\S+?\.?\s+(?=\S)/i, "")
+        .trim(),
+    )
+    .find(
+      (part) =>
+        part &&
+        !/^(?:<|\[Image:|AGENTS\.md instructions|Files mentioned by the user|My request:|INSTRUCTIONS|Image attachment:|Repo:|cwd[:>]|Caveat:)/i.test(
+          part,
+        ),
+    );
+  if (!line) return null;
+  let compact = line.replace(/\s+/g, " ");
+  // A long ask reads better as its first sentence than as a cut-off line.
+  const sentence = /^(.{12,}?[.!?])\s/.exec(compact)?.[1];
+  if (compact.length > max && sentence && sentence.length <= max)
+    compact = sentence;
+  return compact.length <= max
+    ? compact
+    : `${compact.slice(0, max - 3).trimEnd()}…`;
+}
+
+/** Hosted order: generated title, task title, then the recorded summary. */
 export function sessionTitle(row: SessionRow): string {
-  const summary = row.summary ? displayUserMessage(row.summary) : null;
-  const fromSummary =
-    summary?.kind === "prompt" ? summary.text.trim() : row.summary?.trim();
-  const title = row.title || fromSummary || "";
-  const line =
-    title
-      .split("\n")
-      .find((part) => part.trim())
-      ?.trim() ?? "";
-  return line.length > 140
-    ? `${line.slice(0, 139)}…`
-    : line || "Untitled session";
+  return (
+    promptLabel(row.title, 160) ??
+    promptLabel(row.taskTitle, 160) ??
+    promptLabel(row.summary, 160) ??
+    `${projectLabel(row)?.name ?? "Session"} · ${row.sessionId.slice(0, 8)}`
+  );
+}
+
+const normalizePath = (value: string) =>
+  value.replace(/\\/g, "/").replace(/\/+$/, "");
+const isLocalPath = (value: string) =>
+  /^(?:\/|~\/|[A-Za-z]:\/)/.test(normalizePath(value));
+
+/** Short project name: owner/repo for remotes, the checkout's last two folders for paths. */
+export function shortProject(value: string): string {
+  const path = normalizePath(value);
+  const remote =
+    /^(?:https?:\/\/|git@)[^/:]+[/:]([^/]+\/[^/]+?)(?:\.git)?$/.exec(path) ??
+    /^(?:github|gitlab|bitbucket)\.(?:com|org)\/([^/]+\/[^/]+?)(?:\.git)?$/i.exec(
+      path,
+    );
+  if (remote) return remote[1]!;
+  if (!isLocalPath(path)) return path;
+  // A worktree or tool folder (".claude/worktrees", ".relayflow/…") lives inside its checkout.
+  const segments = path.split("/").filter(Boolean);
+  const hidden = segments.findIndex((segment) => segment.startsWith("."));
+  const checkout = hidden > 0 ? segments.slice(0, hidden) : segments;
+  return checkout.slice(-2).join("/") || path;
+}
+
+/** Display name and full detail (for a tooltip) of a session's project. */
+export function projectLabel(
+  row: SessionRow,
+): { name: string; detail: string } | null {
+  const detail =
+    row.repoUrl ?? row.projectKey ?? row.project?.name ?? row.projectId;
+  return detail ? { name: shortProject(detail), detail } : null;
 }
 
 export const projectName = (row: SessionRow) =>

@@ -1,5 +1,5 @@
 main.wide {
-  max-width: 1080px;
+  max-width: 1200px;
 }
 .dim {
   color: var(--fg-muted);
@@ -133,7 +133,7 @@ main.wide {
   background: var(--nav-surface);
 }
 .session-cell {
-  min-width: 260px;
+  min-width: 0;
 }
 .session-cell a {
   font-weight: 500;
@@ -620,4 +620,50 @@ pre.context {
 }
 .activity-group {
   scroll-margin-top: 64px;
+}
+
+/* The session table fits its container: fixed columns, wrapped titles. */
+.session-table {
+  table-layout: fixed;
+}
+.session-table th:nth-child(1) {
+  width: 36%;
+}
+.session-table th:nth-child(2) {
+  width: 17%;
+}
+.session-table th:nth-child(3) {
+  width: 12%;
+}
+.session-table th:nth-child(4) {
+  width: 12%;
+}
+.session-table th:nth-child(5) {
+  width: 8%;
+}
+.session-table th:nth-child(6) {
+  width: 7%;
+}
+.session-table th:nth-child(7) {
+  width: 8%;
+}
+.session-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
+.session-cell {
+  min-width: 0;
+}
+.session-cell a {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.project-cell {
+  overflow-wrap: anywhere;
+}
+.harness {
+  white-space: normal;
 }
