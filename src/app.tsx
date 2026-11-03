@@ -30,8 +30,11 @@ export function App() {
     return () => window.removeEventListener("hashchange", update);
   }, []);
   const current = route(hash);
-  if (current.page === "device")
-    return <DevicePage initialUserCode={userCodeFromHash(hash)} />;
+  if (current.page === "device") {
+    const code = userCodeFromHash(hash);
+    // A different code is a different request: start the page fresh.
+    return <DevicePage key={code} initialUserCode={code} />;
+  }
   if (current.page === "flows") return <FlowsApp path={current.path} />;
   if (current.page === "settings")
     return <Settings section={current.section} />;

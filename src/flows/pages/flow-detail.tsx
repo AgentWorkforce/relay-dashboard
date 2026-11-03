@@ -20,6 +20,7 @@ export function FlowDetailPage({
   const [tab, setTab] = useState<Tab>("runs");
   const [inputs, setInputs] = useState("");
   const [workerId, setWorkerId] = useState("");
+  const [workersFailed, setWorkersFailed] = useState(false);
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [started, setStarted] = useState<string | null>(null);
@@ -43,6 +44,10 @@ export function FlowDetailPage({
         return;
       }
       setDetail(flowResult.value);
+      setWorkersFailed(
+        workersResult.status === "rejected" &&
+          (workersResult.reason as { status?: number }).status !== 403,
+      );
       if (workersResult.status === "fulfilled") {
         setWorkers(workersResult.value);
         onError(null);
@@ -163,7 +168,7 @@ export function FlowDetailPage({
             {running ? "Starting…" : runError ? "Retry Run now" : "Run now"}
           </button>
         </div>
-        {online.length === 0 && (
+        {online.length === 0 && !workersFailed && (
           <p className="note">
             No worker is online. The run will wait in the queue until one
             connects. <a href="#/flows/workers">Add a worker →</a>

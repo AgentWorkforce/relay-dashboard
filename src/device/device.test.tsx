@@ -2,7 +2,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "../app";
 import { DevicePage } from "./DevicePage";
-import { APPROVE_ENDPOINT, normalizeUserCode, userCodeFromHash } from "./api";
+import {
+  APPROVE_ENDPOINT,
+  normalizeUserCode,
+  userCodeFromHash,
+  workspaceLabel,
+} from "./api";
 
 type Call = { method: string; path: string; body: Record<string, unknown> | undefined; init: RequestInit };
 let calls: Call[] = [];
@@ -13,6 +18,8 @@ let decide: (body: Record<string, unknown>) => { status: number; body: unknown }
 });
 let lookupStatus = "pending";
 let hostName: string | null = "studio-mini";
+let approveUnauthorized = false;
+let lookupOverride: unknown = null;
 
 const lookupBody = () => ({
   user_code: "BCDF-GHJK",
@@ -29,6 +36,8 @@ beforeEach(() => {
   signedIn = true;
   lookupStatus = "pending";
   hostName = "studio-mini";
+  approveUnauthorized = false;
+  lookupOverride = null;
   decide = () => ({ status: 200, body: { status: "approved" } });
   vi.stubGlobal(
     "fetch",
@@ -54,10 +63,10 @@ beforeEach(() => {
           body = { authenticated: false };
         }
       } else if (input === APPROVE_ENDPOINT) {
-        if (!signedIn) {
+        if (!signedIn || approveUnauthorized) {
           status = 401;
         } else if (call.body?.action === "lookup") {
-          body = lookupBody();
+          body = lookupOverride ?? lookupBody();
         } else {
           ({ status, body } = decide(call.body!));
         }
@@ -132,6 +141,51 @@ it("surfaces server refusals with a readable message", async () => {
   render(<DevicePage initialUserCode="BCDF-GHJK" />);
   fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("That code was already used.");
+  // A used code can't be decided again: no Approve/Deny next to the refusal.
+  expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Deny" })).not.toBeInTheDocument();
+});
+
+it("shows a readable error for an unexpected lookup response", async () => {
+  lookupOverride = { user_code: 7 };
+  render(<DevicePage initialUserCode="BCDF-GHJK" />);
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "The sign-in server sent an unexpected response. Try again.",
+  );
+});
+
+it("keeps a typed code through sign-in when the session expires", async () => {
+  approveUnauthorized = true;
+  window.location.hash = "#/device";
+  const navigate = vi.fn();
+  render(<DevicePage initialUserCode="" navigate={navigate} />);
+  fireEvent.change(await screen.findByLabelText("Device code"), {
+    target: { value: "bcdfghjk" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+  const target = new URL(navigate.mock.calls[0]![0] as string, "https://dash.test");
+  expect(target.searchParams.get("next")).toBe("/#/device?user_code=BCDF-GHJK");
+});
+
+it("names a workspace only when it is known", () => {
+  const base = {
+    user_code: "BCDF-GHJK",
+    client_name: null,
+    desktop_host_name: null,
+    status: "pending" as const,
+    expires_at: "2026-11-03T12:10:00.000Z",
+    current_workspace_id: null,
+  };
+  const two = [
+    { id: "w1", name: "Primary", organization_name: "Acme" },
+    { id: "w2", name: "Other", organization_name: "Acme" },
+  ];
+  expect(workspaceLabel({ ...base, workspaces: two })).toBeNull();
+  expect(workspaceLabel({ ...base, workspaces: [two[0]!] })).toBe("Primary (Acme)");
+  expect(
+    workspaceLabel({ ...base, current_workspace_id: "w2", workspaces: two }),
+  ).toBe("Other (Acme)");
 });
 
 it("sends a signed-out person through login and back to this code", async () => {

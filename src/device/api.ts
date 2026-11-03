@@ -29,7 +29,18 @@ export const deviceLookupSchema = z.object({
 export type DeviceLookup = z.infer<typeof deviceLookupSchema>;
 
 export class DeviceSignedOut extends Error {}
-export class DeviceError extends Error {}
+export class DeviceError extends Error {
+  constructor(
+    message: string,
+    /** relaycontrol's error code, when the server gave one. */
+    readonly code = "",
+  ) {
+    super(message);
+  }
+}
+
+/** Refusals after which the code can no longer be approved or denied. */
+export const FINAL_ERRORS = new Set(["not_found", "expired", "already_decided"]);
 
 const MESSAGES: Record<string, string> = {
   not_found: "That code was not found.",
@@ -62,14 +73,21 @@ async function post(body: Record<string, unknown>): Promise<unknown> {
     const code = payload?.error ?? "";
     throw new DeviceError(
       MESSAGES[code] ?? payload?.message ?? "That request failed. Try again.",
+      code,
     );
   }
   return payload;
 }
 
 export const deviceApi = {
-  lookup: async (userCode: string) =>
-    deviceLookupSchema.parse(await post({ action: "lookup", user_code: userCode })),
+  lookup: async (userCode: string) => {
+    const parsed = deviceLookupSchema.safeParse(
+      await post({ action: "lookup", user_code: userCode }),
+    );
+    if (!parsed.success)
+      throw new DeviceError("The sign-in server sent an unexpected response. Try again.");
+    return parsed.data;
+  },
   decide: async (action: "approve" | "deny", userCode: string) => {
     await post({ action, user_code: userCode });
   },
@@ -100,9 +118,11 @@ export function approvalName(lookup: DeviceLookup): string {
 }
 
 export function workspaceLabel(lookup: DeviceLookup): string | null {
+  // Only a single workspace may stand in for a missing current workspace;
+  // with several, guessing could name the wrong one.
   const workspace =
     lookup.workspaces.find((item) => item.id === lookup.current_workspace_id) ??
-    lookup.workspaces[0];
+    (lookup.workspaces.length === 1 ? lookup.workspaces[0] : undefined);
   if (!workspace) return null;
   const organization = workspace.organization_name?.trim();
   if (!organization || workspace.name === organization) return workspace.name;

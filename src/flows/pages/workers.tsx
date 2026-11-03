@@ -475,6 +475,7 @@ export function WorkerDetailPage({
   const [missing, setMissing] = useState(false);
   // Same permission probe as the workers list: enrollment tokens are
   // admin-only, so only show Revoke when listing them succeeds.
+  const [revokeError, setRevokeError] = useState<string | null>(null);
   const [canAdmin, setCanAdmin] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
@@ -575,14 +576,17 @@ export function WorkerDetailPage({
                 )
               )
                 return;
+              setRevokeError(null);
               void flowsApi.revokeWorker(worker.id).then(
                 () => go("/flows/workers"),
-                (error: Error) => onError(error),
+                // Kept locally: the next successful poll clears page errors.
+                (error: Error) => setRevokeError(error.message),
               );
             }}
           >
             Revoke worker
           </button>
+          {revokeError && <p role="alert">{revokeError}</p>}
         </section>
       )}
     </>

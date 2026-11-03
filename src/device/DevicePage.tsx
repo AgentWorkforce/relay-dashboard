@@ -5,7 +5,9 @@ import { appPath, loginHref } from "../app-path";
 import {
   approvalName,
   deviceApi,
+  DeviceError,
   DeviceSignedOut,
+  FINAL_ERRORS,
   displayClientName,
   normalizeUserCode,
   workspaceLabel,
@@ -49,9 +51,18 @@ export function DevicePage(props: {
     return () => attempt.abort();
   }, []);
 
-  // Sign in first, then come back to this page with the same code.
+  // Sign in first, then come back to this page with the same code, including
+  // one typed into the form rather than carried by the link.
   useEffect(() => {
-    if (signedOut) navigate(loginHref());
+    if (!signedOut) return;
+    const code = normalizeUserCode(userCode);
+    navigate(
+      code
+        ? loginHref(
+            `${window.location.pathname}${window.location.search}#/device?user_code=${encodeURIComponent(code)}`,
+          )
+        : loginHref(),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signedOut]);
 
@@ -100,7 +111,13 @@ export function DevicePage(props: {
       setOutcome(action === "approve" ? "approved" : "denied");
     } catch (reason) {
       if (reason instanceof DeviceSignedOut) setSignedOut(true);
-      else setError(reason instanceof Error ? reason.message : "Network error. Try again.");
+      else {
+        // A used, expired or unknown code can't be decided: drop the
+        // Approve/Deny step and show only the refusal.
+        if (reason instanceof DeviceError && FINAL_ERRORS.has(reason.code))
+          setLookup(null);
+        setError(reason instanceof Error ? reason.message : "Network error. Try again.");
+      }
     } finally {
       setBusy(false);
     }
