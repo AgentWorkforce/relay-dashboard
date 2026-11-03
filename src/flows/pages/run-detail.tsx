@@ -230,8 +230,10 @@ export function RunDetailPage({
         </Tile>
         <Tile label="Status">{run.summary ?? run.status}</Tile>
         <Tile label="Ran on">
-          {run.workerName ? (
+          {run.workerName && run.workerId ? (
             <a href={`#/flows/workers/${seg(run.workerId)}`}>{run.workerName}</a>
+          ) : run.workerName ? (
+            run.workerName
           ) : run.dispatchType === "local" ? (
             "Local runtime"
           ) : (
