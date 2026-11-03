@@ -41,6 +41,16 @@ done
 require_path "$app_path" DASHBOARD_APP_PATH
 require_path "$api_base_path" DASHBOARD_API_BASE_PATH
 require_path "$login_path" DASHBOARD_LOGIN_PATH
+# The SPA's API clients call /cloud/api on their own origin (the chart routes
+# relaycontrol there); a different prefix would be written but never used.
+if [ "$api_base_path" != "/cloud/api" ]; then
+  echo "40-runtime-config: DASHBOARD_API_BASE_PATH must be /cloud/api (got: $api_base_path)" >&2
+  exit 1
+fi
+case "$public_url" in
+  "" | http://* | https://*) ;;
+  *) echo "40-runtime-config: DASHBOARD_PUBLIC_URL must be empty or an http(s) URL (got: $public_url)" >&2; exit 1 ;;
+esac
 
 tmp="${target}.tmp.$$"
 {

@@ -14,6 +14,7 @@ on:
       - "Dockerfile"
       - "docker/**"
       - "index.html"
+      - "LICENSE"
       - "package.json"
       - "package-lock.json"
       - "public/**"
@@ -41,13 +42,13 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           platforms: linux/amd64
@@ -76,17 +77,32 @@ jobs:
             -e DASHBOARD_API_BASE_PATH=/cloud/api \
             -e DASHBOARD_LOGIN_PATH=/login \
             -p 8080:8080 relay-dashboard:ci
+          ready=0
           for _ in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:8080/healthz && break
+            if curl -fsS http://127.0.0.1:8080/healthz; then ready=1; break; fi
             sleep 1
           done
+          if [ "$ready" != 1 ]; then
+            echo "dashboard never became ready on /healthz" >&2
+            exit 1
+          fi
           curl -fsS http://127.0.0.1:8080/runtime-config.js | tee /tmp/runtime-config.js
           grep -q '__AGENT_RELAY_DASHBOARD_CONFIG__' /tmp/runtime-config.js
           grep -qF 'apiBasePath: "/cloud/api"' /tmp/runtime-config.js
-          curl -fsS http://127.0.0.1:8080/ | grep -q '<div id="root"'
+          curl -fsS http://127.0.0.1:8080/ | tee /tmp/index.html | grep -q '<div id="root"'
+          # The self-host build is served at / and loads the runtime config.
+          grep -q 'src="/runtime-config.js"' /tmp/index.html
+          asset=$(grep -oE '/assets/[^"]+\.js' /tmp/index.html | head -n1)
+          test -n "$asset"
+          curl -fsS -o /dev/null -w '%{http_code} %{content_type}\n' "http://127.0.0.1:8080${asset}" | tee /tmp/asset.txt
+          grep -q '^200 .*javascript' /tmp/asset.txt
           curl -fsS http://127.0.0.1:8080/some/client/route | grep -q '<div id="root"'
-          docker logs dashboard
-          docker rm -f dashboard
+
+      - name: Show container logs
+        if: always()
+        run: |
+          docker logs dashboard || true
+          docker rm -f dashboard || true
 
   publish:
     name: Publish multi-platform image
@@ -101,7 +117,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -115,13 +131,13 @@ jobs:
           fi
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -129,7 +145,7 @@ jobs:
 
       - name: Generate image metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ env.IMAGE }}
           tags: |
@@ -143,7 +159,7 @@ jobs:
 
       - name: Build and publish image
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -157,7 +173,7 @@ jobs:
           sbom: true
 
       - name: Attest published image
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
