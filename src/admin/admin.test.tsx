@@ -173,6 +173,7 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   window.location.hash = "";
 });
@@ -340,7 +341,6 @@ it("connections: shows callback URL, configures a BYO OAuth app, and connects in
       ),
     ).toBe(true),
   );
-  open.mockRestore();
 });
 
 it("connections: API-key providers post only filled credential fields", async () => {
@@ -405,8 +405,12 @@ it("members section lets admins change roles and remove others", async () => {
     call.path.includes("/memberships")
       ? { body: {} }
       : undefined;
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<Settings section="members" />);
   const bea = (await screen.findByText("Bea")).closest("tr")!;
+  const whoami = () =>
+    calls.filter((call) => call.path === "/cloud/api/v1/auth/whoami").length;
+  const contextLoads = whoami();
   fireEvent.change(within(bea).getByLabelText("Role for b@acme.test"), {
     target: { value: "admin" },
   });
@@ -417,11 +421,14 @@ it("members section lets admins change roles and remove others", async () => {
       role: "admin",
     }),
   );
+  // A role change can change the viewer's own permissions: refresh context.
+  await waitFor(() => expect(whoami()).toBeGreaterThan(contextLoads));
   const me = screen.getByText(/\(you\)/).closest("tr")!;
   expect(
     within(me).queryByRole("button", { name: "Remove" }),
   ).not.toBeInTheDocument();
   fireEvent.click(within(bea).getByRole("button", { name: "Remove" }));
+  expect(confirm).toHaveBeenCalled();
   await waitFor(() =>
     expect(calls.find((call) => call.method === "DELETE")!.path).toBe(
       "/cloud/api/v1/organizations/o1/memberships/u2",
@@ -438,4 +445,45 @@ it("hash routes switch between sessions and settings", async () => {
   expect(
     await screen.findByRole("heading", { name: "Environment" }),
   ).toBeInTheDocument();
+});
+
+it("organization rename sends the trimmed name and reports the result", async () => {
+  extra = (call) =>
+    call.method === "PATCH" && call.path === "/cloud/api/v1/organizations/o1"
+      ? { body: { id: "o1", name: "Acme Labs" } }
+      : undefined;
+  render(<Settings section="organization" />);
+  const input = await screen.findByLabelText("Name");
+  fireEvent.change(input, { target: { value: "  Acme Labs  " } });
+  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PATCH")!.body).toEqual({
+      name: "Acme Labs",
+    }),
+  );
+  expect(await screen.findByText("Organization renamed.")).toBeInTheDocument();
+});
+
+it("organization rename shows the server's error", async () => {
+  extra = (call) =>
+    call.method === "PATCH"
+      ? { status: 409, body: { error: "conflict", message: "Name taken." } }
+      : undefined;
+  render(<Settings section="organization" />);
+  fireEvent.change(await screen.findByLabelText("Name"), {
+    target: { value: "Other" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+  expect(await screen.findByText("Name taken.")).toBeInTheDocument();
+});
+
+it("API tokens: leaving the workflow purpose resets a Never expiry", async () => {
+  render(<Settings section="tokens" />);
+  const purpose = await screen.findByLabelText("Purpose");
+  fireEvent.change(purpose, { target: { value: "workflow" } });
+  const expires = screen.getByLabelText("Expires") as HTMLSelectElement;
+  fireEvent.change(expires, { target: { value: "never" } });
+  expect(expires.value).toBe("never");
+  fireEvent.change(purpose, { target: { value: "agent-runtime" } });
+  expect(expires.value).toBe("90");
 });

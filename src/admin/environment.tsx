@@ -103,7 +103,10 @@ export function EnvironmentSection(props: {
       )}
       {failure && <p role="alert">{failure}</p>}
       {status && <p role="status">{status}</p>}
-      {error && <p role="alert">{error.message}</p>}
+      {error && <p role="alert">{message(error)}</p>}
+      {!data && !error && (
+        <p role="status">Loading environment variables…</p>
+      )}
       {data && data.length === 0 && <p>No environment variables yet.</p>}
       {data && data.length > 0 && (
         <table>

@@ -43,13 +43,12 @@ export function TokensSection(props: { workspaceId: string }) {
     setBusy(true);
     setFailure(null);
     try {
-      const never = expiry === "never" && purpose === "workflow";
       const token = await adminApi.createToken(props.workspaceId, {
         label: label.trim(),
         purpose,
-        ...(never
+        ...(expiry === "never"
           ? { neverExpires: true }
-          : { expiryDays: Number(expiry === "never" ? "90" : expiry) }),
+          : { expiryDays: Number(expiry) }),
       });
       setCreated({ label: token.label, token: token.accessToken });
       setLabel("");
@@ -93,7 +92,12 @@ export function TokensSection(props: { workspaceId: string }) {
           Purpose
           <select
             value={purpose}
-            onChange={(event) => setPurpose(event.target.value as TokenPurpose)}
+            onChange={(event) => {
+              const next = event.target.value as TokenPurpose;
+              setPurpose(next);
+              // "Never" only exists for workflow tokens.
+              if (next !== "workflow" && expiry === "never") setExpiry("90");
+            }}
           >
             {PURPOSES.map((item) => (
               <option key={item.value} value={item.value}>
@@ -135,7 +139,7 @@ export function TokensSection(props: { workspaceId: string }) {
         </div>
       )}
       {failure && <p role="alert">{failure}</p>}
-      {error && <p role="alert">{error.message}</p>}
+      {error && <p role="alert">{message(error)}</p>}
       {data && data.length === 0 && <p>No tokens yet.</p>}
       {data && data.length > 0 && (
         <table>
@@ -178,7 +182,16 @@ export function TokensSection(props: { workspaceId: string }) {
                 </td>
                 <td className="actions">
                   {token.status === "active" && (
-                    <button onClick={() => void revoke(token.id)}>
+                    <button
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Revoke token "${token.label}"? Services using it lose access.`,
+                          )
+                        )
+                          void revoke(token.id);
+                      }}
+                    >
                       Revoke
                     </button>
                   )}
