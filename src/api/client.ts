@@ -1,6 +1,6 @@
 import { accountSchema, sessionsSchema } from "./contracts";
 export class SignedOut extends Error {}
-async function read(path: string, signal: AbortSignal) {
+export async function read(path: string, signal: AbortSignal) {
   const response = await fetch(`/cloud/api${path}`, {
     signal,
     credentials: "same-origin",

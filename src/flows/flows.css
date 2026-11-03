@@ -1,0 +1,583 @@
+/* flows lane: flows, runs, and workers. Uses brand.css semantic tokens only. */
+main.flows-main {
+  max-width: 1180px;
+}
+.flows-main .flows-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+.flows-main .flows-nav {
+  position: sticky;
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.flows-main .flows-nav h4 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.flows-main .flows-nav p {
+  font-size: 12px;
+  margin: 2px 0 12px;
+}
+.flows-main .flows-nav a {
+  padding: 7px 10px;
+  border-radius: var(--r-xs);
+  color: var(--fg-muted);
+}
+.flows-main .flows-nav a:hover {
+  background: var(--nav-surface);
+}
+.flows-main .flows-nav a[aria-current="page"] {
+  background: var(--nav-surface-hover);
+  color: var(--fg);
+}
+.flows-main .flows-nav .workspace {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--fg-faint);
+}
+.flows-main .flows-content {
+  min-width: 0;
+}
+.flows-main .flows-content h1 {
+  overflow-wrap: anywhere;
+}
+.flows-main .flows-content h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 14px;
+}
+.flows-main .flows-content h3,
+.flows-main .flows-content h4 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-faint);
+  margin: 16px 0 6px;
+}
+.flows-main .back {
+  display: inline-block;
+  font-size: 13px;
+  color: var(--fg-muted);
+  margin-bottom: 8px;
+}
+.flows-main .back:hover {
+  color: var(--fg);
+}
+.flows-main a.button,
+.flows-main button.primary,
+.flows-main a.button.primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--nav-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  padding: 8px 14px;
+  white-space: nowrap;
+}
+.flows-main button.primary,
+.flows-main a.button.primary {
+  background: var(--btn-bg);
+  border-color: transparent;
+  color: var(--primary-fg);
+}
+.flows-main button.primary:hover,
+.flows-main a.button.primary:hover {
+  background: var(--btn-hover);
+}
+.flows-main button.danger {
+  color: var(--danger-fg);
+  border-color: var(--danger-bg);
+}
+.flows-main button.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.flows-main button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--fg);
+  font-weight: 500;
+}
+.flows-main .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--r-xs);
+  border: 1px solid transparent;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+.flows-main .badge-default {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--fg-muted);
+}
+.flows-main .badge-success {
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+.flows-main .badge-warning {
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+}
+.flows-main .badge-danger {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+}
+.flows-main .badge-info {
+  background: var(--info-bg);
+  color: var(--info-fg);
+}
+.flows-main .badges,
+.flows-main .chips,
+.flows-main .actions,
+.flows-main .step-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.flows-main .badges {
+  margin-top: 10px;
+}
+.flows-main .tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 20px;
+  overflow-x: auto;
+}
+.flows-main .tab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 10px 12px;
+  color: var(--fg-muted);
+}
+.flows-main .tab:hover {
+  background: none;
+  color: var(--fg);
+}
+.flows-main .tab.active {
+  color: var(--fg);
+  border-bottom-color: var(--primary);
+}
+.flows-main .count {
+  margin-left: 4px;
+  color: var(--fg-faint);
+  font-size: 12px;
+}
+.flows-main .table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 8px;
+}
+.flows-main .table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-faint);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.flows-main .table td {
+  padding: 14px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+/* `.actions` is a flex row elsewhere; in a table it must stay a cell. */
+.flows-main .table td.actions {
+  display: table-cell;
+  text-align: right;
+  white-space: nowrap;
+}
+.flows-main .table td.actions > * + * {
+  margin-left: 8px;
+}
+.flows-main .sub {
+  display: block;
+  color: var(--fg-muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+.flows-main .mono,
+.flows-main code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.flows-main .muted {
+  color: var(--fg-muted);
+}
+.flows-main .note {
+  background: var(--note-bg);
+  border-radius: var(--r-xs);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.flows-main .warning-banner {
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+  border-radius: var(--r-xs);
+  padding: 12px 14px;
+  font-weight: 500;
+}
+.flows-main .error-text {
+  display: block;
+  color: var(--danger-fg);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.flows-main .empty {
+  border: 1px dashed var(--line);
+  border-radius: var(--r-md);
+  padding: 32px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.flows-main .panel {
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  border-radius: var(--r-md);
+  padding: 18px 20px;
+  margin: 16px 0;
+}
+.flows-main .panel summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+.flows-main .panel.failure {
+  border-color: var(--danger-bg);
+}
+.flows-main pre {
+  margin: 0;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  border-radius: var(--r-xs);
+  padding: 12px 14px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.flows-main pre.source {
+  margin-top: 12px;
+  max-height: 480px;
+}
+.flows-main .danger-box {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+}
+.flows-main .runs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.flows-main .runs li {
+  border-bottom: 1px solid var(--line);
+}
+.flows-main .runs a {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 10px;
+}
+.flows-main .runs a:hover {
+  background: var(--nav-surface);
+}
+.flows-main .runs .view {
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+.flows-main .toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.flows-main select,
+.flows-main input,
+.flows-main textarea {
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  padding: 8px 10px;
+}
+.flows-main .pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 16px 0;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+.flows-main .form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 760px;
+}
+.flows-main .form label,
+.flows-main .run-now label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 500;
+}
+.flows-main .form small {
+  color: var(--fg-faint);
+  font-weight: 400;
+}
+.flows-main .code-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.flows-main .form-actions {
+  display: flex;
+  gap: 10px;
+}
+.flows-main .run-now {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px auto;
+  gap: 14px;
+  align-items: end;
+}
+.flows-main .tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+.flows-main .tile {
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+  min-width: 0;
+}
+.flows-main .tile dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-faint);
+}
+.flows-main .tile dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.flows-main .facts {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 12px 0 0;
+}
+.flows-main .facts dt {
+  color: var(--fg-muted);
+}
+.flows-main .facts dd {
+  margin: 0;
+}
+.flows-main .steps .step-detail td {
+  background: var(--nav-surface);
+}
+.flows-main .step-summary {
+  margin-bottom: 10px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+.flows-main .graph {
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+.flows-main .graph .edge {
+  fill: none;
+  stroke: var(--fg-faint);
+  stroke-width: 1.4;
+}
+.flows-main .graph rect {
+  fill: var(--surface);
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+.flows-main .graph .node-success rect {
+  fill: var(--success-bg);
+  stroke: var(--success-fg);
+}
+.flows-main .graph .node-danger rect {
+  fill: var(--danger-bg);
+  stroke: var(--danger-fg);
+}
+.flows-main .graph .node-info rect {
+  fill: var(--info-bg);
+  stroke: var(--info-fg);
+}
+.flows-main .graph .node-warning rect {
+  fill: var(--warning-bg);
+  stroke: var(--warning-fg);
+}
+.flows-main .graph .node-title {
+  fill: var(--fg);
+  font-size: 13px;
+  font-weight: 500;
+}
+.flows-main .graph .node-sub {
+  fill: var(--fg-muted);
+  font-size: 11px;
+}
+.flows-main .log {
+  border: 1px solid var(--terminal-line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.flows-main .log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--terminal-panel);
+  color: var(--terminal-fg);
+  font-size: 13px;
+}
+.flows-main .log-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.flows-main .log-body {
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
+  border-radius: 0;
+  min-height: 120px;
+  max-height: 420px;
+}
+.flows-main .split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.flows-main .split .panel {
+  margin: 0;
+}
+.flows-main .timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.flows-main .timeline .event {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  font-size: 13px;
+}
+.flows-main .timeline .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+}
+.flows-main .timeline .event-success .dot {
+  background: var(--success-fg);
+}
+.flows-main .timeline .event-danger .dot {
+  background: var(--danger-fg);
+}
+.flows-main .timeline .event-info .dot {
+  background: var(--info-fg);
+}
+.flows-main .artifacts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.flows-main .artifacts li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.flows-main .copyable {
+  margin: 10px 0;
+}
+.flows-main .copyable-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-faint);
+  margin-bottom: 4px;
+}
+.flows-main .copyable-head button {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.flows-main .danger-zone {
+  margin-top: 24px;
+}
+.flows-main .resume {
+  display: inline-flex;
+  gap: 6px;
+}
+@media (max-width: 860px) {
+  .flows-main .flows-layout,
+  .flows-main .split,
+  .flows-main .run-now {
+    grid-template-columns: 1fr;
+  }
+  .flows-main .flows-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .flows-main .flows-nav p,
+  .flows-main .flows-nav h4 {
+    display: none;
+  }
+  .flows-main .runs a {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .flows-main .runs .view,
+  .flows-main .runs time {
+    display: none;
+  }
+  .flows-main .table {
+    display: block;
+    overflow-x: auto;
+  }
+}

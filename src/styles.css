@@ -49,6 +49,21 @@ header {
 header > span {
   color: var(--fg-muted);
 }
+/* Primary navigation shared by every page header. */
+.top-nav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+}
+.top-nav a,
+.top-nav span {
+  color: var(--fg-muted);
+}
+.top-nav a:hover,
+.top-nav a[aria-current="page"] {
+  color: var(--fg);
+}
 .brand {
   display: flex;
   align-items: center;
@@ -130,11 +145,15 @@ time {
   header {
     padding: 0 20px;
   }
-  header > span {
+  header > span,
+  .top-nav span {
     max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .top-nav {
+    gap: 12px;
   }
   main {
     margin-top: 32px;
