@@ -1,11 +1,7 @@
 /* Legacy layer: above Tailwind's preflight, below its utilities (see globals.css). */
 @layer legacy {
-/* Session views live under main.wide; shared class names (.tabs, .chips,
-   .search, .back, .resume) are scoped there so they don't restyle flows or
-   admin pages. */
-main.wide {
-  max-width: 1200px;
-}
+/* Session list extras, activity, transcript. The list chrome itself is the
+   hosted sessions.module.css; colors are the shell's hosted tokens. */
 .dim {
   color: var(--fg-muted);
 }
@@ -19,10 +15,10 @@ main.wide {
   color: var(--primary);
 }
 .added {
-  color: var(--status-green);
+  color: var(--status-success);
 }
 .removed {
-  color: var(--status-red);
+  color: var(--status-danger);
 }
 .wrap {
   white-space: pre-wrap;
@@ -42,120 +38,6 @@ main.wide {
   overflow-wrap: anywhere;
 }
 
-/* Tabs, search, filters */
-main.wide .tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 20px;
-}
-main.wide .tabs a {
-  padding: 10px 14px;
-  color: var(--fg-muted);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-}
-main.wide .tabs a[aria-current="page"] {
-  color: var(--fg);
-  border-bottom-color: var(--primary);
-}
-main.wide .search input {
-  width: 100%;
-  font: inherit;
-  color: var(--fg);
-  background: var(--nav-surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r-xs);
-  padding: 10px 12px;
-}
-main.wide .chips {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 0;
-  margin: 10px 0 0;
-}
-main.wide .chips button {
-  padding: 2px 10px;
-  font-size: 12px;
-  border-radius: 999px;
-}
-.list-actions {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  margin: 16px 0;
-  flex-wrap: wrap;
-}
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.filters label {
-  display: grid;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--fg-muted);
-}
-.filters select {
-  font: inherit;
-  font-size: 13px;
-  color: var(--fg);
-  background: var(--nav-surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r-xs);
-  padding: 6px 8px;
-  max-width: 180px;
-}
-
-/* Session table */
-.table-scroll {
-  overflow-x: auto;
-}
-.session-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.session-table th {
-  text-align: left;
-  font-weight: 500;
-  color: var(--fg-muted);
-  font-size: 12px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--line);
-  white-space: nowrap;
-}
-.session-table td {
-  padding: 12px 10px;
-  border-bottom: 1px solid var(--line);
-  vertical-align: top;
-}
-.session-table tr:hover td {
-  background: var(--nav-surface);
-}
-.session-cell {
-  min-width: 0;
-}
-.session-cell a {
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-.session-cell a:hover {
-  text-decoration: underline;
-}
-.tag {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 0 6px;
-  font-size: 11px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--fg-muted);
-}
 .snippet {
   display: block;
   color: var(--fg-muted);
@@ -164,49 +46,28 @@ main.wide .chips button {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.harness {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-.harness i,
 .legend i {
   width: 8px;
   height: 8px;
   border-radius: 2px;
   display: inline-block;
 }
-.status {
-  font-size: 12px;
-  white-space: nowrap;
-}
-.status-active {
-  color: var(--primary);
-}
-.status-idle {
-  color: var(--status-yellow);
-}
-.status-finished {
-  color: var(--status-green);
-}
-
 /* Message search */
 .matches {
   list-style: none;
   padding: 0;
-  margin: 16px 0 0;
-  border-top: 1px solid var(--line);
+  margin: 0;
+  font-size: 13px;
 }
 .matches li {
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--border);
 }
 .matches a {
   display: block;
-  padding: 14px 10px;
+  padding: 12px;
 }
 .matches a:hover {
-  background: var(--nav-surface);
+  background: var(--accent);
 }
 .match-meta {
   display: flex;
@@ -241,8 +102,8 @@ main.wide .chips button {
   font-size: 12px;
 }
 .segmented button[aria-pressed="true"] {
-  background: var(--nav-surface-hover);
-  border-color: var(--primary);
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 .stats {
   display: flex;
@@ -298,39 +159,32 @@ main.wide .chips button {
   gap: 6px;
 }
 
-/* Session detail */
-main.wide .back {
-  color: var(--fg-muted);
-  font-size: 13px;
-}
-.session-heading {
-  margin: 16px 0 20px;
-}
-.session-heading h1 {
-  font-size: 24px;
-  overflow-wrap: anywhere;
-}
+/* Session detail: hosted session-overview aside (xs muted labels). */
 .overview {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 12px 20px;
-  margin: 0 0 20px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
 }
 .overview dt {
-  color: var(--fg-muted);
+  color: var(--muted-foreground);
   font-size: 12px;
+  font-weight: 500;
 }
 .overview dd {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 .subagents {
-  margin: 0 0 20px;
   display: grid;
   gap: 8px;
+  font-size: 13px;
+}
+.subagents h2 {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
 }
 .subagents ul {
   list-style: none;
@@ -346,22 +200,6 @@ main.wide .back {
 }
 .subagents a {
   color: var(--primary);
-}
-main.wide .resume {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0 0 24px;
-  flex-wrap: wrap;
-}
-main.wide .resume code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  background: var(--code-bg);
-  color: var(--code-fg);
-  padding: 6px 10px;
-  border-radius: var(--r-xs);
-  overflow-wrap: anywhere;
 }
 
 /* Transcript */
@@ -381,7 +219,7 @@ main.wide .resume code {
 .message-human {
   align-self: flex-end;
   max-width: calc(100% - 48px);
-  background: var(--nav-surface);
+  background: var(--muted);
   border-radius: 16px;
   padding: 12px 18px;
 }
@@ -433,7 +271,7 @@ main.wide .resume code {
   overflow-x: auto;
   background: var(--code-bg);
   color: var(--code-fg);
-  border-radius: var(--r-xs);
+  border-radius: 6px;
   padding: 12px;
   font-size: 12px;
 }
@@ -491,11 +329,11 @@ main.wide .resume code {
   color: var(--fg-muted);
 }
 .bullet-ok {
-  color: var(--status-green);
+  color: var(--status-success);
 }
 .bullet-failed,
 .failed-glyph {
-  color: var(--status-red);
+  color: var(--status-danger);
   font-weight: 700;
 }
 .more-lines {
@@ -542,12 +380,12 @@ pre.context {
   overflow-wrap: anywhere;
 }
 .diff-add {
-  color: var(--status-green);
-  background: color-mix(in oklab, var(--status-green) 14%, transparent);
+  color: var(--status-success);
+  background: color-mix(in oklab, var(--status-success) 14%, transparent);
 }
 .diff-del {
-  color: var(--status-red);
-  background: color-mix(in oklab, var(--status-red) 14%, transparent);
+  color: var(--status-danger);
+  background: color-mix(in oklab, var(--status-danger) 14%, transparent);
 }
 .edited-file + .edited-file {
   margin-top: 10px;
@@ -574,7 +412,7 @@ pre.context {
 }
 .truncated {
   font-size: 12px;
-  color: var(--status-yellow);
+  color: var(--status-warning);
 }
 .worked {
   font-size: 12px;

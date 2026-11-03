@@ -31,7 +31,7 @@
 }
 .settings .card code {
   font-size: 12.5px;
-  background: var(--inline-code-bg, var(--nav-surface));
+  background: var(--inline-code-bg, var(--muted));
   color: var(--inline-code-fg, var(--fg));
   padding: 1px 5px;
   border-radius: 4px;
@@ -163,7 +163,7 @@
   margin: 14px 0;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--note-bg, var(--nav-surface));
+  background: var(--note-bg, var(--muted));
   font-size: 13px;
 }
 .settings .copy {

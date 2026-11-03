@@ -527,7 +527,7 @@
 }
 .flows-main .log {
   border: 1px solid var(--terminal-line);
-  border-radius: var(--r-sm);
+  border-radius: 8px;
   overflow: hidden;
 }
 .flows-main .log-head {
