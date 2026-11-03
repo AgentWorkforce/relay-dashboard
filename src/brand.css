@@ -191,6 +191,17 @@
   --danger-bg: rgba(217, 91, 99, 0.14);
   --info-fg: var(--primary-700);
   --info-bg: rgba(74, 144, 194, 0.12);
+  /* Agent harness markers (session list, activity chart). */
+  --harness-claude: #d97745;
+  --harness-codex: #4a90e2;
+  --harness-devin: #5bb98c;
+  --harness-gemini: #8b78da;
+  --harness-cursor: #43a99a;
+  --harness-opencode: #ba9055;
+  --harness-grok: #737373;
+  --harness-muse: #c76fa8;
+  --harness-capy: #7f9c4a;
+  --harness-other: var(--fg-faint);
 }
 
 :root[data-theme="dark"] {
@@ -285,4 +296,13 @@
   --danger-bg: rgba(240, 114, 127, 0.14);
   --info-fg: #74b8e2;
   --info-bg: rgba(116, 184, 226, 0.14);
+  --harness-claude: #e58d5e;
+  --harness-codex: #74b8e2;
+  --harness-devin: #6fcf9d;
+  --harness-gemini: #a594ea;
+  --harness-cursor: #5cc2b2;
+  --harness-opencode: #d0a86c;
+  --harness-grok: #9a9a9a;
+  --harness-muse: #dc8bbe;
+  --harness-capy: #9bb963;
 }

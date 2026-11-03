@@ -102,3 +102,9 @@ it("shortens project paths and remotes, keeping the full value for tooltips", ()
     detail: "https://github.com/AgentWorkforce/relay",
   });
 });
+
+it("colors harnesses with brand.css tokens", async () => {
+  const { toolColor } = await import("./data");
+  expect(toolColor("claude-terminal")).toBe("var(--harness-claude)");
+  expect(toolColor("unknown-tool")).toBe("var(--harness-other)");
+});
