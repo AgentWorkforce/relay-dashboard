@@ -88,6 +88,7 @@ export function Dashboard() {
             Sessions
           </a>
           <a href="#/flows">Flows</a>
+          <a href="#/settings/workspace">Settings</a>
           {account && <span>{account.user.name}</span>}
         </nav>
       </header>

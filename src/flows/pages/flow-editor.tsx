@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { SignedOut } from "../../api/client";
 import { flowsApi } from "../api";
 import { go, seg } from "../format";
 
@@ -25,6 +26,7 @@ export function FlowForm({
   initial,
   submitLabel,
   onSubmit,
+  onError,
 }: {
   initial: {
     name: string;
@@ -34,6 +36,8 @@ export function FlowForm({
   };
   submitLabel: string;
   onSubmit: (value: typeof initial) => Promise<void>;
+  /** Receives an expired session, so the app can send the user to sign in. */
+  onError?: (error: Error) => void;
 }) {
   const [value, setValue] = useState(initial);
   const [busy, setBusy] = useState(false);
@@ -48,7 +52,8 @@ export function FlowForm({
     try {
       await onSubmit(value);
     } catch (caught) {
-      setError((caught as Error).message);
+      if (caught instanceof SignedOut && onError) onError(caught);
+      else setError((caught as Error).message);
     } finally {
       setBusy(false);
     }
@@ -127,7 +132,11 @@ export function FlowForm({
   );
 }
 
-export function NewFlowPage() {
+export function NewFlowPage({
+  onError,
+}: {
+  onError: (error: Error | null) => void;
+}) {
   return (
     <>
       <div className="heading">
@@ -150,6 +159,7 @@ export function NewFlowPage() {
           source: STARTER_FLOW,
         }}
         submitLabel="Save flow"
+        onError={onError}
         onSubmit={async (value) => {
           const flow = await flowsApi.createFlow({
             name: value.name,
