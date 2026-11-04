@@ -250,6 +250,38 @@ it("keeps every facet option after one is picked, counting against the other fil
   expect(facetRow("project", "relay").count).toBe("1");
 });
 
+it("pages the sidebar facets on their own and keeps earlier options", async () => {
+  const infra = {
+    ...sessions[1]!,
+    sessionId: "s3",
+    summary: "Tune infra",
+    projectId: "infra",
+    project: { name: "infra" },
+  };
+  respond(/\/sessions$/, (url) =>
+    url.searchParams.get("cursor") === "c2"
+      ? { items: [infra], members, nextCursor: null, error: false, now }
+      : url.searchParams.has("project")
+        ? { items: [sessions[0]], members, nextCursor: null, error: false, now }
+        : { items: sessions, members, nextCursor: "c2", error: false, now },
+  );
+  window.history.replaceState(null, "", "/?q=project%3Arelay");
+  render(<Dashboard />);
+  const more = await screen.findByRole("button", { name: "Load more options" });
+  expect(facetRow("project", "docs").count).toBe("1");
+  expect(
+    within(screen.getByRole("group", { name: "Filter by project" })).queryByRole(
+      "button",
+      { name: "infra" },
+    ),
+  ).toBeNull();
+  fireEvent.click(more);
+  expect(await screen.findByRole("button", { name: "infra" })).toBeInTheDocument();
+  expect(facetRow("project", "docs").count).toBe("1");
+  expect(facetRow("project", "All projects").count).toBe("3");
+  expect(screen.queryByRole("button", { name: "Load more options" })).toBeNull();
+});
+
 it("counts each facet against the others, not itself", async () => {
   window.history.replaceState(null, "", "/?q=project%3Arelay%20is%3Afinished");
   render(<Dashboard />);

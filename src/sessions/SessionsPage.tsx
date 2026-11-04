@@ -535,7 +535,8 @@ function SessionList({
   const base = useLoad(baseKey, (signal) =>
     listSessions(workspaceId, baseFilters, null, signal),
   );
-  const [facetBusy, setFacetBusy] = useState(false);
+  // The facet query whose next page is in flight (per query, not global).
+  const [facetBusy, setFacetBusy] = useState<string | null>(null);
   const [facetFailure, setFacetFailure] = useState<string | null>(null);
   const [baseAppended, setBaseAppended] = useState<{
     key: string | null;
@@ -610,9 +611,9 @@ function SessionList({
   const error = page.error ?? moreError;
 
   async function loadMoreFacets() {
-    if (!narrowed || !baseCursor || facetBusy) return;
+    if (!narrowed || !baseCursor || facetBusy === baseKey) return;
     const requestKey = baseKey;
-    setFacetBusy(true);
+    setFacetBusy(requestKey);
     setFacetFailure(null);
     try {
       const facets = await listSessions(
@@ -632,7 +633,7 @@ function SessionList({
     } catch {
       setFacetFailure(requestKey);
     } finally {
-      setFacetBusy(false);
+      setFacetBusy((current) => (current === requestKey ? null : current));
     }
   }
 
@@ -711,7 +712,7 @@ function SessionList({
                   type="button"
                   className="more-lines underline underline-offset-4 hover:text-foreground"
                   onClick={() => void loadMoreFacets()}
-                  disabled={facetBusy}
+                  disabled={facetBusy === baseKey}
                 >
                   Retry
                 </button>
@@ -719,6 +720,23 @@ function SessionList({
             </p>
           </WorkspaceViewSlot>
         )}
+      {narrowed && baseCursor && facetFailure !== baseKey && (
+        // Sidebar pages can always be continued, even after the table's last
+        // page or while an earlier sidebar page was still loading.
+        <WorkspaceViewSlot name="sidebar">
+          <p className="px-2 pb-2 text-[11px] text-muted-foreground">
+            Options cover the loaded sessions.{" "}
+            <button
+              type="button"
+              className="more-lines underline underline-offset-4 hover:text-foreground"
+              onClick={() => void loadMoreFacets()}
+              disabled={facetBusy === baseKey}
+            >
+              {facetBusy === baseKey ? "Loading…" : "Load more options"}
+            </button>
+          </p>
+        </WorkspaceViewSlot>
+      )}
       <SidebarFilters
         rows={facetRows}
         members={members}
