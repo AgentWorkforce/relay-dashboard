@@ -2,7 +2,7 @@
 // dashboard: free text goes to RelayHistory; `harness:`, `project:`, `is:`,
 // `person:`, `updated:`, and `created:` tokens filter rows (hosted applies
 // person and status in the browser too).
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -538,6 +538,11 @@ function SessionList({
   // The facet query whose next page is in flight (per query, not global).
   const [facetBusy, setFacetBusy] = useState<string | null>(null);
   const [facetFailure, setFacetFailure] = useState<string | null>(null);
+  // The facet query on screen; a page for an abandoned query is dropped.
+  const currentBaseKey = useRef(baseKey);
+  useEffect(() => {
+    currentBaseKey.current = baseKey;
+  }, [baseKey]);
   const [baseAppended, setBaseAppended] = useState<{
     key: string | null;
     rows: SessionRow[];
@@ -622,6 +627,7 @@ function SessionList({
         baseCursor,
         new AbortController().signal,
       );
+      if (currentBaseKey.current !== requestKey) return;
       setBaseAppended((current) => ({
         key: requestKey,
         rows: [
@@ -631,7 +637,7 @@ function SessionList({
         nextCursor: facets.nextCursor,
       }));
     } catch {
-      setFacetFailure(requestKey);
+      if (currentBaseKey.current === requestKey) setFacetFailure(requestKey);
     } finally {
       setFacetBusy((current) => (current === requestKey ? null : current));
     }
