@@ -1,12 +1,20 @@
 /* Shared helpers for the page stylesheets (legacy layer: above Tailwind's
    preflight, below its utilities). The shell and its tokens come from hosted
    Cloud: see globals.css and shell/. */
-/* Customer-profile logos: one variant per theme (shell/brand.tsx). */
-:root[data-theme="dark"] .brand-logo-light,
-:root:not([data-theme="dark"]) .brand-logo-dark {
-  display: none;
-}
 @layer legacy {
+  /* The one default for the solid primary button; a customer profile
+     overrides it (shell/branding.ts). */
+  :root {
+    --brand-button: #2d6a9c;
+    --brand-button-hover: #4a90c2;
+    --brand-button-border: #234969;
+    --brand-button-fg: #ffffff;
+  }
+  /* Customer-profile logos: one variant per theme (shell/brand.tsx). */
+  :root[data-theme="dark"] .brand-logo-light,
+  :root:not([data-theme="dark"]) .brand-logo-dark {
+    display: none;
+  }
   body {
     margin: 0;
     font-size: 14px;

@@ -51,7 +51,9 @@ if [ "$api_base_path" != "/cloud/api" ]; then
   exit 1
 fi
 require_line "$customer_profile" DASHBOARD_CUSTOMER_PROFILE
-case "$customer_profile" in
+# Surrounding JSON whitespace is fine; the shape check looks past it.
+profile_shape=$(printf '%s' "$customer_profile" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+case "$profile_shape" in
   "" | "{"*"}") ;;
   *) echo "40-runtime-config: DASHBOARD_CUSTOMER_PROFILE must be empty or a JSON object" >&2; exit 1 ;;
 esac

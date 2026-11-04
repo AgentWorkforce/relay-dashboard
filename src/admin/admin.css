@@ -72,15 +72,15 @@
 }
 /* ui/button default (brand primary) and destructive. */
 .settings button.primary {
-  background: var(--brand-button, #2d6a9c);
-  color: #fff;
-  border: 1.5px solid var(--brand-button-border, #234969);
+  background: var(--brand-button);
+  color: var(--brand-button-fg);
+  border: 1.5px solid var(--brand-button-border);
   border-radius: var(--radius-bubble, 10px 10px 10px 3px);
   font-size: 12px;
 }
 .settings button.primary:hover:not(:disabled) {
-  background: var(--brand-button-hover, #4a90c2);
-  color: #fff;
+  background: var(--brand-button-hover);
+  color: var(--brand-button-fg);
 }
 .settings button.danger {
   border-color: transparent;

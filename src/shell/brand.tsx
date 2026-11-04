@@ -74,12 +74,30 @@ export function BrandLockup({
         />
       </>
     );
-  if (brand.custom && brand.productName !== "Agent Relay")
+  if (brand.custom && brand.productName !== "Agent Relay") {
+    // A fixed-theme surface sets its own text color; otherwise follow the theme.
+    const tone =
+      variant === "dark"
+        ? "text-[#e8f0f7]"
+        : variant === "light"
+          ? "text-[#111827]"
+          : "text-foreground";
     return (
-      <span className="truncate text-[15px] font-semibold text-foreground">
-        {brand.productName}
-      </span>
+      <>
+        {/* A compact initial stays visible when the sidebar is collapsed. */}
+        <span
+          aria-hidden="true"
+          data-brand-initial
+          className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-[var(--nav-logo-mark,var(--primary))] text-[11px] font-semibold text-[var(--brand-button-fg,#fff)]"
+        >
+          {brand.productName.slice(0, 1).toUpperCase()}
+        </span>
+        <span className={`truncate text-[15px] font-semibold ${tone}`}>
+          {brand.productName}
+        </span>
+      </>
     );
+  }
   return (
     <>
       <LogoIcon className={markClassName} />

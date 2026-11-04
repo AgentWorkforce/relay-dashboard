@@ -95,7 +95,7 @@ export function matchesSessionFilters(
           row.project?.name,
           projectLabel(row)?.name,
           projectLabel(row)?.detail,
-        ].some((name) => name?.toLowerCase().includes(v));
+        ].some((name) => projectMatches(name, v));
         break;
       case "person":
         matches = row.userIds.includes(value);
@@ -152,18 +152,22 @@ export function sessionSuggestions(
       title: value[0]!.toUpperCase() + value.slice(1),
       section: "Status",
     })),
+    // The value is the project id the server matches exactly; the title is
+    // the label the table shows.
     ...[
-      ...new Set(
-        rows
-          .map((row) => projectLabel(row)?.name)
-          .filter((value): value is string => !!value),
+      ...new Map(
+        rows.flatMap((row) => {
+          const label = projectLabel(row)?.name;
+          const value = row.projectId || label;
+          return value ? [[value, label ?? value] as const] : [];
+        }),
       ),
     ]
-      .sort()
-      .map((value) => ({
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([value, title]) => ({
         field: "project",
         value,
-        title: value,
+        title,
         section: "Projects",
       })),
     ...members.map((member) => ({
@@ -181,6 +185,22 @@ export function sessionSuggestions(
       section: "Updated",
     })),
   ];
+}
+
+/**
+ * A project token names a project exactly: its full id or label, or its last
+ * path segment (`project:relay` for `acme/relay`), never a prefix of another
+ * name (`docs` does not select `docs-site`).
+ */
+export function projectMatches(name: string | null | undefined, value: string) {
+  if (!name) return false;
+  const candidate = name.toLowerCase().replace(/\/+$/, "");
+  const wanted = value.toLowerCase().replace(/\/+$/, "");
+  return (
+    candidate === wanted ||
+    candidate.endsWith(`/${wanted}`) ||
+    candidate.split("/").at(-1) === wanted
+  );
 }
 
 /** Replace any existing token for a single-valued field, then add this one. */
@@ -236,7 +256,7 @@ export function matchesSearchFilters(
             harnessName(match.source).toLowerCase() === v);
         break;
       case "project":
-        matches = !!match.projectId?.toLowerCase().includes(v);
+        matches = projectMatches(match.projectId, v);
         break;
       case "person":
         matches = match.userId === value;

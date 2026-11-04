@@ -220,10 +220,16 @@ it("keeps every facet option after one is picked, counting against the other fil
   expect(
     screen.queryByRole("link", { name: "Write docs" }),
   ).not.toBeInTheDocument();
-  // Facets are browser filters: the list request carries no project or source.
-  const list = [...calls].reverse().find((url) => url.pathname === base)!;
-  expect(list.searchParams.has("project")).toBe(false);
-  expect(list.searchParams.has("source")).toBe(false);
+  // Once the id is known the table asks the server for that project exactly,
+  // while the facets read the same query without project or harness.
+  await act(async () => {});
+  const lists = calls.filter((url) => url.pathname === base);
+  expect(lists.some((url) => url.searchParams.get("project") === "relay")).toBe(true);
+  expect(
+    lists.some(
+      (url) => !url.searchParams.has("project") && !url.searchParams.has("source"),
+    ),
+  ).toBe(true);
   // The project facet ignores its own selection: every project, true total.
   expect(facetRow("project", "All projects").count).toBe("2");
   expect(facetRow("project", "relay").count).toBe("1");

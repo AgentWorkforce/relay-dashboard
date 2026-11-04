@@ -154,6 +154,7 @@ export function AccountMenu({
           {branding().supportUrl && (
             <a
               href={branding().supportUrl!}
+              onClick={() => setOpen(false)}
               target="_blank"
               rel="noreferrer noopener"
               className={`${styles.item} flex items-center text-sm`}

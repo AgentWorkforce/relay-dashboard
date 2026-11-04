@@ -1,3 +1,4 @@
+import { facetFilters, serverFilters } from "./SessionsPage";
 import { expect, it } from "vitest";
 import {
   backHref,
@@ -10,6 +11,7 @@ import {
 import {
   compareDate,
   matchesSearchFilters,
+  projectMatches,
   matchesSessionFilters,
   parseSessionQuery,
   sessionSuggestions,
@@ -148,4 +150,27 @@ it("applies search-view filters to message matches", () => {
   expect(matchesSearchFilters(match, "person:u2")).toBe(false);
   expect(matchesSearchFilters(match, "-project:relay")).toBe(false);
   expect(matchesSearchFilters(match, "is:active")).toBe(true);
+});
+
+it("matches project tokens exactly, by full id or last segment", () => {
+  expect(projectMatches("acme/relay", "relay")).toBe(true);
+  expect(projectMatches("github.com/acme/relay", "acme/relay")).toBe(true);
+  expect(projectMatches("acme/relay", "ACME/RELAY")).toBe(true);
+  expect(projectMatches("docs-site", "docs")).toBe(false);
+  expect(projectMatches("acme/relay-dashboard", "relay")).toBe(false);
+  expect(projectMatches(null, "relay")).toBe(false);
+});
+
+it("sends a project to the server only as an exact project id", () => {
+  expect(serverFilters("loader project:relay")).toMatchObject({
+    q: "loader",
+    project: undefined,
+  });
+  expect(serverFilters("project:relay", new Set(["relay"])).project).toBe("relay");
+  expect(serverFilters("project:acme/relay").project).toBe("acme/relay");
+  // A harness with one source narrows on the server; aliased ones don't.
+  expect(serverFilters("harness:codex").source).toBe("codex");
+  expect(serverFilters("harness:claude").source).toBeUndefined();
+  const filters = serverFilters("x project:acme/relay harness:codex");
+  expect(facetFilters(filters)).toEqual({ ...filters, project: undefined, source: undefined });
 });

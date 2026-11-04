@@ -38,15 +38,17 @@ export const DEFAULT_BRANDING: Branding = {
 // Colors are only ever written into CSS custom properties, so accept plain
 // color syntax and nothing else (no `;`, `}`, url() or var()).
 const COLOR =
-  /^(#[0-9a-f]{3,8}|(rgb|rgba|hsl|hsla|oklch|oklab)\([0-9a-z.,%\s/+-]{1,64}\))$/i;
+  /^(#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})|(rgb|rgba|hsl|hsla|oklch|oklab)\((\s*[+-]?[0-9.]+(%|deg|turn|rad)?\s*[,/]?){3,4}\s*\))$/i;
 
 /** Same-origin path, data: image, or an http(s) URL. */
 function assetUrl(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const text = value.trim();
-  if (!text || text.length > 2048) return null;
+  // Embedded images may use most of the 64 KiB profile; links stay short.
+  if (!text || text.length > 60_000) return null;
   if (/^data:image\/(png|svg\+xml|jpeg|webp|gif|x-icon|vnd\.microsoft\.icon);/i.test(text))
     return text;
+  if (text.length > 2048) return null;
   if (/^\/(?![/\\])/.test(text)) return text;
   try {
     const url = new URL(text);
@@ -91,8 +93,36 @@ const profileSchema = z
   })
   .passthrough();
 
-const color = (value: unknown) =>
-  typeof value === "string" && COLOR.test(value.trim()) ? value.trim() : null;
+/** A color the browser accepts; anything else keeps the default token. */
+const color = (value: unknown) => {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (!COLOR.test(text)) return null;
+  if (typeof CSS !== "undefined" && typeof CSS.supports === "function" && !CSS.supports("color", text))
+    return null;
+  return text;
+};
+
+/** Dark text on a light brand color, white otherwise (hex and rgb() only). */
+export function readableOn(colorValue: string): string {
+  let rgb: number[] | null = null;
+  const hex = /^#([0-9a-f]{3,8})$/i.exec(colorValue)?.[1];
+  if (hex) {
+    const full = hex.length <= 4 ? [...hex].map((c) => c + c).join("") : hex;
+    rgb = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+  } else {
+    const parts = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(colorValue);
+    if (parts) rgb = parts.slice(1, 4).map(Number);
+  }
+  if (!rgb || rgb.some((n) => !Number.isFinite(n))) return "#ffffff";
+  const [r, g, b] = rgb.map((n) => {
+    const c = Math.min(255, n) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  // White when it has the better contrast against the color.
+  return (1.05 / (luminance + 0.05)) >= ((luminance + 0.05) / 0.05) ? "#ffffff" : "#111827";
+}
 
 /** Read a customer profile; anything unusable falls back to the default. */
 export function parseBranding(raw: unknown): Branding {
@@ -178,6 +208,7 @@ export function applyBranding(brand: Branding = branding()) {
       `--brand-button: ${brand.brandColor} !important;`,
       `--brand-button-hover: color-mix(in srgb, ${brand.brandColor} 82%, white) !important;`,
       `--brand-button-border: color-mix(in srgb, ${brand.brandColor} 75%, black) !important;`,
+      `--brand-button-fg: ${readableOn(brand.brandColor)} !important;`,
     );
   if (!rules.length) return;
   const style = document.createElement("style");

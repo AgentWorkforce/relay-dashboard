@@ -19,7 +19,7 @@ import { branding } from "../shell/branding";
 
 // Hosted app/device/_components/device-approval.tsx action buttons.
 const primaryAction =
-  "inline-flex min-h-10 items-center justify-center rounded-md border border-[var(--brand-button-border,#234969)] bg-[var(--brand-button,#2d6a9c)] px-4 text-sm font-medium text-white transition-colors hover:bg-[var(--brand-button-hover,#4a90c2)] active:bg-[var(--brand-button-border,#234969)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#80bfe5] disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex min-h-10 items-center justify-center rounded-md border border-[var(--brand-button-border)] bg-[var(--brand-button)] px-4 text-sm font-medium text-[var(--brand-button-fg)] transition-colors hover:bg-[var(--brand-button-hover)] active:bg-[var(--brand-button-border)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#80bfe5] disabled:cursor-not-allowed disabled:opacity-50";
 const secondaryAction =
   "inline-flex min-h-10 items-center justify-center rounded-md border border-[#496174] bg-transparent px-4 text-sm font-medium text-[#e8f0f7] transition-colors hover:bg-[#24394b] active:bg-[#1c3041] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#80bfe5] disabled:cursor-not-allowed disabled:opacity-50";
 

@@ -5,6 +5,7 @@ import {
   parseBranding,
   resetBrandingForTests,
   branding,
+  readableOn,
 } from "./branding";
 
 beforeEach(() => {
@@ -97,4 +98,23 @@ it("applies the title, favicon and color tokens from runtime config", () => {
   expect(css).toContain("--primary: #7c3aed !important");
   expect(css).toContain("--brand-button: #5b21b6 !important");
   expect(document.documentElement.dataset.customerBrand).toBe("");
+});
+
+it("drops colors the browser would not accept and picks readable button text", () => {
+  for (const bad of ["#12345", "#1234567", "rgb(foo)", "red", "var(--x)"])
+    expect(parseBranding({ productName: "Acme", accentColor: bad }).accentColor).toBeNull();
+  for (const good of ["#abc", "#abcd", "#7c3aed", "#7c3aedff", "rgb(91, 33, 182)", "hsl(260 80% 50%)"])
+    expect(parseBranding({ productName: "Acme", accentColor: good }).accentColor).toBe(good);
+  expect(readableOn("#ffffff")).toBe("#111827");
+  expect(readableOn("#fde047")).toBe("#111827");
+  expect(readableOn("#5b21b6")).toBe("#ffffff");
+  expect(readableOn("rgb(250, 250, 250)")).toBe("#111827");
+});
+
+it("keeps embedded images up to the profile size, but not long links", () => {
+  const logo = `data:image/png;base64,${"A".repeat(10_000)}`;
+  expect(parseBranding({ productName: "Acme", logo }).logo?.light).toBe(logo);
+  expect(
+    parseBranding({ productName: "Acme", favicon: `https://acme.example/${"a".repeat(3000)}` }).favicon,
+  ).toBeNull();
 });

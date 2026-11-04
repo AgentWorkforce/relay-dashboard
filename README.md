@@ -45,7 +45,7 @@ the SPA validates each field and ignores the ones it can't use:
 | field | effect |
 | --- | --- |
 | `productName` | Replaces "Agent Relay" in the sidebar, the device page and labels (when there is no logo, the name is shown in place of the wordmark). |
-| `title` | Document title (defaults to `productName`). |
+| `title` | Document title (defaults to `productName` when set, otherwise `Agent Relay · Dashboard`). |
 | `logo` | `{ "light": url, "dark": url }`, or one URL for both themes. Replaces the mark and wordmark. |
 | `favicon` | Favicon URL. |
 | `accentColor` | Links, focus rings and active navigation (`#hex`, `rgb()`, `hsl()`, `oklch()`). |
@@ -53,9 +53,17 @@ the SPA validates each field and ignores the ones it can't use:
 | `supportUrl` | Adds Support to the account menu and the device page (`https`, `http`, `mailto:` or a same-origin path). |
 | `poweredByAgentRelay` | `false` hides the "Powered by Agent Relay" line shown under a custom brand. |
 
-URLs may be `https`/`http`, same-origin paths or `data:image/…`. Without a
-profile (and always in the hosted build, which has no runtime config) the
-dashboard looks exactly as before. Example:
+Logo and favicon URLs may be `https`/`http`, same-origin paths or supported
+`data:image` types (PNG, SVG, JPEG, WebP, GIF or icons, up to about 60 KB).
+Colors must be `#hex`, `rgb()`, `hsl()`, `oklch()` or `oklab()` values the browser accepts; any other value keeps the default, and the
+primary button's text turns dark on a light `brandColor`. Without a profile
+(and always in the hosted build, which has no runtime config) the dashboard
+looks exactly as before.
+
+The container refuses to start when `DASHBOARD_CUSTOMER_PROFILE` is not a
+single-line JSON object or is larger than 64 KiB. A value that is shaped like
+an object but is not valid JSON starts normally with the default branding.
+Example:
 
 ```sh
 DASHBOARD_CUSTOMER_PROFILE='{"productName":"Acme Relay","logo":{"light":"https://acme.example/logo-dark-text.svg","dark":"https://acme.example/logo-light-text.svg"},"favicon":"https://acme.example/favicon.svg","accentColor":"#7c3aed","brandColor":"#5b21b6","supportUrl":"mailto:support@acme.example","poweredByAgentRelay":true}'

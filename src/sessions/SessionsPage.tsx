@@ -20,7 +20,12 @@ import {
   Zap,
 } from "lucide-react";
 import { useLoad } from "./use-load";
-import { listSessions, searchSessions, type SearchMatch } from "./api";
+import {
+  listSessions,
+  searchSessions,
+  type ListFilters,
+  type SearchMatch,
+} from "./api";
 import { ActivityPanel } from "./ActivityPanel";
 import {
   harnessName,
@@ -139,14 +144,18 @@ export function relativeTime(value: string | null, now: number) {
 type Tab = "sessions" | "activity" | "search";
 
 /**
- * Server-side filters derived from the query tokens. The session list sends
- * only free text and dates: harness, project, person and status are sidebar
- * facets, filtered in the browser so each facet keeps every option (standard
- * faceting) and its counts ignore its own selection. Project is never sent:
- * the sidebar's project values are display labels (repo, project key) that
- * RelayHistory's exact `projectId` match does not recognize.
+ * Server-side filters derived from the query tokens: free text, dates, a
+ * single unaliased harness, and a project only when the value is a full
+ * project id (one the list has seen, or an `owner/name` id), because
+ * RelayHistory matches `projectId` exactly. Short names such as `relay` are
+ * filtered in the browser. The sidebar's facet options and counts come from
+ * the same query without project and harness (`facetFilters`), so a pick
+ * never removes the other options.
  */
-export function serverFilters(q: string, view: "list" | "search" = "list") {
+export function serverFilters(
+  q: string,
+  knownProjects: ReadonlySet<string> = new Set(),
+) {
   const parsed = parseSessionQuery(q);
   const single = (field: string) => {
     const matches = parsed.filters.filter(
@@ -167,17 +176,27 @@ export function serverFilters(q: string, view: "list" | "search" = "list") {
       ? new Date(Date.parse(day) + 86_400_000).toISOString().slice(0, 10)
       : undefined;
   const harness = single("harness");
+  const project = single("project");
   return {
     q: parsed.text.trim() || undefined,
     // A harness with aliased sources (claude, claude-terminal…) is filtered in
     // the browser so the server doesn't drop the aliases.
     source:
-      view === "search" && harness && harnessSources(harness).length === 1
-        ? harness
-        : undefined,
+      harness && harnessSources(harness).length === 1 ? harness : undefined,
+    project: project && isProjectId(project, knownProjects) ? project : undefined,
     since: day && (op === ">=" || op === ">" || op === "=") ? day : undefined,
     until: day && (op === "<=" || op === "<" || op === "=") ? nextDay : undefined,
   };
+}
+
+/** A value RelayHistory can match exactly as a `projectId`. */
+function isProjectId(value: string, known: ReadonlySet<string>) {
+  return known.has(value) || value.includes("/");
+}
+
+/** The list query without the sidebar's own facets, for options and counts. */
+export function facetFilters(filters: ListFilters): ListFilters {
+  return { ...filters, source: undefined, project: undefined };
 }
 
 function useSignedOut(error: Error | null | undefined, onSignedOut: () => void) {
@@ -553,10 +572,24 @@ function SessionList({
   });
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [copyStatus, setCopyStatus] = useState("");
-  const filters = useMemo(() => serverFilters(query), [query]);
+  // Project ids seen in any page, so a facet pick can be matched exactly.
+  const [knownProjects, setKnownProjects] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const filters = useMemo(
+    () => serverFilters(query, knownProjects),
+    [query, knownProjects],
+  );
   const key = JSON.stringify([workspaceId, filters, reload]);
   const page = useLoad(key, (signal) =>
     listSessions(workspaceId, filters, null, signal),
+  );
+  // Facet options and counts ignore the project and harness picks.
+  const baseFilters = useMemo(() => facetFilters(filters), [filters]);
+  const narrowed = baseFilters.project !== filters.project || baseFilters.source !== filters.source;
+  const baseKey = narrowed ? JSON.stringify([workspaceId, baseFilters, reload, "facets"]) : null;
+  const base = useLoad(baseKey, (signal) =>
+    listSessions(workspaceId, baseFilters, null, signal),
   );
   // A load-more failure belongs to the request it was raised for.
   const moreError = moreFailure?.key === key ? moreFailure.error : null;
@@ -576,6 +609,20 @@ function SessionList({
         : [],
     [page.data, extra],
   );
+  const facetRows = useMemo(
+    () => (narrowed ? (base.data?.items ?? rows) : rows),
+    [narrowed, base.data, rows],
+  );
+  const seenProjects = useMemo(
+    () =>
+      [...rows, ...facetRows]
+        .map((row) => row.projectId)
+        .filter((id): id is string => !!id && !knownProjects.has(id)),
+    [rows, facetRows, knownProjects],
+  );
+  // Learning a project id is a one-way set update; it settles after one pass.
+  if (seenProjects.length)
+    setKnownProjects(new Set([...knownProjects, ...seenProjects]));
   const members = page.data?.members ?? [];
   const cursor = extra ? extra.nextCursor : (page.data?.nextCursor ?? null);
   const now = page.data?.now
@@ -645,7 +692,7 @@ function SessionList({
   return (
     <>
       <SidebarFilters
-        rows={rows}
+        rows={facetRows}
         members={members}
         query={query}
         onQuery={onQuery}
@@ -975,7 +1022,7 @@ function MessageSearch({
   query: string;
   onSignedOut: () => void;
 }) {
-  const filters = useMemo(() => serverFilters(query, "search"), [query]);
+  const filters = useMemo(() => serverFilters(query), [query]);
   const key = filters.q ? JSON.stringify([workspaceId, filters]) : null;
   const page = useLoad(key, (signal) =>
     searchSessions(workspaceId, filters, null, signal),
