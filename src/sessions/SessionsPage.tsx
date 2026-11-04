@@ -2,7 +2,14 @@
 // dashboard: free text goes to RelayHistory; `harness:`, `project:`, `is:`,
 // `person:`, `updated:`, and `created:` tokens filter rows (hosted applies
 // person and status in the browser too).
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -540,7 +547,8 @@ function SessionList({
   const [facetFailure, setFacetFailure] = useState<string | null>(null);
   // The facet query on screen; a page for an abandoned query is dropped.
   const currentBaseKey = useRef(baseKey);
-  useEffect(() => {
+  // A layout effect: the guard sees the committed query before any response runs.
+  useLayoutEffect(() => {
     currentBaseKey.current = baseKey;
   }, [baseKey]);
   const [baseAppended, setBaseAppended] = useState<{
