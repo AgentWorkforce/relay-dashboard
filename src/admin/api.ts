@@ -4,6 +4,8 @@ import {
   apiTokensSchema,
   codingAgentCheckSchema,
   codingAgentsSchema,
+  deviceLoginStartSchema,
+  deviceLoginStatusSchema,
   connectSessionSchema,
   createdTokenSchema,
   envVarListSchema,
@@ -153,6 +155,17 @@ export const adminApi = {
     call(`${ws(workspace)}/cloud-agents/${enc(id)}/check`, codingAgentCheckSchema, {
       method: "POST",
       body: {},
+    }),
+  /** Hosted provider-credentials/{openai,xai}-device/start; the binding cookie is httpOnly. */
+  startDeviceLogin: (workspace: string, provider: "openai" | "xai") =>
+    call(`${ws(workspace)}/provider-credentials/${provider}-device/start`, deviceLoginStartSchema, {
+      method: "POST",
+      body: {},
+    }),
+  pollDeviceLogin: (workspace: string, provider: "openai" | "xai", transactionId: string) =>
+    call(`${ws(workspace)}/provider-credentials/${provider}-device/status`, deviceLoginStatusSchema, {
+      method: "POST",
+      body: { transactionId },
     }),
   deleteAgent: (workspace: string, id: string) =>
     call(`${ws(workspace)}/cloud-agents/${enc(id)}`, null, { method: "DELETE" }),

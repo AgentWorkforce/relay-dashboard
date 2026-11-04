@@ -169,6 +169,13 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
   );
   providerIds.add("anthropic");
   providerIds.add("openai");
+  // Self-host: every provider with a subscription login (Grok too) is listed,
+  // so an unselected login reads "None selected" rather than being hidden.
+  for (const provider of data?.providers ?? []) {
+    if (provider.authTypes.some((type) => type === "oauth_token" || type === "provider_oauth")) {
+      providerIds.add(provider.id);
+    }
+  }
   const providerGroups = [...providerIds]
     .map((provider) => {
       const credentials = displayAgents.filter(
@@ -342,10 +349,15 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
                   const credentialSupportsSandbox = group.credentials.some((agent) =>
                     isHarnessSelectableAuthType(agent.authType),
                   );
-                  // An empty Claude group can still take a setup token later.
+                  // A provider that offers a subscription login (Claude setup
+                  // token, Codex or Grok device login) can take one later, even
+                  // while it holds only API keys. Do not call that "Not supported".
+                  const catalogEntry = data.providers.find((provider) => provider.id === group.id);
                   const supportsSandbox =
                     credentialSupportsSandbox ||
-                    (group.credentials.length === 0 && group.id === "anthropic");
+                    Boolean(
+                      catalogEntry?.authTypes.some((type) => type === "oauth_token" || type === "provider_oauth"),
+                    );
                   const sandboxSummary = supportsSandbox
                     ? activeSandboxCredentials.map(credentialIdentity).join(", ") || "None selected"
                     : "Not supported";
@@ -441,7 +453,11 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
                             const rowError = rowErrors[agent.id];
                             const llmActive = agent.isActive;
 
-                            const llmControl = llmActive ? (
+                            // A Codex/Grok login is the CLI's auth file, not an API key.
+                            const sandboxOnly = agent.authType === "provider_oauth";
+                            const llmControl = sandboxOnly ? (
+                              <span className="text-xs text-muted-foreground">Sandbox login only</span>
+                            ) : llmActive ? (
                               <Badge variant={isConnected(agent) ? "success" : "warning"}>
                                 {isConnected(agent) ? "Active" : "Unavailable"}
                               </Badge>
@@ -506,7 +522,9 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
                                         )}
                                       </div>
                                       <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                                        Signs in {agent.harness} in flow runs as CLAUDE_CODE_OAUTH_TOKEN.
+                                        {sandboxOnly
+                                          ? `Mounts this account's ${agent.harness} login in flow runs (0600, deleted after the run).`
+                                          : `Signs in ${agent.harness} in flow runs as CLAUDE_CODE_OAUTH_TOKEN.`}
                                       </p>
                                     </div>
 
