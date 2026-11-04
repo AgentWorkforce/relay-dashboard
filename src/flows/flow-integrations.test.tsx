@@ -45,6 +45,9 @@ afterEach(() => {
 it("reads the integrations a flow declares", () => {
   expect(requiredIntegrationIds(SOURCE)).toEqual(["github", "slack", "linear"]);
   expect(requiredIntegrationIds("version: '1.0'\nworkflows: []\n")).toEqual([]);
+  // A helper used only in the body still needs its integration.
+  const bodyOnly = `export default flow("notify", {}, async (f) => {\n  await f.slack.post({ channel: "#eng", text: "hi" });\n});\n`;
+  expect(requiredIntegrationIds(bodyOnly)).toContain("slack");
 });
 
 it("connects a missing integration just in time and shows the admin message for an unconfigured app", async () => {

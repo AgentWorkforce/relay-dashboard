@@ -146,10 +146,10 @@ export const deviceLoginStatusSchema = z.object({
 export const integrationProviderSchema = z.object({
   id: z.string(),
   displayName: z.string(),
-  authMode: z.string(),
+  authMode: z.enum(["OAUTH2", "API_KEY"]),
   configured: z.boolean(),
   adminMessage: z.string().optional(),
-  connection: z.object({ status: z.string() }).passthrough().nullable(),
+  connection: z.object({ status: z.enum(["ready", "error"]) }).passthrough().nullable(),
 }).passthrough();
 export type IntegrationProvider = z.infer<typeof integrationProviderSchema>;
 export const integrationProvidersSchema = z.object({

@@ -8,11 +8,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { adminApi } from "../admin/api";
 import type { IntegrationProvider } from "../admin/contracts";
 import { message } from "../admin/use-load";
-import { requiredFlowIntegrations } from "./flow-source-requirements";
+import { flowEffectHelperProviders, requiredFlowIntegrations } from "./flow-source-requirements";
 
 export function requiredIntegrationIds(source: string): string[] {
   try {
-    return requiredFlowIntegrations({ source, sources: [], repositoryRequired: false }).map((entry) => entry.provider);
+    // Header tools and mounts, f.human recipients, and helpers used only in the
+    // body (f.slack.post without a header flag).
+    return requiredFlowIntegrations({
+      source,
+      sources: [],
+      repositoryRequired: false,
+      requirements: { integrations: flowEffectHelperProviders(source) },
+    }).map((entry) => entry.provider);
   } catch {
     return [];
   }
@@ -25,6 +32,13 @@ export function FlowIntegrations({ source }: { source: string }) {
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   async function fetchStatus(signal?: AbortSignal) {
     const context = await adminApi.context(signal);
@@ -35,7 +49,14 @@ export function FlowIntegrations({ source }: { source: string }) {
     setWorkspaceId(result.workspaceId);
     setProviders(result.providers);
   }
-  const load = () => fetchStatus().then(apply);
+  async function refreshProviders(workspace: string) {
+    try {
+      const view = await adminApi.integrationProviders(workspace);
+      if (mounted.current) setProviders(view.providers);
+    } catch {
+      // The next tick retries.
+    }
+  }
 
   const requiredKey = required.join(",");
   useEffect(() => {
@@ -66,21 +87,27 @@ export function FlowIntegrations({ source }: { source: string }) {
     if (popup) popup.opener = null;
     try {
       const session = await adminApi.connectIntegration(workspaceId, provider.id, window.location.href);
+      // Left the page while the session was being created: start nothing.
+      if (!mounted.current) {
+        popup?.close();
+        return;
+      }
       if (popup) popup.location.href = session.connectLink;
       else window.location.assign(session.connectLink);
-      // Refresh while the provider window is open (bounded), then once more.
+      // Refresh only the providers list while the provider window is open
+      // (bounded to 10 minutes), then once more when it closes.
       let ticks = 0;
       if (timer.current !== null) window.clearInterval(timer.current);
       timer.current = window.setInterval(() => {
         ticks += 1;
-        const done = !popup || popup.closed || ticks > 300;
-        void load().catch(() => undefined);
+        const done = !popup || popup.closed || ticks > 200;
+        void refreshProviders(workspaceId);
         if (done && timer.current !== null) {
           window.clearInterval(timer.current);
           timer.current = null;
           setConnecting(null);
         }
-      }, 2_000);
+      }, 3_000);
     } catch (failure) {
       popup?.close();
       setConnecting(null);

@@ -1,4 +1,5 @@
-// Ported verbatim from AgentWorkforce/cloud packages/web/lib/flows/flow-source-requirements.ts.
+// Ported from AgentWorkforce/cloud packages/web/lib/flows/flow-source-requirements.ts, verbatim
+// except: an own-property alias lookup, and a fresh empty result per call.
 // Reads what a flow source declares it needs, without executing it.
 /**
  * What an authored flow source declares it needs, read from the header of its
@@ -37,19 +38,19 @@ const PROVIDER_ALIASES: Record<string, string> = {
 };
 
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const EMPTY: FlowSourceRequirements = { tools: [], relayfile: [], mcp: [] };
+const empty = (): FlowSourceRequirements => ({ tools: [], relayfile: [], mcp: [] });
 
 /** The Cloud integration provider a helper namespace or mount root maps to, or null if it is not one. */
 export function helperProviderId(name: string): string | null {
-  const provider = (PROVIDER_ALIASES[name] ?? name).trim().toLowerCase();
+  const provider = (Object.hasOwn(PROVIDER_ALIASES, name) ? PROVIDER_ALIASES[name]! : name).trim().toLowerCase();
   return PROVIDER_ID.test(provider) ? provider : null;
 }
 
 export function extractFlowSourceRequirements(source: string): FlowSourceRequirements {
   const header = flowHeaderObject(source);
-  if (header === null) return EMPTY;
+  if (header === null) return empty();
   const toolsEntry = objectEntries(header).find((entry) => entry.key === "tools");
-  if (!toolsEntry || !toolsEntry.value.startsWith("{")) return EMPTY;
+  if (!toolsEntry || !toolsEntry.value.startsWith("{")) return empty();
   const tools: string[] = [];
   const relayfile: string[] = [];
   const mcp: string[] = [];
