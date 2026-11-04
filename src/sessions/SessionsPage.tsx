@@ -566,7 +566,7 @@ function SessionList({
   const moreError = moreFailure?.key === key ? moreFailure.error : null;
   useSignedOut(page.error ?? moreError, onSignedOut);
   const extra = appended?.key === key ? appended : null;
-  const rows = useMemo(
+  const freshRows = useMemo(
     () =>
       page.data
         ? [
@@ -580,6 +580,11 @@ function SessionList({
         : [],
     [page.data, extra],
   );
+  // While a new query loads, keep every row on screen, including pages loaded
+  // with Older sessions (keepPrevious holds only the first page).
+  const [shownRows, setShownRows] = useState<SessionRow[]>([]);
+  if (!page.stale && freshRows !== shownRows && page.data) setShownRows(freshRows);
+  const rows = page.stale ? shownRows : freshRows;
   // Facet options and counts read every session seen for this text and date
   // query: the unnarrowed facet pages and every list page. A pick never drops
   // an option the user has already loaded.
@@ -603,13 +608,18 @@ function SessionList({
   if (sameScope) {
     if ([...latest].some(([id, row]) => seen.rows.get(id) !== row))
       setSeen({ scope: facetScope, rows: new Map([...seen.rows, ...latest]) });
-  } else if (latest.size || !page.loading) {
+  } else if (
+    (latest.size || !page.loading) &&
+    // A narrowed list waits for its facet page too, so options never thin out.
+    (!narrowed || (!base.loading && !base.stale))
+  ) {
     // A new text or date query replaces the facets once its first page is in;
     // until then the previous options stay on screen (no flash).
     setSeen({ scope: facetScope, rows: latest });
   }
   const facetRows = useMemo(() => [...seen.rows.values()], [seen]);
-  const baseCursor = narrowed
+  // No paging from a kept (stale) facet page: its cursor belongs to the old query.
+  const baseCursor = narrowed && !base.stale && !base.loading
     ? baseExtra
       ? baseExtra.nextCursor
       : (base.data?.nextCursor ?? null)
@@ -695,6 +705,18 @@ function SessionList({
     now,
     people,
   );
+  // A pick whose rows are not loaded yet (a server-filtered project) keeps the
+  // previous list on screen, dimmed, until its request returns, instead of
+  // flashing "No sessions match".
+  const [lastVisible, setLastVisible] = useState<{
+    id: string;
+    rows: SessionRow[];
+  }>({ id: "", rows: [] });
+  const visibleId = visible.map(sessionKey).join("\n");
+  if (!busy && visible.length && visibleId !== lastVisible.id)
+    setLastVisible({ id: visibleId, rows: visible });
+  const pendingPick = busy && visible.length === 0 && lastVisible.rows.length > 0;
+  const displayed = pendingPick ? lastVisible.rows : visible;
   const selectedRows = visible.filter((row) => selected.has(sessionKey(row)));
   const selectRows = (targets: SessionRow[], checked: boolean) => {
     setCopyStatus("");
@@ -721,7 +743,7 @@ function SessionList({
       setCopyStatus("Couldn’t copy the links");
     }
   }
-  const identityCount = Math.max(1, ...visible.map((row) => row.userIds.length + 1));
+  const identityCount = Math.max(1, ...displayed.map((row) => row.userIds.length + 1));
   const identityColumnWidth = 12 + 22 + (identityCount - 1) * 13;
   return (
     <>
@@ -819,15 +841,16 @@ function SessionList({
           {error instanceof SignedOut ? "Taking you to sign in…" : error.message}
         </p>
       )}
-      {busy && rows.length === 0 && !error && <SessionsSkeleton />}
-      {(!busy || rows.length > 0) && (!error || rows.length > 0) && (
+      {/* The skeleton is for the first load only; later loads keep the list. */}
+      {busy && !page.data && !error && <SessionsSkeleton />}
+      {(!busy || !!page.data) && (!error || rows.length > 0) && (
         <div
           className={styles.tableSurface}
           aria-busy={busy}
           style={{
             flex: "0 0 auto",
             // Stale rows dim slightly while the new ones load; no skeleton.
-            opacity: page.stale ? 0.6 : 1,
+            opacity: page.stale || pendingPick ? 0.6 : 1,
             transition: "opacity 150ms ease",
           }}
         >
@@ -915,7 +938,7 @@ function SessionList({
               </tr>
             </thead>
             <tbody>
-              {visible.map((row) => {
+              {displayed.map((row) => {
                 const title = sessionTitle(row);
                 const project = projectLabel(row);
                 const key = sessionActivity(row, now);

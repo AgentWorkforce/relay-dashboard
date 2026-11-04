@@ -330,6 +330,41 @@ it("keeps the sidebar and rows on screen while a filter change loads", async () 
   expect(screen.getByRole("group", { name: "Filter by project" })).toBe(sidebar);
 });
 
+it("keeps older loaded pages and shows no skeleton while a pick loads", async () => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  respond(/\/sessions$/, async (url) => {
+    if (url.searchParams.has("project")) await held;
+    if (url.searchParams.get("cursor") === "c2")
+      return { items: [sessions[1]], members, nextCursor: null, error: false, now };
+    if (url.searchParams.has("project"))
+      return { items: [sessions[1]], members, nextCursor: null, error: false, now };
+    return { items: [sessions[0]], members, nextCursor: "c2", error: false, now };
+  });
+  render(<Dashboard />);
+  await screen.findByRole("link", { name: "Fix session loading" });
+  fireEvent.click(screen.getByRole("button", { name: "Older sessions" }));
+  expect(await screen.findByRole("link", { name: "Write docs" })).toBeInTheDocument();
+  fireEvent.click(
+    within(screen.getByRole("group", { name: "Filter by project" })).getByRole(
+      "button",
+      { name: "docs" },
+    ),
+  );
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  });
+  // The older page's row stays (filtered in place); no skeleton, no empty state.
+  expect(screen.getByRole("link", { name: "Write docs" })).toBeInTheDocument();
+  expect(screen.queryByRole("status", { name: "Loading sessions…" })).toBeNull();
+  expect(screen.queryByText("No sessions match these filters.")).toBeNull();
+  await act(async () => {
+    release();
+    await held;
+  });
+  expect(await screen.findByRole("link", { name: "Write docs" })).toBeInTheDocument();
+});
+
 it("counts each facet against the others, not itself", async () => {
   window.history.replaceState(null, "", "/?q=project%3Arelay%20is%3Afinished");
   render(<Dashboard />);
