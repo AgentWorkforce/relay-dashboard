@@ -2,6 +2,8 @@ import type { z } from "zod";
 import {
   adminContextSchema,
   apiTokensSchema,
+  codingAgentCheckSchema,
+  codingAgentsSchema,
   connectSessionSchema,
   createdTokenSchema,
   envVarListSchema,
@@ -123,6 +125,37 @@ export const adminApi = {
     call(`${ws(workspace)}/integrations/${enc(provider)}`, null, {
       method: "DELETE",
     }),
+
+  codingAgents: (workspace: string, signal?: AbortSignal) =>
+    call(`${ws(workspace)}/cloud-agents`, codingAgentsSchema, { signal }),
+  putAgentApiKey: (
+    workspace: string,
+    input: { modelProvider: string; key: string; label?: string },
+  ) =>
+    call(`${ws(workspace)}/provider-credentials/byok`, null, {
+      method: "POST",
+      body: input,
+    }),
+  putAgentSetupToken: (
+    workspace: string,
+    input: { token: string; accountEmail?: string; label?: string },
+  ) =>
+    call(`${ws(workspace)}/provider-credentials/setup-token`, null, {
+      method: "POST",
+      body: input,
+    }),
+  activateAgent: (workspace: string, id: string, selection: "model" | "harness") =>
+    call(`${ws(workspace)}/cloud-agents/${enc(id)}/activate`, null, {
+      method: "POST",
+      body: { selection },
+    }),
+  checkAgent: (workspace: string, id: string) =>
+    call(`${ws(workspace)}/cloud-agents/${enc(id)}/check`, codingAgentCheckSchema, {
+      method: "POST",
+      body: {},
+    }),
+  deleteAgent: (workspace: string, id: string) =>
+    call(`${ws(workspace)}/cloud-agents/${enc(id)}`, null, { method: "DELETE" }),
 
   listTokens: async (workspace: string, signal?: AbortSignal) =>
     (

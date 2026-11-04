@@ -451,3 +451,14 @@
     min-height: 0;
   }
 }
+/* Hosted settings.module.css: Connections > Coding agents. */
+.connections {
+  border: 0;
+  padding: 0;
+}
+.credentials {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}

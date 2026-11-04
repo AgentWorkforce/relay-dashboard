@@ -129,3 +129,60 @@ export const workspacesSchema = z.object({
 export const connectSessionSchema = z.object({
   connectLink: z.string().url(),
 });
+
+/** Hosted `CloudAgent` (Settings > Connections > Coding agents). No secrets. */
+export const codingAgentSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  harness: z.string(),
+  modelProvider: z.string(),
+  authType: z.string(),
+  label: nullableText,
+  accountEmail: nullableText,
+  secretPreview: z.string(),
+  isActive: z.boolean(),
+  harnessActive: z.boolean().optional(),
+  defaultModel: nullableText,
+  status: z.string(),
+  lastAuthenticatedAt: nullableText,
+  lastCheckedAt: nullableText,
+  lastUsedAt: nullableText,
+  lastError: nullableText,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  owner: z
+    .object({
+      userId: z.string(),
+      name: nullableText,
+      email: nullableText,
+      avatarUrl: nullableText,
+    })
+    .nullable()
+    .optional(),
+});
+export type CodingAgent = z.infer<typeof codingAgentSchema>;
+
+export const codingAgentProviderSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  harness: z.string(),
+  envName: z.string(),
+  authTypes: z.array(z.string()),
+  keyPlaceholder: z.string().optional(),
+  docsUrl: z.string().optional(),
+});
+export type CodingAgentProvider = z.infer<typeof codingAgentProviderSchema>;
+
+export const codingAgentsSchema = z.object({
+  agents: z.array(codingAgentSchema),
+  providers: z.array(codingAgentProviderSchema),
+  canManage: z.boolean(),
+});
+export type CodingAgentsView = z.infer<typeof codingAgentsSchema>;
+
+export const codingAgentCheckSchema = z.object({
+  status: z.enum(["available", "unavailable", "unsupported", "error"]),
+  checkedAt: z.string(),
+  message: z.string(),
+});
+export type CodingAgentCheck = z.infer<typeof codingAgentCheckSchema>;

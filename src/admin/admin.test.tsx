@@ -293,7 +293,7 @@ it("connections: shows callback URL, configures a BYO OAuth app, and connects in
       };
     return undefined;
   };
-  render(<Settings section="connections" />);
+  render(<Settings section="integrations" />);
   expect(
     await screen.findByText(
       "https://api.example.com/api/v1/integrations/oauth/callback",
@@ -359,7 +359,7 @@ it("connections: API-key providers post only filled credential fields", async ()
     call.method === "POST" && call.path.endsWith("/integrations/posthog")
       ? { status: 201, body: {} }
       : undefined;
-  render(<Settings section="connections" />);
+  render(<Settings section="integrations" />);
   const posthog = await screen.findByRole("article", { name: "PostHog" });
   fireEvent.click(within(posthog).getByRole("button", { name: "Connect" }));
   fireEvent.change(within(posthog).getByLabelText("Personal API key"), {
