@@ -52,10 +52,19 @@ function chrome(current: ReturnType<typeof route>) {
 
 export function App() {
   const [hash, setHash] = useState(() => window.location.hash);
+  // In-app session links use pushState + popstate; re-render for the heading.
+  const [, setSearch] = useState(() => window.location.search);
   useEffect(() => {
-    const update = () => setHash(window.location.hash);
+    const update = () => {
+      setHash(window.location.hash);
+      setSearch(window.location.search);
+    };
     window.addEventListener("hashchange", update);
-    return () => window.removeEventListener("hashchange", update);
+    window.addEventListener("popstate", update);
+    return () => {
+      window.removeEventListener("hashchange", update);
+      window.removeEventListener("popstate", update);
+    };
   }, []);
   const current = route(hash);
   if (current.page === "device") {

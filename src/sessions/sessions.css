@@ -38,6 +38,9 @@
   overflow-wrap: anywhere;
 }
 
+.table-scroll {
+  overflow-x: auto;
+}
 .snippet {
   display: block;
   color: var(--fg-muted);

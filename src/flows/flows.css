@@ -149,7 +149,7 @@
 /* ui/button: outline by default, the brand primary, destructive, ghost, link. */
 .flows-main .back,
 .flows-main a.button,
-.flows-main button:not([data-slot]):not(.tab):not(.link) {
+.flows-main button:not([data-slot]):not(.tab):not(.link):not(.primary):not(.danger):not(.ghost) {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -169,7 +169,7 @@
 }
 .flows-main .back:hover,
 .flows-main a.button:hover,
-.flows-main button:not([data-slot]):not(.tab):not(.link):hover:not(:disabled) {
+.flows-main button:not([data-slot]):not(.tab):not(.link):not(.primary):not(.danger):not(.ghost):hover:not(:disabled) {
   background: var(--accent);
   color: var(--accent-foreground);
 }

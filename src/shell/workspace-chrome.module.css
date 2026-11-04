@@ -164,11 +164,6 @@
 .sidebarSlot {
   min-width: 0;
 }
-.sidebarBody:has(.sidebarSlot:not(:empty))
-  .defaultNavigation
-  > :not([data-persistent-navigation]) {
-  display: none;
-}
 .navGroup {
   display: flex;
   flex-direction: column;
@@ -423,8 +418,7 @@
 }
 .collapsedSidebar .workspaceBrand > span,
 .collapsedSidebar .sidebarRow > span,
-.collapsedSidebar .sidebarSlot,
-.collapsedSidebar .defaultNavigation {
+.collapsedSidebar .sidebarSlot {
   display: none;
 }
 .collapsedSidebar .sidebarFooter {

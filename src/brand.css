@@ -310,3 +310,9 @@
   --harness-capy: #9bb963;
 }
 }
+
+/* Outside the layer: Cloud's globals.css sets --secondary-fg for light only,
+   so keep the brand's dark value (used by load errors). */
+:root[data-theme="dark"] {
+  --secondary-fg: #f0b39f;
+}

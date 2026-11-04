@@ -5,6 +5,13 @@ import { ThemeSelector } from "./theme-selector";
 import { WorkspaceChrome } from "./workspace-chrome";
 import { AccountMenu } from "./account-menu";
 import { WorkspaceViewSlot } from "./view-slots";
+import { Shell } from "./shell";
+import { getAccount } from "../api/client";
+
+vi.mock("../api/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/client")>()),
+  getAccount: vi.fn(),
+}));
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -94,11 +101,12 @@ it("lets pages replace the heading and fill the sidebar", () => {
 });
 
 it("collapses the sidebar and remembers it", () => {
-  render(
+  const chrome = (
     <WorkspaceChrome rail="Agents" label="Sessions">
       <p>content</p>
-    </WorkspaceChrome>,
+    </WorkspaceChrome>
   );
+  const first = render(chrome);
   fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
   expect(
     window.localStorage.getItem("relay:workspace-navigation-collapsed"),
@@ -106,6 +114,24 @@ it("collapses the sidebar and remembers it", () => {
   expect(
     screen.getByRole("button", { name: "Expand sidebar" }),
   ).toHaveAttribute("aria-expanded", "false");
+  first.unmount();
+  render(chrome);
+  expect(
+    screen.getByRole("button", { name: "Expand sidebar" }),
+  ).toHaveAttribute("aria-expanded", "false");
+});
+
+it("keeps the route when skipping to content", () => {
+  window.location.hash = "#/flows";
+  render(
+    <WorkspaceChrome rail="Flows" label="Flows">
+      <p>content</p>
+    </WorkspaceChrome>,
+  );
+  fireEvent.click(screen.getByRole("link", { name: "Skip to content" }));
+  expect(window.location.hash).toBe("#/flows");
+  expect(document.activeElement).toBe(screen.getByRole("main"));
+  window.location.hash = "";
 });
 
 it("shows the account and its workspace in the account menu", () => {
@@ -115,11 +141,42 @@ it("shows the account and its workspace in the account menu", () => {
   });
   expect(trigger).toHaveTextContent("Acme");
   fireEvent.click(trigger);
-  const menu = screen.getByRole("menu", { name: "Account and workspaces" });
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+  const menu = screen.getByRole("region", { name: "Account and workspaces" });
   expect(within(menu).getByText("Workspaces")).toBeInTheDocument();
   expect(
-    within(menu).getByRole("menuitem", { name: "Manage workspace" }),
+    within(menu).getByRole("link", { name: "Manage workspace" }),
   ).toHaveAttribute("href", "#/settings/workspace");
   fireEvent.keyDown(document, { key: "Escape" });
-  expect(screen.queryByRole("menu")).toBeNull();
+  expect(screen.queryByRole("region")).toBeNull();
+});
+
+it("shows the signed-in account in the shell, and none when it fails", async () => {
+  vi.mocked(getAccount).mockResolvedValueOnce({
+    authenticated: true,
+    user: { id: "u1", name: "Khaliq Gant" },
+    currentWorkspace: { id: "w1", name: "Acme" },
+  });
+  const first = render(
+    <Shell rail="Agents" label="Sessions">
+      <p>content</p>
+    </Shell>,
+  );
+  const trigger = await screen.findByRole("button", {
+    name: "Account and workspaces: Khaliq Gant",
+  });
+  expect(trigger).toHaveTextContent("Acme");
+  first.unmount();
+
+  vi.mocked(getAccount).mockRejectedValueOnce(new Error("offline"));
+  render(
+    <Shell rail="Agents" label="Sessions">
+      <p>content</p>
+    </Shell>,
+  );
+  await act(async () => {});
+  expect(screen.getByText("content")).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: /Account and workspaces/ }),
+  ).toBeNull();
 });

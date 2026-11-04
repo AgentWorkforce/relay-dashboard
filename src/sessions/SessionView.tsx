@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Button, buttonClass, Skeleton } from "../shell/ui";
 import styles from "./sessions.module.css";
+import { HarnessIcon } from "./harness-icon";
 import { WorkspaceViewSlot } from "../shell/view-slots";
 import { SignedOut } from "../api/client";
 import { useLoad } from "./use-load";
@@ -28,7 +29,6 @@ import {
   memberNames,
   promptLabel,
   shortProject,
-  toolKey,
   type Member,
 } from "./data";
 import { buildTranscript } from "./model/transcript-cells";
@@ -263,9 +263,10 @@ export function SessionView({
   }
 
   function jumpToNextActivity() {
+    // The shell's content region scrolls, below the topbar.
     const offset =
-      (document.querySelector(".session-sticky")?.getBoundingClientRect()
-        .bottom ?? 0) + 8;
+      (document.getElementById("dashboard-content")?.getBoundingClientRect()
+        .top ?? 0) + 8;
     const groups = [
       ...document.querySelectorAll<HTMLElement>(".transcript .activity-group"),
     ];
@@ -472,15 +473,16 @@ export function SessionView({
                 >
                   {title}
                 </h1>
-                <p
+                <div
+                  role="group"
                   aria-label="Session identity"
                   className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground"
                 >
                   <span className="flex shrink-0 items-center gap-2">
-                    <HarnessMark source={source} />
+                    <HarnessIcon source={source} className="size-4" fallback={false} />
                     {harnessName(source)}
                   </span>
-                </p>
+                </div>
               </div>
               <div className="flex items-start gap-2">
                 <Button
@@ -577,6 +579,7 @@ export function SessionView({
                 </div>
               )}
               <div className="mx-auto max-w-[760px] pb-4">
+                {replay.length > 0 && (
                 <Transcript
                   cells={cells}
                   events={replay}
@@ -584,6 +587,7 @@ export function SessionView({
                   source={source}
                   onCite={(anchor) => void cite(anchor)}
                 />
+                )}
                 {data.nextCursor && (
                   <Button
                     variant="ghost"
@@ -639,28 +643,3 @@ function CopyResumeCommand({ command }: { command: string }) {
     </div>
   );
 }
-
-/** Hosted session identity row: the harness's onboarding icon. */
-function HarnessMark({ source }: { source: string }) {
-  const key = toolKey(source);
-  return KNOWN_ICONS.has(key) ? (
-    <img
-      src={`${import.meta.env.BASE_URL}onboarding-icons/${key}.svg`}
-      className="size-4"
-      alt=""
-    />
-  ) : null;
-}
-const KNOWN_ICONS = new Set([
-  "claude",
-  "codex",
-  "devin",
-  "gemini",
-  "cursor",
-  "opencode",
-  "grok",
-  "muse",
-  "capy",
-  "chatgpt",
-  "mcp",
-]);

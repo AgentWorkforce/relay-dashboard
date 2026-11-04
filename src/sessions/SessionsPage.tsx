@@ -62,6 +62,7 @@ import { useShellAccount } from "../shell/shell";
 import { Button, buttonClass, Skeleton } from "../shell/ui";
 import { WorkspaceViewSlot } from "../shell/view-slots";
 import styles from "./sessions.module.css";
+import { HarnessIcon } from "./harness-icon";
 
 // Hosted session-table-data.ts: status dot colors and harness icons.
 const STATUS_COLORS = {
@@ -69,20 +70,6 @@ const STATUS_COLORS = {
   idle: "var(--status-warning)",
   finished: "var(--status-success)",
 } as const;
-const HARNESS_ICONS = new Set([
-  "claude",
-  "codex",
-  "devin",
-  "gemini",
-  "cursor",
-  "opencode",
-  "grok",
-  "grok-bot",
-  "muse",
-  "capy",
-  "chatgpt",
-  "mcp",
-]);
 // Hosted ui/toggle.tsx (ToggleGroupItem) classes.
 const TOGGLE =
   "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-[color,box-shadow] outline-none hover:bg-muted hover:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 bg-transparent";
@@ -384,18 +371,6 @@ const STATUS_ICONS = {
   finished: CircleCheck,
 } as const;
 
-function HarnessIcon({ source, className }: { source: string; className?: string }) {
-  const key = toolKey(source);
-  return HARNESS_ICONS.has(key) ? (
-    <img
-      src={`${import.meta.env.BASE_URL}onboarding-icons/${key === "grok-bot" ? "grok" : key}.svg`}
-      alt=""
-      className={className}
-    />
-  ) : (
-    <Terminal aria-hidden="true" className={className} />
-  );
-}
 
 /** Hosted sessions-table.tsx sidebar filters: People, Status, Harness, Project. */
 function SidebarFilters({
@@ -411,12 +386,34 @@ function SidebarFilters({
   onQuery: (value: string) => void;
   now: number;
 }) {
-  const suggestions = sessionSuggestions(rows, members, now);
+  const suggestions = useMemo(
+    () => sessionSuggestions(rows, members, now),
+    [rows, members, now],
+  );
   const currentUserId = useShellAccount()?.user.id;
+  // Each option's count once per change of rows, query, or clock.
+  const counts = useMemo(() => {
+    const totals = new Map<string, number>();
+    const fields = ["person", "is", "harness", "project"];
+    for (const field of fields) {
+      const values = [
+        null,
+        ...suggestions
+          .filter((item) => item.field === field)
+          .map((item) => item.value),
+      ];
+      for (const value of values) {
+        const filter = setSessionFilter(query, field, value);
+        totals.set(
+          `${field}\u0000${value ?? ""}`,
+          rows.filter((row) => matchesSessionFilters(row, filter, now)).length,
+        );
+      }
+    }
+    return totals;
+  }, [rows, query, now, suggestions]);
   const count = (field: string, value: string | null) =>
-    rows.filter((row) =>
-      matchesSessionFilters(row, setSessionFilter(query, field, value), now),
-    ).length;
+    counts.get(`${field}\u0000${value ?? ""}`) ?? 0;
   const present = new Set(rows.map((row) => toolKey(row.source)));
   const section = (
     field: string,
@@ -610,7 +607,8 @@ function SessionList({
     people,
   );
   const selectedRows = visible.filter((row) => selected.has(sessionKey(row)));
-  const selectRows = (targets: SessionRow[], checked: boolean) =>
+  const selectRows = (targets: SessionRow[], checked: boolean) => {
+    setCopyStatus("");
     setSelected((current) => {
       const next = new Set(current);
       for (const row of targets)
@@ -618,6 +616,7 @@ function SessionList({
         else next.delete(sessionKey(row));
       return next;
     });
+  };
   async function copySelectedLinks() {
     const links = selectedRows.map(
       (row) =>
@@ -747,7 +746,7 @@ function SessionList({
                     aria-sort={
                       sort.column === column.id ? sort.direction : undefined
                     }
-                    className={`${styles.resizableHeader} h-9 px-3 text-left text-xs font-medium`}
+                    className="h-9 px-3 text-left text-xs font-medium"
                   >
                     <Button
                       variant="ghost"
@@ -777,7 +776,6 @@ function SessionList({
                         <ArrowDown aria-hidden="true" />
                       )}
                     </Button>
-                    <span className={styles.columnResizeHandle} aria-hidden="true" />
                   </th>
                 ))}
               </tr>

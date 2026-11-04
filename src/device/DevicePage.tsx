@@ -151,6 +151,17 @@ export function DevicePage(props: {
             Connect an app or device to your Agent Relay workspace. Only approve
             a sign-in you started yourself.
           </p>
+          {account && (
+            <p className="mt-3 text-sm text-[#a9bdce]">
+              Signed in as{" "}
+              <span className="font-medium text-[#e8f0f7]">
+                {account.user.name || "your account"}
+              </span>
+              {account.currentWorkspace
+                ? ` · ${account.currentWorkspace.name}`
+                : ""}
+            </p>
+          )}
         </div>
         <section
           className="rounded-xl border border-[#30485e] bg-[#182838] p-6 sm:p-8"

@@ -375,7 +375,7 @@
 }
 .page.page :global([data-slot="button"][data-variant="outline"]) {
   background: transparent;
-  border: 1px solid var(--field-border);
+  border: 1px solid var(--input);
 }
 .page.page
   :global(

@@ -29,6 +29,9 @@ function apply(preference: ThemePreference) {
   root.dataset.themePreference = preference;
   root.dataset.theme = theme;
   root.style.colorScheme = theme;
+  document
+    .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    ?.setAttribute("content", theme === "dark" ? "#08111a" : "#f9fafb");
   for (const listener of listeners) listener();
 }
 

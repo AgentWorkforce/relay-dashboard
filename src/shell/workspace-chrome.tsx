@@ -134,14 +134,58 @@ export function WorkspaceChrome({
     return () => document.body.classList.remove(airframe.airframe, s.theme);
   }, []);
 
+  const drawer = useRef<HTMLDivElement>(null);
+  // Leaving the compact layout closes the drawer, so it doesn't reopen later.
+  if (!compact && mobileNavigation) setMobileNavigation(false);
+  const navigationOpen = compact && mobileNavigation;
+  const closeDrawer = useCallback(() => {
+    setMobileNavigation(false);
+    restoreSidebarFocus();
+  }, [restoreSidebarFocus]);
+  // Any navigation (shell, page-owned or account links) closes the drawer.
   useEffect(() => {
-    if (!mobileNavigation) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileNavigation(false);
+    if (!navigationOpen) return;
+    const close = () => setMobileNavigation(false);
+    window.addEventListener("hashchange", close);
+    window.addEventListener("popstate", close);
+    return () => {
+      window.removeEventListener("hashchange", close);
+      window.removeEventListener("popstate", close);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [mobileNavigation]);
+  }, [navigationOpen]);
+  // Modal behavior: focus moves in, Tab stays inside, Escape closes.
+  useEffect(() => {
+    if (!navigationOpen) return;
+    const focusable = () =>
+      [
+        ...(drawer.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+        ) ?? []),
+      ];
+    focusable()[0]?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeDrawer();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !drawer.current?.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !drawer.current?.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [navigationOpen, closeDrawer]);
 
   const views: ViewLink[] = [
     { href: appPath(), label: "Sessions", icon: SessionsIcon, rail: "Agents" },
@@ -234,7 +278,15 @@ export function WorkspaceChrome({
         className={cn(airframe.airframe, s.theme, s.shell)}
         data-workspace-shell="cloud"
       >
-        <a href="#dashboard-content" className={s.skipLink}>
+        <a
+          href="#dashboard-content"
+          className={s.skipLink}
+          onClick={(event) => {
+            // Routes live in the hash; focus the content without navigating.
+            event.preventDefault();
+            document.getElementById("dashboard-content")?.focus();
+          }}
+        >
           Skip to content
         </a>
         <div className={s.body}>
@@ -256,7 +308,7 @@ export function WorkspaceChrome({
                   ref={navigationTrigger}
                   onClick={() => setMobileNavigation(true)}
                   aria-label="Open workspace navigation"
-                  aria-expanded={mobileNavigation}
+                  aria-expanded={navigationOpen}
                 >
                   <PanelLeft />
                 </Button>
@@ -277,19 +329,20 @@ export function WorkspaceChrome({
                 data-workspace-slot="toolbar"
               />
             </header>
-            <div id="dashboard-content" tabIndex={-1} className={s.content}>
+            <main id="dashboard-content" tabIndex={-1} className={s.content}>
               {children}
-            </div>
+            </main>
           </div>
         </div>
-        {compact && mobileNavigation && (
+        {navigationOpen && (
           <div
             className="fixed inset-0 z-50 bg-black/50"
-            onClick={() => setMobileNavigation(false)}
+            onClick={closeDrawer}
           />
         )}
-        {compact && mobileNavigation && (
+        {navigationOpen && (
           <div
+            ref={drawer}
             role="dialog"
             aria-modal="true"
             aria-label="Workspace navigation"
@@ -298,16 +351,15 @@ export function WorkspaceChrome({
               s.mobileSheet,
             )}
           >
-            <p className="sr-only">Views and filters for {workspaceName}.</p>
+            <p className="sr-only">
+              Views and filters{workspaceName ? ` for ${workspaceName}` : ""}.
+            </p>
             <Button
               variant="ghost"
               size="icon-sm"
               className="absolute top-3 right-3"
               aria-label="Close"
-              onClick={() => {
-                setMobileNavigation(false);
-                navigationTrigger.current?.focus();
-              }}
+              onClick={closeDrawer}
             >
               <X />
             </Button>

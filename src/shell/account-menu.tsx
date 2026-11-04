@@ -1,8 +1,9 @@
 // Ported from hosted Cloud (app/dashboard/_components/workspace-switcher.tsx).
 // Self-host differences: relaycontrol signs a person into one workspace and
 // has no workspace switch, create, or sign-out endpoint, so the menu lists the
-// current workspace and links to its settings; the Radix dropdown is a small
-// disclosure menu with the same classes.
+// current workspace and links to its settings. The Radix dropdown is a small
+// disclosure (no menu keyboard contract) with the same classes; on narrow
+// screens it opens above the trigger to stay inside the drawer.
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, Settings2, Users2 } from "lucide-react";
 import styles from "./workspace-switcher.module.css";
@@ -68,11 +69,17 @@ export function AccountMenu({
       setOpen(false);
       trigger.current?.focus();
     };
+    // A disclosure: it closes when focus moves elsewhere.
+    const onFocus = (event: FocusEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
     document.addEventListener("pointerdown", onPointer);
     document.addEventListener("keydown", onKey);
+    document.addEventListener("focusin", onFocus);
     return () => {
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("focusin", onFocus);
     };
   }, [open]);
 
@@ -86,7 +93,6 @@ export function AccountMenu({
         className={styles.trigger}
         aria-label={`Account and workspaces: ${userName}`}
         title={userName}
-        aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         data-state={open ? "open" : "closed"}
@@ -103,9 +109,9 @@ export function AccountMenu({
       {open && (
         <div
           id={menuId}
-          role="menu"
+          role="region"
           aria-label="Account and workspaces"
-          className={`${styles.menu} absolute bottom-0 left-full z-50 ml-3 border`}
+          className={`${styles.menu} absolute bottom-full left-0 z-50 mb-2 border min-[760px]:bottom-0 min-[760px]:left-full min-[760px]:mb-0 min-[760px]:ml-3`}
         >
           <div className={styles.account}>
             <InitialsAvatar name={userName} className={styles.accountAvatar} />
@@ -116,7 +122,6 @@ export function AccountMenu({
           <div role="separator" className={`${styles.separator} h-px`} />
           <p className={styles.heading}>Workspaces</p>
           <div
-            role="menuitem"
             aria-current="true"
             className={`${styles.item} flex items-center text-sm`}
             data-current="true"
@@ -129,7 +134,6 @@ export function AccountMenu({
           </div>
           <div role="separator" className={`${styles.separator} h-px`} />
           <a
-            role="menuitem"
             href="#/settings/members"
             className={`${styles.item} flex items-center text-sm`}
             onClick={() => setOpen(false)}
@@ -138,7 +142,6 @@ export function AccountMenu({
             Members
           </a>
           <a
-            role="menuitem"
             href="#/settings/workspace"
             className={`${styles.item} flex items-center text-sm`}
             onClick={() => setOpen(false)}

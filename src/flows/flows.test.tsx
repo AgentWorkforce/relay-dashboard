@@ -126,7 +126,7 @@ it("encodes opaque ids in flow and run links", async () => {
   const flowLink = await screen.findByRole("link", { name: "slashed" });
   expect(flowLink).toHaveAttribute("href", "#/flows/f/team%2Fflow");
   expect(
-    within(flowLink.closest("article")!).getByRole("link", { name: "Completed" }),
+    within(flowLink.closest("article")!).getByRole("link", { name: /Last run:\s*Completed/ }),
   ).toHaveAttribute("href", "#/flows/runs/team%2Frun");
 });
 

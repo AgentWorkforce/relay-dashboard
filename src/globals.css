@@ -12,6 +12,13 @@
 @custom-variant dark (&:is(.dark *, [data-theme=dark] *));
 
 :root {
+  /* Self-host: hosted references Geist variables it never loads, so it renders
+     the Tailwind default stacks. Define them as those stacks, which keeps the
+     hosted look and gives font-mono a real monospace. */
+  --font-geist-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-geist-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
   --background: #f9fafb;
   --background-deep: #eef4fb;
   --foreground: #111827;
@@ -301,11 +308,15 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-button,
-input,
-textarea,
-select {
-  font: inherit;
+/* Self-host: in the base layer (hosted has it unlayered), so Tailwind
+   utilities and the legacy page styles can set control fonts. */
+@layer base {
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
 }
 
 :focus-visible {

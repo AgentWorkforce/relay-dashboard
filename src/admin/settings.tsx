@@ -67,7 +67,10 @@ export function Settings(props: { section: string }) {
     item.label.toLowerCase().includes(filter.trim().toLowerCase()),
   );
   const groups = ["Preferences", "Workspace", "Organization"];
-  const activeLabel = visible.find((item) => item.id === active)?.label;
+  // While the context loads, head the page with the requested section.
+  const requested = SETTINGS_SECTIONS.find((item) => item.id === props.section);
+  const heading = context ? active : (requested?.id ?? active);
+  const activeLabel = SETTINGS_SECTIONS.find((item) => item.id === heading)?.label;
 
   return (
     <div className={`${s.page} settings`}>
@@ -117,7 +120,7 @@ export function Settings(props: { section: string }) {
         <div className={s.detail}>
           <header className={s.heading}>
             <h1>{activeLabel ?? "Settings"}</h1>
-            <p>{DESCRIPTIONS[active]}</p>
+            <p>{DESCRIPTIONS[heading]}</p>
           </header>
           {error && !(error instanceof SignedOut) && (
             <p role="alert">

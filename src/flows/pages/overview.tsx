@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { flowsApi, type Flow, type RunPage } from "../api";
+import { FLOWS_CHANGED, flowsApi, type Flow, type RunPage } from "../api";
 import {
   ArrowRight,
   Clock3,
@@ -155,12 +155,17 @@ export function FlowsOverview({
                                 : s.draftStatus
                             }
                           >
+                            <span className="sr-only">Last run: </span>
                             {statusLabel(flow.lastRun.status)}
                           </a>
                         ) : (
-                          <span className={s.draftStatus}>Never run</span>
+                          <span className={s.draftStatus}>
+                            <span className="sr-only">Last run: </span>
+                            Never run
+                          </span>
                         )}
                         <span className={s.lastEdited}>
+                          <span className="sr-only">Last edited </span>
                           <Time value={flow.updatedAt} />
                         </span>
                         <div className={s.flowActions}>
@@ -262,20 +267,36 @@ export function FlowsSidebar({
   runCount?: number | null;
 }) {
   const [loaded, setLoaded] = useState<Flow[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [version, setVersion] = useState(0);
   const own = given === undefined;
+  // Refresh on every route change and after any flow is saved or deleted.
+  useEffect(() => {
+    if (!own) return;
+    const refresh = () => setVersion((value) => value + 1);
+    window.addEventListener(FLOWS_CHANGED, refresh);
+    window.addEventListener("hashchange", refresh);
+    return () => {
+      window.removeEventListener(FLOWS_CHANGED, refresh);
+      window.removeEventListener("hashchange", refresh);
+    };
+  }, [own]);
   useEffect(() => {
     if (!own) return;
     const controller = new AbortController();
     flowsApi.listFlows(controller.signal).then(
       (value) => {
-        if (!controller.signal.aborted) setLoaded(value);
+        if (controller.signal.aborted) return;
+        setLoaded(value);
+        setFailed(false);
       },
       () => {
-        /* The page reports its own errors; the sidebar list is optional. */
+        // The page reports its own errors; the sidebar says the list failed.
+        if (!controller.signal.aborted) setFailed(true);
       },
     );
     return () => controller.abort();
-  }, [own]);
+  }, [own, version]);
   const flows = own ? loaded : given;
   const tabs = [
     { id: "flows", href: "#/flows", label: "Flows", count: flows ? flows.length : null },
@@ -323,7 +344,11 @@ export function FlowsSidebar({
           ))
         ) : (
           <p className={chrome.emptyResources}>
-            {flows ? "No flows added yet." : "Loading flows…"}
+            {flows
+              ? "No flows added yet."
+              : own && failed
+                ? "Couldn’t load your flows."
+                : "Loading flows…"}
           </p>
         )}
       </section>

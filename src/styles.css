@@ -23,7 +23,7 @@
   }
   /* Unstyled page controls follow hosted ui/button (outline) and ui/input;
      Tailwind utilities on hosted components still win (higher layer). */
-  button:not([data-slot]) {
+  button:not([data-slot]):not(.more-lines) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -40,11 +40,11 @@
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
   }
-  button:not([data-slot]):hover:not(:disabled) {
+  button:not([data-slot]):not(.more-lines):hover:not(:disabled) {
     background: var(--accent);
     color: var(--accent-foreground);
   }
-  button:not([data-slot]):disabled {
+  button:not([data-slot]):not(.more-lines):disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }

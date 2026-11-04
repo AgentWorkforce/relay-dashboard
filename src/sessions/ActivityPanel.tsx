@@ -142,6 +142,7 @@ export function ActivityPanel({
         )}
         {!days && !error && (
           <div role="status" aria-label="Loading activity…">
+            <span className="sr-only">Loading activity…</span>
             <Skeleton className="h-40 w-full" />
           </div>
         )}
@@ -186,8 +187,8 @@ export function ActivityPanel({
                       </div>
                     </div>
                     <span className={styles.date}>
-                      {index % labelEvery === 0 ||
-                      index === chart.rows.length - 1
+                      {/* Anchored on the last day, so labels never crowd it. */}
+                      {(chart.rows.length - 1 - index) % labelEvery === 0
                         ? shortDay(row.date)
                         : ""}
                     </span>
