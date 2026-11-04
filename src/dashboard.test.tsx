@@ -362,7 +362,12 @@ it("keeps older loaded pages and shows no skeleton while a pick loads", async ()
     release();
     await held;
   });
-  expect(await screen.findByRole("link", { name: "Write docs" })).toBeInTheDocument();
+  // The narrowed response applied and loading ended.
+  await waitFor(() =>
+    expect(
+      screen.getByRole("link", { name: "Write docs" }).closest("[aria-busy]"),
+    ).toHaveAttribute("aria-busy", "false"),
+  );
 });
 
 it("counts each facet against the others, not itself", async () => {

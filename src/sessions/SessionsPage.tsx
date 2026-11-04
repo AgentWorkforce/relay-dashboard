@@ -712,12 +712,14 @@ function SessionList({
     id: string;
     rows: SessionRow[];
   }>({ id: "", rows: [] });
+  // Every settled result is remembered, an empty one too, so the fallback
+  // is always the latest view and never an older query's rows.
   const visibleId = visible.map(sessionKey).join("\n");
-  if (!busy && visible.length && visibleId !== lastVisible.id)
+  if (!busy && visibleId !== lastVisible.id)
     setLastVisible({ id: visibleId, rows: visible });
   const pendingPick = busy && visible.length === 0 && lastVisible.rows.length > 0;
   const displayed = pendingPick ? lastVisible.rows : visible;
-  const selectedRows = visible.filter((row) => selected.has(sessionKey(row)));
+  const selectedRows = displayed.filter((row) => selected.has(sessionKey(row)));
   const selectRows = (targets: SessionRow[], checked: boolean) => {
     setCopyStatus("");
     setSelected((current) => {
@@ -879,17 +881,17 @@ function SessionList({
                     className={styles.selectionCheckbox}
                     aria-label="Select all visible sessions"
                     checked={
-                      visible.length > 0 &&
-                      selectedRows.length === visible.length
+                      displayed.length > 0 &&
+                      selectedRows.length === displayed.length
                     }
                     ref={(element) => {
                       if (element)
                         element.indeterminate =
                           selectedRows.length > 0 &&
-                          selectedRows.length < visible.length;
+                          selectedRows.length < displayed.length;
                     }}
                     onChange={(event) =>
-                      selectRows(visible, event.target.checked)
+                      selectRows(displayed, event.target.checked)
                     }
                   />
                 </th>
