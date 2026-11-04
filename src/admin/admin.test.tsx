@@ -266,7 +266,8 @@ it("members section lets admins change roles and remove others", async () => {
       : undefined;
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<Settings section="members" />);
-  const bea = (await screen.findByText("Bea")).closest("tr")!;
+  expect(await screen.findByText("Organization access")).toBeInTheDocument();
+  const bea = await screen.findByTestId("member-b@acme.test");
   const whoami = () =>
     calls.filter((call) => call.path === "/cloud/api/v1/auth/whoami").length;
   const contextLoads = whoami();
@@ -282,7 +283,8 @@ it("members section lets admins change roles and remove others", async () => {
   );
   // A role change can change the viewer's own permissions: refresh context.
   await waitFor(() => expect(whoami()).toBeGreaterThan(contextLoads));
-  const me = screen.getByText(/\(you\)/).closest("tr")!;
+  const me = screen.getByTestId("member-me@acme.test");
+  expect(within(me).getByText(/\(you\)/)).toBeInTheDocument();
   expect(
     within(me).queryByRole("button", { name: "Remove" }),
   ).not.toBeInTheDocument();
@@ -293,6 +295,204 @@ it("members section lets admins change roles and remove others", async () => {
       "/cloud/api/v1/organizations/o1/memberships/u2",
     ),
   );
+});
+
+function inviteFakes(options: { inviteEmail: boolean; delivery: string }) {
+  let invites: Array<Record<string, unknown>> = [
+    {
+      id: "i1",
+      email: "old@acme.test",
+      role: "member",
+      status: "pending",
+      invitedBy: { id: "u1", name: "Me", email: "me@acme.test" },
+      createdAt: "2026-11-01T00:00:00.000Z",
+      expiresAt: "2026-11-08T00:00:00.000Z",
+    },
+  ];
+  extra = (call) => {
+    if (call.path === "/cloud/api/v1/auth/methods")
+      return {
+        body: {
+          oidc: { displayName: "Acme SSO", allowedDomains: ["acme.test"] },
+          emailLink: false,
+          inviteEmail: options.inviteEmail,
+          autoJoinDomains: [],
+          inviteTtlHours: 168,
+        },
+      };
+    if (call.path === "/cloud/api/v1/organizations/o1/invitations" && call.method === "GET")
+      return { body: { invitations: invites } };
+    if (call.path === "/cloud/api/v1/organizations/o1/invitations" && call.method === "POST") {
+      const body = call.body as { email: string; role: string };
+      const invitation = {
+        id: "i2",
+        email: body.email,
+        role: body.role,
+        status: "pending",
+        invitedBy: { id: "u1", name: "Me", email: "me@acme.test" },
+        createdAt: "2026-11-03T00:00:00.000Z",
+        expiresAt: "2026-11-10T00:00:00.000Z",
+      };
+      invites = [invitation, ...invites];
+      return {
+        status: 201,
+        body: {
+          invitation,
+          inviteUrl: "https://relay.acme.test/login?invite=sh_inv_new_link_aaaaaaaaaaaaaaaa",
+          emailDelivery: options.delivery,
+        },
+      };
+    }
+    if (call.path === "/cloud/api/v1/organizations/o1/invitations/i1/link" && call.method === "POST")
+      return {
+        body: {
+          invitation: invites.find((i) => i.id === "i1"),
+          inviteUrl: "https://relay.acme.test/login?invite=sh_inv_rotated_bbbbbbbbbbbbbbbb",
+          emailDelivery: (call.body as { send?: boolean }).send ? "sent" : "skipped",
+        },
+      };
+    if (call.path === "/cloud/api/v1/organizations/o1/invitations/i1" && call.method === "DELETE") {
+      invites = invites.filter((i) => i.id !== "i1");
+      return { body: { revoked: true } };
+    }
+    return undefined;
+  };
+}
+
+it("owners invite by email; a link to copy is shown when email is not configured", async () => {
+  inviteFakes({ inviteEmail: false, delivery: "not_configured" });
+  render(<Settings section="members" />);
+  const pending = await screen.findByTestId("invite-old@acme.test");
+  expect(within(pending).getByText(/member • invited by Me • expires/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Invite member" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText(/copy the link and send it yourself/)).toBeInTheDocument();
+  expect(within(dialog).getByText(/sign in with Acme SSO/)).toBeInTheDocument();
+  // Owners may invite every role.
+  expect(
+    within(dialog).getAllByRole("option").map((option) => option.textContent),
+  ).toEqual(["Member", "Admin", "Owner"]);
+  fireEvent.change(within(dialog).getByPlaceholderText("colleague@example.com"), {
+    target: { value: " new@acme.test " },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Role"), { target: { value: "admin" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Send invitation" }));
+  await waitFor(() =>
+    expect(
+      calls.find((call) => call.method === "POST" && call.path.endsWith("/invitations"))!.body,
+    ).toEqual({ email: "new@acme.test", role: "admin" }),
+  );
+  expect(
+    await screen.findByText(/Email delivery is not configured for this installation/),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText("https://relay.acme.test/login?invite=sh_inv_new_link_aaaaaaaaaaaaaaaa"),
+  ).toBeInTheDocument();
+  expect(await screen.findByTestId("invite-new@acme.test")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it("the invite dialog keeps focus inside, closes on Escape and returns focus", async () => {
+  inviteFakes({ inviteEmail: true, delivery: "sent" });
+  render(<Settings section="members" />);
+  const opener = await screen.findByRole("button", { name: "Invite member" });
+  opener.focus();
+  fireEvent.click(opener);
+  const dialog = await screen.findByRole("dialog");
+  const email = within(dialog).getByPlaceholderText("colleague@example.com");
+  expect(document.activeElement).toBe(email);
+  const close = within(dialog).getByRole("button", { name: "Close" });
+  close.focus();
+  fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+  expect(dialog.contains(document.activeElement)).toBe(true);
+  fireEvent.keyDown(document, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(document.activeElement).toBe(opener);
+});
+
+it("pending invites: copy link issues a fresh link, resend emails it, cancel revokes", async () => {
+  inviteFakes({ inviteEmail: true, delivery: "sent" });
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  render(<Settings section="members" />);
+  const pending = await screen.findByTestId("invite-old@acme.test");
+  fireEvent.click(within(pending).getByRole("button", { name: "Copy link" }));
+  await waitFor(() =>
+    expect(writeText).toHaveBeenCalledWith(
+      "https://relay.acme.test/login?invite=sh_inv_rotated_bbbbbbbbbbbbbbbb",
+    ),
+  );
+  expect(await screen.findByText(/Earlier links for this invite no longer work/)).toBeInTheDocument();
+  fireEvent.click(within(screen.getByTestId("invite-old@acme.test")).getByRole("button", { name: "Resend" }));
+  await waitFor(() =>
+    expect(
+      calls.filter((call) => call.path.endsWith("/i1/link")).map((call) => call.body),
+    ).toEqual([{ send: false }, { send: true }]),
+  );
+  expect(await screen.findByText("Invitation emailed to old@acme.test.")).toBeInTheDocument();
+  // An emailed link is not displayed unless asked for.
+  expect(screen.queryByText(/sh_inv_rotated/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Show link" }));
+  expect(screen.getByText(/sh_inv_rotated/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  expect(screen.queryByText(/sh_inv_rotated/)).not.toBeInTheDocument();
+  fireEvent.click(within(screen.getByTestId("invite-old@acme.test")).getByRole("button", { name: "Cancel" }));
+  await waitFor(() =>
+    expect(screen.queryByTestId("invite-old@acme.test")).not.toBeInTheDocument(),
+  );
+  expect(await screen.findByText("No pending invitations.")).toBeInTheDocument();
+});
+
+it("admins cannot invite or manage owners; members cannot invite", async () => {
+  role = "admin";
+  inviteFakes({ inviteEmail: true, delivery: "sent" });
+  const base = extra!;
+  extra = (call) =>
+    call.path === "/cloud/api/v1/organizations/o1/memberships" && call.method === "GET"
+      ? {
+          body: {
+            memberships: [
+              { userId: "u1", email: "me@acme.test", name: "Me", role: "admin" },
+              { userId: "u0", email: "boss@acme.test", name: "Boss", role: "owner" },
+            ],
+          },
+        }
+      : base(call);
+  const { unmount } = render(<Settings section="members" />);
+  const boss = await screen.findByTestId("member-boss@acme.test");
+  expect(within(boss).queryByLabelText("Role for boss@acme.test")).not.toBeInTheDocument();
+  expect(within(boss).getByText("Owner")).toBeInTheDocument();
+  expect(within(boss).queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Invite member" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(
+    within(dialog).getAllByRole("option").map((option) => option.textContent),
+  ).toEqual(["Member", "Admin"]);
+  unmount();
+
+  role = "member";
+  render(<Settings section="members" />);
+  expect(await screen.findByText(/can send invites — ask one to invite your teammates/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Invite member" })).not.toBeInTheDocument();
+});
+
+it("invite errors from the API are shown in the dialog", async () => {
+  inviteFakes({ inviteEmail: true, delivery: "sent" });
+  const base = extra!;
+  extra = (call) =>
+    call.path === "/cloud/api/v1/organizations/o1/invitations" && call.method === "POST"
+      ? { status: 409, body: { error: "already_member", message: "That person is already a member of this organization." } }
+      : base(call);
+  render(<Settings section="members" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Invite member" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByPlaceholderText("colleague@example.com"), {
+    target: { value: "b@acme.test" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Send invitation" }));
+  expect(
+    await within(dialog).findByText("That person is already a member of this organization."),
+  ).toBeInTheDocument();
 });
 
 it("hash routes switch between sessions and settings", async () => {
