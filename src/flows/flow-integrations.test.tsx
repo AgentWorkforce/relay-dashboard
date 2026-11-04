@@ -120,3 +120,17 @@ export default w;
 `;
   expect(requiredIntegrationIds(source)).toEqual(["github"]);
 });
+
+it("selects the flow assigned to the default-exported variable and tolerates trailing commas", () => {
+  const exportedVariable = `import { flow } from "@relayflows/sdk";
+const helper = flow("helper", async (h) => {});
+const main = flow("main", async (m) => {}).on("evt", async (ctx) => { await ctx.slack.post("#a", "b"); });
+export default main;
+`;
+  expect(requiredIntegrationIds(exportedVariable)).toEqual(["slack"]);
+  const trailing = `import { flow } from "@relayflows/sdk";
+async function notify(ctx) { await ctx.github.comment("x"); }
+export default flow("main", {}, notify,);
+`;
+  expect(requiredIntegrationIds(trailing)).toEqual(["github"]);
+});

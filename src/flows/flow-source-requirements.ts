@@ -395,8 +395,8 @@ function flowContextParameters(source: string): string[] {
 }
 
 /**
- * The flow call the page reads: the default-exported one when present,
- * otherwise the first call of an imported flow callee (`flow`, an alias, or
+ * The flow call the page reads: the default-exported one when present, then
+ * the one assigned to the default-exported variable, otherwise the first call of an imported flow callee (`flow`, an alias, or
  * `ns.flow`). Returns its argument span, the body argument when it is a bare
  * identifier, and the variable it is assigned to (`const w = flow(…)`).
  */
@@ -411,22 +411,28 @@ function selectedFlowCall(
   ];
   if (callees.length === 0) return null;
   const pattern = new RegExp(`(?:^|[^\\w$.])(?:${callees.join("|")})\\s*(?:<[^>()]*>)?\\s*\\(`, "gu");
+  // `export default main;` names the variable a flow call is assigned to.
+  const exportedName = /(?:^|[^\w$.])export\s+default\s+([A-Za-z_$][\w$]*)\s*(?:;|$)/mu.exec(code)?.[1] ?? null;
+  const bindingOf = (before: string) =>
+    /(?:^|[^\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*$/u.exec(before)?.[1] ?? null;
   let first: { open: number; before: string } | null = null;
   let exported: { open: number; before: string } | null = null;
+  let exportedBinding: { open: number; before: string } | null = null;
   for (const match of code.matchAll(pattern)) {
     const open = match.index! + match[0].length - 1;
     const before = code.slice(0, match.index! + (/^[^\w$.]/u.test(match[0]) ? 1 : 0));
     first ??= { open, before };
     if (/\bexport\s+default\s*$/u.test(before)) { exported = { open, before }; break; }
+    if (exportedName && !exportedBinding && bindingOf(before) === exportedName) exportedBinding = { open, before };
   }
-  const chosen = exported ?? first;
+  const chosen = exported ?? exportedBinding ?? first;
   if (!chosen) return null;
   const close = matchingClose(code, chosen.open);
   if (close === -1) return null;
   const args = topLevelArguments(code, chosen.open, close);
   const last = args.length >= 2 && args.length <= 3 ? args[args.length - 1]!.trim() : "";
   const bodyReference = /^[A-Za-z_$][\w$]*$/u.test(last) && last !== "async" && last !== "function" ? last : null;
-  const binding = /(?:^|[^\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*$/u.exec(chosen.before)?.[1] ?? null;
+  const binding = bindingOf(chosen.before);
   return { open: chosen.open, close, bodyReference, binding };
 }
 
@@ -442,7 +448,7 @@ function topLevelArguments(code: string, open: number, close: number): string[] 
     else if (ch === "," && depth === 0) { args.push(code.slice(from, i)); from = i + 1; }
   }
   const tail = code.slice(from, close);
-  if (args.length > 0 || tail.trim() !== "") args.push(tail);
+  if (tail.trim() !== "") args.push(tail);
   return args;
 }
 
