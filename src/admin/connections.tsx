@@ -102,8 +102,8 @@ export function ConnectionsSection(props: { workspaceId: string }) {
   );
 
   return (
-    <section aria-labelledby="connections-title" className="card">
-      <h2 id="connections-title">Connections</h2>
+    <section aria-labelledby="integrations-title" className="card">
+      <h2 id="integrations-title">Integrations</h2>
       <p>
         Connect the providers your agents and Flows use. Self-hosted connections
         use your own OAuth app for each provider; tokens are encrypted and only

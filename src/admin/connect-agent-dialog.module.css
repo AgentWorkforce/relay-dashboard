@@ -44,5 +44,5 @@
 .primary { background: #2d6a9c; color: #fff; border: 1.5px solid #234969; }
 .dialog .primary:hover { background: #4a90c2; }
 .dialog button:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
-@media (max-width: 480px) { .dialog { padding: 24px 20px; } .choice { gap: 8px; padding: 12px; } .arrow { display: none; } .steps { gap: 16px; } }
+@media (max-width: 480px) { .dialog { padding: 24px 20px; } .grid { grid-template-columns: minmax(0, 1fr); } .choice { gap: 8px; padding: 12px; } .arrow { display: none; } .steps { gap: 16px; } }
 @media (prefers-reduced-motion: reduce) { .choice { transition: none; } .spinner { animation: none; } }

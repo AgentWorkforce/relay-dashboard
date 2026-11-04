@@ -178,6 +178,8 @@ it("connects an API key and a Claude setup token, then assigns and removes them"
   fireEvent.change(within(dialog).getByLabelText(/Account email/), { target: { value: "dev@acme.test" } });
   fireEvent.click(within(dialog).getByRole("button", { name: "Connect Claude" }));
   expect(await within(dialog).findByText("Claude connected")).toBeInTheDocument();
+  const setupPost = calls.find((call) => call.path.endsWith("/provider-credentials/setup-token"))!;
+  expect(setupPost.body).toEqual({ token: "sk-ant-oat01-0002", accountEmail: "dev@acme.test" });
   fireEvent.click(within(dialog).getByRole("button", { name: /Back to connections/ }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
@@ -208,4 +210,26 @@ it("members see coding agents read-only", async () => {
   const row = await screen.findByTestId("harness-credential-a1");
   expect(within(row).queryByRole("button", { name: /Check token/ })).not.toBeInTheDocument();
   expect(within(row).queryByRole("button", { name: "Disconnect" })).not.toBeInTheDocument();
+});
+
+it("honors an explicit unselected sandbox token and keeps Tab inside the dialog", async () => {
+  agents = [agent({ id: "a4", authType: "oauth_token", displayName: "Claude setup token", isActive: false, harnessActive: false })];
+  render(<Settings section="connections" />);
+  const anthropic = await screen.findByTestId("provider-group-anthropic");
+  expect(within(anthropic).getAllByText("None selected").length).toBe(2);
+  fireEvent.click(screen.getByTestId("provider-group-anthropic-toggle"));
+  const row = await screen.findByTestId("harness-credential-a4");
+  fireEvent.click(within(row).getByRole("button", { name: "Use for sandbox" }));
+  await waitFor(() =>
+    expect(calls.some((call) => call.path.endsWith("/cloud-agents/a4/activate") && (call.body as { selection: string }).selection === "harness")).toBe(true),
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: /Connect agent/ }));
+  const dialog = screen.getByRole("dialog", { name: "Connect an agent" });
+  const buttons = within(dialog).getAllByRole("button");
+  buttons[buttons.length - 1]!.focus();
+  fireEvent.keyDown(document, { key: "Tab" });
+  expect(document.activeElement).toBe(buttons[0]);
+  fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+  expect(document.activeElement).toBe(buttons[buttons.length - 1]);
 });

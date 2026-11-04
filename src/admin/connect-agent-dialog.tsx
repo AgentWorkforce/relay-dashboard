@@ -73,6 +73,17 @@ export function connectChoices(providers: CodingAgentProvider[]): ConnectChoice[
   return choices;
 }
 
+/** Host for the "Open …" link; null for a missing or malformed URL. */
+function docsHost(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" ? parsed.host : null;
+  } catch {
+    return null;
+  }
+}
+
 function iconUrl(icon: string) {
   return `${import.meta.env.BASE_URL}onboarding-icons/${icon}.svg`;
 }
@@ -144,6 +155,28 @@ export function ConnectAgentDialog({
         event.preventDefault();
         setChoiceKey(null);
         onClose();
+        return;
+      }
+      // Keep Tab inside the dialog while it is open (radix Dialog does this on hosted).
+      const dialog = dialogRef.current;
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = [...dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )];
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || active === dialog || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
       }
     }
     document.addEventListener("keydown", onKey);
@@ -429,14 +462,14 @@ function ApiKeyPanel({
             <p>
               Create a key in your {choice.label} account, then paste it here.
             </p>
-            {choice.docsUrl ? (
+            {choice.docsUrl && docsHost(choice.docsUrl) ? (
               <a
                 className={s.deviceLink}
                 href={choice.docsUrl}
                 target="_blank"
                 rel="noreferrer noopener"
               >
-                Open {new URL(choice.docsUrl).host}
+                Open {docsHost(choice.docsUrl)}
                 <ExternalLink size={14} aria-hidden="true" />
               </a>
             ) : null}

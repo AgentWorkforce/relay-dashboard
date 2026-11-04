@@ -49,13 +49,17 @@ function connectionProviderLabel(provider: string, agents: CodingAgent[]): strin
   return CONNECTION_PROVIDER_LABELS[provider] ?? agents[0]?.displayName ?? provider;
 }
 
-/** Hosted dashboard-data `getAgentBadgeVariant`. */
-function getAgentBadgeVariant(status: string) {
-  const normalized = status.toLowerCase();
-  if (["ready", "active", "connected", "authenticated"].includes(normalized)) return "success" as const;
+/** The one usable status. relaycontrol reports only `connected` and `error`. */
+function isConnected(agent: Pick<CodingAgent, "status">): boolean {
+  return agent.status === "connected";
+}
+
+/** Hosted dashboard-data `getAgentBadgeVariant`, keyed on the same predicate as selection. */
+function getAgentBadgeVariant(agent: Pick<CodingAgent, "status">) {
+  if (isConnected(agent)) return "success" as const;
+  const normalized = agent.status.toLowerCase();
   if (["authorizing", "pending", "starting"].includes(normalized)) return "warning" as const;
-  if (["failed", "error", "revoked", "expired", "refresh_failed"].includes(normalized)) return "danger" as const;
-  return "default" as const;
+  return "danger" as const;
 }
 
 /** Hosted dashboard-data `formatTimestamp`. */
@@ -79,7 +83,7 @@ function checkBadgeVariant(status: CodingAgentCheck["status"]) {
 }
 
 function credentialNeedsAttention(agent: Pick<CodingAgent, "lastError" | "status">): boolean {
-  return Boolean(agent.lastError) || agent.status !== "connected";
+  return Boolean(agent.lastError) || !isConnected(agent);
 }
 
 function credentialIdentity(agent: CodingAgent): string {
@@ -91,13 +95,18 @@ function credentialIdentity(agent: CodingAgent): string {
   );
 }
 
-/** Hosted `activeSandboxCredentialIds`: the explicit bit, else the newest eligible row. */
+/**
+ * Hosted `activeSandboxCredentialIds`: the explicit bit. The newest eligible
+ * row is used only for responses that carry no `harnessActive` at all.
+ */
 function activeSandboxCredentialIds(agents: CodingAgent[]): Set<string> {
   const eligible = agents.filter(
-    (agent) => isHarnessSelectableAuthType(agent.authType) && agent.status === "connected",
+    (agent) => isHarnessSelectableAuthType(agent.authType) && isConnected(agent),
   );
+  if (eligible.some((agent) => agent.harnessActive !== undefined)) {
+    return new Set(eligible.filter((agent) => agent.harnessActive).map((agent) => agent.id));
+  }
   const chosen =
-    eligible.find((agent) => agent.harnessActive) ??
     [...eligible].sort(
       (a, b) =>
         b.updatedAt.localeCompare(a.updatedAt) ||
@@ -146,6 +155,7 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
   const [checkingAgentId, setCheckingAgentId] = useState<string | null>(null);
   const [checkResults, setCheckResults] = useState<Record<string, CodingAgentCheck>>({});
   const [disconnectingAgentId, setDisconnectingAgentId] = useState<string | null>(null);
+  const [selectingAgentId, setSelectingAgentId] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   // Collapsed on every visit, as hosted.
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(() => new Set());
@@ -240,13 +250,18 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
     }
   };
 
+  // One selection at a time: the buttons stay disabled until the server has
+  // answered, so rapid clicks cannot finish in a different order.
   const selectAgent = async (agentId: string, selection: "model" | "harness") => {
+    if (selectingAgentId) return;
+    setSelectingAgentId(agentId);
     setRowError(agentId, null);
     try {
       await adminApi.activateAgent(props.workspaceId, agentId, selection);
     } catch (failure) {
       setRowError(agentId, message(failure));
     } finally {
+      setSelectingAgentId(null);
       reload();
     }
   };
@@ -313,7 +328,7 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
                     group.sandboxCredentialIds.has(agent.id),
                   );
                   const activeModelCredentials = group.credentials.filter(
-                    (agent) => agent.isActive && agent.status === "connected",
+                    (agent) => agent.isActive && isConnected(agent),
                   );
                   const credentialSupportsSandbox = group.credentials.some((agent) =>
                     isHarnessSelectableAuthType(agent.authType),
@@ -410,7 +425,7 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
                           {group.credentials.map((agent) => {
                             const isSandboxCredential = group.sandboxCredentialIds.has(agent.id);
                             const sandboxCapable = isHarnessSelectableAuthType(agent.authType);
-                            const sandboxEligible = sandboxCapable && agent.status === "connected";
+                            const sandboxEligible = sandboxCapable && isConnected(agent);
                             const checkResult = checkResults[agent.id];
                             const checking = checkingAgentId === agent.id;
                             const disconnecting = disconnectingAgentId === agent.id;
@@ -418,13 +433,14 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
                             const llmActive = agent.isActive;
 
                             const llmControl = llmActive ? (
-                              <Badge variant={agent.status === "connected" ? "success" : "warning"}>
-                                {agent.status === "connected" ? "Active" : "Unavailable"}
+                              <Badge variant={isConnected(agent) ? "success" : "warning"}>
+                                {isConnected(agent) ? "Active" : "Unavailable"}
                               </Badge>
-                            ) : agent.status === "connected" && canManage ? (
+                            ) : isConnected(agent) && canManage ? (
                               <Button
                                 variant="outline"
                                 size="sm"
+                                disabled={selectingAgentId !== null}
                                 onClick={() => void selectAgent(agent.id, "model")}
                               >
                                 Use for LLM calls
@@ -446,7 +462,7 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
                                   <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-2">
                                       <p className="font-medium text-foreground">{credentialIdentity(agent)}</p>
-                                      <Badge variant={getAgentBadgeVariant(agent.status)}>{agent.status}</Badge>
+                                      <Badge variant={getAgentBadgeVariant(agent)}>{agent.status}</Badge>
                                     </div>
                                     <p className="mt-1 text-sm text-muted-foreground">
                                       {agent.accountEmail ? `${agent.accountEmail} • ` : ""}
@@ -471,6 +487,7 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
                                           <Button
                                             variant="outline"
                                             size="sm"
+                                            disabled={selectingAgentId !== null}
                                             onClick={() => void selectAgent(agent.id, "harness")}
                                           >
                                             Use for sandbox
