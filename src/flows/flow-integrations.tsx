@@ -32,6 +32,9 @@ export function FlowIntegrations({ source }: { source: string }) {
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
+  // Set synchronously so a double click cannot start two attempts before the
+  // disabled buttons render.
+  const pending = useRef(false);
   // Bumped when the required set changes: a connect started before then is stale.
   const attempt = useRef(0);
   const mounted = useRef(true);
@@ -81,6 +84,7 @@ export function FlowIntegrations({ source }: { source: string }) {
         window.clearInterval(timer.current);
         timer.current = null;
       }
+      pending.current = false;
       setConnecting(null);
     };
   }, [requiredKey]);
@@ -88,12 +92,17 @@ export function FlowIntegrations({ source }: { source: string }) {
   if (!required.length) return null;
 
   async function connect(provider: IntegrationProvider) {
-    if (!workspaceId) return;
+    // One connect at a time: every attempt shares the named popup, so a second
+    // one could take over the window the first is about to close or navigate.
+    if (!workspaceId || pending.current) return;
+    pending.current = true;
     const mine = ++attempt.current;
     setError(null);
     setConnecting(provider.id);
     // Open synchronously so popup blockers allow it, then navigate it.
-    const popup = window.open("", "agent-relay-connect", "width=640,height=760");
+    // Per-attempt window name: a stale attempt's close() never reaches the
+    // window a newer attempt is using.
+    const popup = window.open("", `agent-relay-connect-${mine}`, "width=640,height=760");
     if (popup) popup.opener = null;
     try {
       const session = await adminApi.connectIntegration(workspaceId, provider.id, window.location.href);
@@ -101,6 +110,7 @@ export function FlowIntegrations({ source }: { source: string }) {
       // was being created: start nothing.
       if (!mounted.current || attempt.current !== mine) {
         popup?.close();
+        if (attempt.current === mine) pending.current = false;
         return;
       }
       if (popup) popup.location.href = session.connectLink;
@@ -116,12 +126,14 @@ export function FlowIntegrations({ source }: { source: string }) {
         if (done && timer.current !== null) {
           window.clearInterval(timer.current);
           timer.current = null;
+          pending.current = false;
           setConnecting(null);
         }
       }, 3_000);
     } catch (failure) {
       popup?.close();
       if (!mounted.current || attempt.current !== mine) return;
+      pending.current = false;
       setConnecting(null);
       setError(message(failure));
     }
@@ -150,7 +162,7 @@ export function FlowIntegrations({ source }: { source: string }) {
                     `Your administrator needs to configure the ${provider.displayName} app before it can be connected.`}
                 </span>
               ) : provider.authMode === "OAUTH2" ? (
-                <button type="button" disabled={connecting === id} onClick={() => void connect(provider)}>
+                <button type="button" disabled={connecting !== null} onClick={() => void connect(provider)}>
                   {connecting === id ? "Waiting for authorization…" : `Connect ${provider.displayName}`}
                 </button>
               ) : (

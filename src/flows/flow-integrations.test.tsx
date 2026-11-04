@@ -8,9 +8,11 @@ export default flow("triage", { tools: { github: true, slack: true, linear: true
 
 let calls: Array<{ method: string; path: string; body: unknown }> = [];
 let githubReady = false;
+let linearReady = true;
 beforeEach(() => {
   calls = [];
   githubReady = false;
+  linearReady = true;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (path: string, init: RequestInit = {}) => {
@@ -28,7 +30,7 @@ beforeEach(() => {
           providers: [
             { id: "github", displayName: "GitHub", authMode: "OAUTH2", configured: true, connection: githubReady ? { status: "ready" } : null },
             { id: "slack", displayName: "Slack", authMode: "OAUTH2", configured: false, adminMessage: "Your administrator needs to configure the Slack app before it can be connected.", connection: null },
-            { id: "linear", displayName: "Linear", authMode: "OAUTH2", configured: true, connection: { status: "ready" } },
+            { id: "linear", displayName: "Linear", authMode: "OAUTH2", configured: true, connection: linearReady ? { status: "ready" } : null },
           ],
         });
       if (path === "/cloud/api/v1/workspaces/w1/integrations/connect-session" && method === "POST")
@@ -67,6 +69,27 @@ it("connects a missing integration just in time and shows the admin message for 
   githubReady = true;
   popup.closed = true;
   await waitFor(() => expect(within(github).getByText("Connected")).toBeInTheDocument(), { timeout: 5000 });
+});
+
+it("allows one connect at a time, each in its own window", async () => {
+  linearReady = false;
+  const popup = { location: { href: "" }, closed: false, close: vi.fn(), opener: {} };
+  const open = vi.spyOn(window, "open").mockReturnValue(popup as unknown as Window);
+  render(<FlowIntegrations source={SOURCE} />);
+  const github = await screen.findByTestId("flow-integration-github");
+  const linear = screen.getByTestId("flow-integration-linear");
+  const linearButton = await within(linear).findByRole("button", { name: "Connect Linear" });
+  fireEvent.click(within(github).getByRole("button", { name: "Connect GitHub" }));
+  // A second click before the first attempt's state renders starts nothing.
+  fireEvent.click(linearButton);
+  await waitFor(() => expect(popup.location.href).toContain("https://github.com/login/oauth/authorize"));
+  expect(linearButton).toBeDisabled();
+  expect(open).toHaveBeenCalledTimes(1);
+  expect(open.mock.calls[0][1]).toMatch(/^agent-relay-connect-\d+$/);
+  expect(calls.filter((call) => call.path.endsWith("/integrations/connect-session"))).toHaveLength(1);
+  expect(popup.close).not.toHaveBeenCalled();
+  popup.closed = true;
+  await waitFor(() => expect(within(linear).getByRole("button", { name: "Connect Linear" })).toBeEnabled(), { timeout: 5000 });
 });
 
 it("renders nothing for a flow that declares no integrations", () => {
