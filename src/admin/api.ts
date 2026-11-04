@@ -6,12 +6,10 @@ import {
   codingAgentsSchema,
   deviceLoginStartSchema,
   deviceLoginStatusSchema,
-  connectSessionSchema,
   createdTokenSchema,
   envVarListSchema,
   envVarSchema,
   membersSchema,
-  providersSchema,
   workspacesSchema,
   type TokenPurpose,
   type Role,
@@ -89,42 +87,6 @@ export const adminApi = {
   deleteEnv: (workspace: string, name: string) =>
     // The response body (the deleted record) isn't used; accept an empty one.
     call(`${ws(workspace)}/secrets/${enc(name)}`, null, {
-      method: "DELETE",
-    }),
-
-  providers: (workspace: string, signal?: AbortSignal) =>
-    call(`${ws(workspace)}/integrations/providers`, providersSchema, {
-      signal,
-    }),
-  putOAuthApp: (
-    workspace: string,
-    provider: string,
-    input: { clientId: string; clientSecret?: string; scopes: string[] | null },
-  ) =>
-    call(`${ws(workspace)}/integrations/${enc(provider)}/oauth-app`, null, {
-      method: "PUT",
-      body: input,
-    }),
-  deleteOAuthApp: (workspace: string, provider: string) =>
-    call(`${ws(workspace)}/integrations/${enc(provider)}/oauth-app`, null, {
-      method: "DELETE",
-    }),
-  connectSession: (workspace: string, provider: string) =>
-    call(`${ws(workspace)}/integrations/connect-session`, connectSessionSchema, {
-      method: "POST",
-      body: { allowedIntegrations: [provider] },
-    }),
-  connectApiKey: (
-    workspace: string,
-    provider: string,
-    credentials: Record<string, string>,
-  ) =>
-    call(`${ws(workspace)}/integrations/${enc(provider)}`, null, {
-      method: "POST",
-      body: { credentials },
-    }),
-  disconnect: (workspace: string, provider: string) =>
-    call(`${ws(workspace)}/integrations/${enc(provider)}`, null, {
       method: "DELETE",
     }),
 

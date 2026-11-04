@@ -1,6 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import type { AdminContext } from "./contracts";
-import { CopyField } from "./connections";
+import { CopyField } from "./copy-field";
 import { desktopConnectLink, desktopLinks, type DesktopLinks } from "../shell/desktop-links";
 import { ButtonLink } from "../shell/ui";
 

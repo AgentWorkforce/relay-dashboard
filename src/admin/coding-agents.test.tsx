@@ -207,10 +207,14 @@ it("connections shows hosted's Coding agents summary and provider rows", async (
   // OpenAI offers a Codex login, so an empty group can still take sandbox access (hosted).
   expect(within(openai).getAllByText("None selected")).toHaveLength(2);
 
-  // Integrations (BYO OAuth) moved to their own section.
+  // Every supported provider is listed, connected or not.
+  for (const id of ["anthropic", "openai", "openrouter", "xai", "google"]) {
+    expect(screen.getByTestId(`provider-group-${id}`)).toBeInTheDocument();
+  }
+  expect(within(screen.getByTestId("provider-group-google")).getByText("Not connected")).toBeInTheDocument();
+  // No Integrations section: integrations connect just in time.
   const nav = screen.getByRole("navigation", { name: "Settings" });
-  expect(within(nav).getByText("Integrations")).toBeInTheDocument();
-  expect(screen.queryByText(/OAuth callback/i)).not.toBeInTheDocument();
+  expect(within(nav).queryByText("Integrations")).not.toBeInTheDocument();
 
   fireEvent.click(screen.getByTestId("provider-group-anthropic-toggle"));
   const row = await screen.findByTestId("harness-credential-a1");

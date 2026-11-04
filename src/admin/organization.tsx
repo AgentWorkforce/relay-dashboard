@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { adminApi } from "./api";
 import type { AdminContext } from "./contracts";
-import { CopyField } from "./connections";
+import { CopyField } from "./copy-field";
 import { message, useLoad } from "./use-load";
 
 export function WorkspaceSection(props: { context: AdminContext }) {

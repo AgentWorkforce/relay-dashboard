@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { adminApi, canManage, SignedOut } from "./api";
 import { CodingAgentsSection } from "./coding-agents";
-import { ConnectionsSection } from "./connections";
 import { DesktopSection } from "./desktop";
 import { EnvironmentSection } from "./environment";
 import { MembersSection } from "./members";
@@ -11,7 +10,6 @@ import { useLoad } from "./use-load";
 import "./admin.css";
 import { loginHref } from "../app-path";
 import {
-  Blocks,
   Building2,
   KeyRound,
   LockKeyhole,
@@ -29,9 +27,6 @@ export const SETTINGS_SECTIONS = [
   { id: "appearance", label: "Appearance", group: "Preferences", adminOnly: false, icon: SunMoon },
   { id: "workspace", label: "Workspace", group: "Workspace", adminOnly: false, icon: Building2 },
   { id: "connections", label: "Connections", group: "Workspace", adminOnly: false, icon: Plug },
-  // Self-host only: hosted keeps Nango integrations off the settings page.
-  // Self-host's bring-your-own OAuth integrations live here instead.
-  { id: "integrations", label: "Integrations", group: "Workspace", adminOnly: false, icon: Blocks },
   { id: "tokens", label: "API tokens", group: "Workspace", adminOnly: true, icon: KeyRound },
   { id: "environment", label: "Environment", group: "Workspace", adminOnly: false, icon: LockKeyhole },
   { id: "organization", label: "Organization", group: "Organization", adminOnly: false, icon: Building2 },
@@ -43,7 +38,6 @@ const DESCRIPTIONS: Record<SettingsSectionId, string> = {
   appearance: "Make Relay feel right for you.",
   workspace: "Your workspace and the agents connected to it.",
   connections: "Coding agents and model accounts available to your workspace.",
-  integrations: "GitHub, Slack, Linear and other tools your Flow runs can use.",
   tokens: "Keys that give your tools access to this workspace.",
   environment: "Encrypted variables and API keys your Flow runs receive.",
   organization: "Your organization’s identity and shared settings.",
@@ -165,17 +159,20 @@ export function Settings(props: { section: string }) {
                 </>
               )}
               {active === "connections" && (
-                <CodingAgentsSection
-                  key={context.currentWorkspace.id}
-                  workspaceId={context.currentWorkspace.id}
-                  workspaceName={workspaceDisplayName(
-                    context.currentWorkspace.name,
-                    context.currentOrganization.name,
-                  )}
-                />
-              )}
-              {active === "integrations" && (
-                <ConnectionsSection workspaceId={context.currentWorkspace.id} />
+                // Hosted SettingsPageView connections slot: one padded column.
+                // Hosted's "Free runs with Agent Relay tokens" card (Agent
+                // Relay-paid) is omitted on self-host. Hosted's body text is
+                // 16px/24px, which this section inherits there.
+                <div className="flex flex-col gap-6 p-6 text-base">
+                  <CodingAgentsSection
+                    key={context.currentWorkspace.id}
+                    workspaceId={context.currentWorkspace.id}
+                    workspaceName={workspaceDisplayName(
+                      context.currentWorkspace.name,
+                      context.currentOrganization.name,
+                    )}
+                  />
+                </div>
               )}
               {active === "tokens" && manage && (
                 <TokensSection workspaceId={context.currentWorkspace.id} />
