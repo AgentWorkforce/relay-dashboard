@@ -535,6 +535,8 @@ function SessionList({
   const base = useLoad(baseKey, (signal) =>
     listSessions(workspaceId, baseFilters, null, signal),
   );
+  const [facetBusy, setFacetBusy] = useState(false);
+  const [facetFailure, setFacetFailure] = useState<string | null>(null);
   const [baseAppended, setBaseAppended] = useState<{
     key: string | null;
     rows: SessionRow[];
@@ -607,29 +609,52 @@ function SessionList({
   const busy = page.loading || moreBusy;
   const error = page.error ?? moreError;
 
+  async function loadMoreFacets() {
+    if (!narrowed || !baseCursor || facetBusy) return;
+    const requestKey = baseKey;
+    setFacetBusy(true);
+    setFacetFailure(null);
+    try {
+      const facets = await listSessions(
+        workspaceId,
+        baseFilters,
+        baseCursor,
+        new AbortController().signal,
+      );
+      setBaseAppended((current) => ({
+        key: requestKey,
+        rows: [
+          ...(current?.key === requestKey ? current.rows : []),
+          ...facets.items,
+        ],
+        nextCursor: facets.nextCursor,
+      }));
+    } catch {
+      setFacetFailure(requestKey);
+    } finally {
+      setFacetBusy(false);
+    }
+  }
+
   async function loadMore() {
     if (!cursor || busy) return;
     setMoreBusy(true);
     setMoreFailure(null);
+    // The facet pages advance with the list, on their own: a slow or failed
+    // sidebar page never holds back the table.
+    void loadMoreFacets();
     try {
-      // The facet pages advance with the list, so options keep up with it.
-      const [next, facets] = await Promise.all([
-        listSessions(workspaceId, filters, cursor, new AbortController().signal),
-        narrowed && baseCursor
-          ? listSessions(workspaceId, baseFilters, baseCursor, new AbortController().signal).catch(() => null)
-          : Promise.resolve(null),
-      ]);
+      const next = await listSessions(
+        workspaceId,
+        filters,
+        cursor,
+        new AbortController().signal,
+      );
       setAppended({
         key,
         rows: [...(extra?.rows ?? []), ...next.items],
         nextCursor: next.nextCursor,
       });
-      if (facets)
-        setBaseAppended({
-          key: baseKey,
-          rows: [...(baseExtra?.rows ?? []), ...facets.items],
-          nextCursor: facets.nextCursor,
-        });
     } catch (reason) {
       setMoreFailure({ key, error: reason as Error });
     } finally {
@@ -674,13 +699,26 @@ function SessionList({
   const identityColumnWidth = 12 + 22 + (identityCount - 1) * 13;
   return (
     <>
-      {narrowed && base.error && !(base.error instanceof SignedOut) && (
-        <WorkspaceViewSlot name="sidebar">
-          <p role="status" className="px-2 pb-2 text-[11px] text-muted-foreground">
-            Couldn’t load every filter option; counts cover the loaded sessions.
-          </p>
-        </WorkspaceViewSlot>
-      )}
+      {narrowed &&
+        ((base.error && !(base.error instanceof SignedOut)) ||
+          (facetFailure !== null && facetFailure === baseKey)) && (
+          <WorkspaceViewSlot name="sidebar">
+            <p role="status" className="px-2 pb-2 text-[11px] text-muted-foreground">
+              Couldn’t load every filter option; counts cover the loaded
+              sessions.{" "}
+              {facetFailure === baseKey && (
+                <button
+                  type="button"
+                  className="more-lines underline underline-offset-4 hover:text-foreground"
+                  onClick={() => void loadMoreFacets()}
+                  disabled={facetBusy}
+                >
+                  Retry
+                </button>
+              )}
+            </p>
+          </WorkspaceViewSlot>
+        )}
       <SidebarFilters
         rows={facetRows}
         members={members}
