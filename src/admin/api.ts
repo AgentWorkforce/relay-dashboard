@@ -4,6 +4,8 @@ import {
   apiTokensSchema,
   codingAgentCheckSchema,
   codingAgentsSchema,
+  integrationConnectSchema,
+  integrationProvidersSchema,
   deviceLoginStartSchema,
   deviceLoginStatusSchema,
   createdTokenSchema,
@@ -90,6 +92,15 @@ export const adminApi = {
       method: "DELETE",
     }),
 
+  /** Integration status for just-in-time connects (flows, CLI). */
+  integrationProviders: (workspace: string, signal?: AbortSignal) =>
+    call(`${ws(workspace)}/integrations/providers`, integrationProvidersSchema, { signal }),
+  /** Starts a provider OAuth connect; the callback page links back to returnTo. */
+  connectIntegration: (workspace: string, provider: string, returnTo: string) =>
+    call(`${ws(workspace)}/integrations/connect-session`, integrationConnectSchema, {
+      method: "POST",
+      body: { allowedIntegrations: [provider], returnTo },
+    }),
   codingAgents: (workspace: string, signal?: AbortSignal) =>
     call(`${ws(workspace)}/cloud-agents`, codingAgentsSchema, { signal }),
   putAgentApiKey: (

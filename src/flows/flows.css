@@ -705,3 +705,30 @@
   }
 }
 }
+
+/* Flow detail: just-in-time integrations. */
+.panel .integrations {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.panel .integrations li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+}
+.panel .integrations .ok {
+  color: var(--status-success);
+}
+.panel .integrations .muted {
+  color: var(--text-muted);
+  font-size: 13px;
+}

@@ -141,3 +141,18 @@ export const deviceLoginStatusSchema = z.object({
   retryAfterSeconds: z.number().int().positive().optional(),
   providerCredentialId: z.string().optional(),
 });
+
+/** Just-in-time integration status (relaycontrol GET integrations/providers). */
+export const integrationProviderSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  authMode: z.string(),
+  configured: z.boolean(),
+  adminMessage: z.string().optional(),
+  connection: z.object({ status: z.string() }).passthrough().nullable(),
+}).passthrough();
+export type IntegrationProvider = z.infer<typeof integrationProviderSchema>;
+export const integrationProvidersSchema = z.object({
+  providers: z.array(integrationProviderSchema),
+}).passthrough();
+export const integrationConnectSchema = z.object({ connectLink: z.string().url() }).passthrough();
