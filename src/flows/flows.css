@@ -208,6 +208,14 @@
   border-color: transparent;
   background: transparent;
 }
+/* A destructive ghost (Revoke): destructive text on a transparent ground. */
+.flows-main button.danger.ghost {
+  color: var(--destructive);
+}
+.flows-main button.danger.ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--destructive) 12%, transparent);
+  color: var(--destructive);
+}
 .flows-main button.link {
   padding: 0;
   border: 0;
