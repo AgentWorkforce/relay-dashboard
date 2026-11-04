@@ -14,7 +14,6 @@ const PROVIDERS = [
   { id: "openrouter", displayName: "OpenRouter", harness: "openrouter", envName: "OPENROUTER_API_KEY", authTypes: ["byo_api_key"] },
   { id: "xai", displayName: "xAI", harness: "grok", envName: "XAI_API_KEY", authTypes: ["byo_api_key"] },
   { id: "google", displayName: "Google", harness: "gemini", envName: "GEMINI_API_KEY", authTypes: ["byo_api_key"] },
-  { id: "daytona", displayName: "Daytona", harness: "daytona", envName: "DAYTONA_API_KEY", authTypes: ["byo_api_key"] },
 ];
 
 function agent(overrides: Record<string, unknown>) {
@@ -162,6 +161,7 @@ it("connects an API key and a Claude setup token, then assigns and removes them"
   render(<Settings section="connections" />);
   fireEvent.click(await screen.findByRole("button", { name: /Connect agent/ }));
   const dialog = screen.getByRole("dialog", { name: "Connect an agent" });
+  expect(within(dialog).queryByRole("button", { name: /Daytona/ })).not.toBeInTheDocument();
   fireEvent.click(within(dialog).getByRole("button", { name: /OpenRouter/ }));
   fireEvent.change(within(dialog).getByLabelText("API key"), { target: { value: "sk-or-v1-secret-0003" } });
   fireEvent.change(within(dialog).getByLabelText(/Label/), { target: { value: "Router" } });

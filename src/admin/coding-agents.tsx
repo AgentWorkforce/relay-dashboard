@@ -27,7 +27,6 @@ const CONNECTION_PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI",
   openrouter: "OpenRouter",
   xai: "xAI",
-  daytona: "Daytona",
 };
 
 /** Hosted `canonicalConnectionProvider`. */
