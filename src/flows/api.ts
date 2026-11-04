@@ -273,17 +273,13 @@ export const flowsApi = {
     description?: string;
     fileType: "yaml" | "ts";
     source: string;
-  }) =>
-    changed(
-      (async () =>
-        flowSchema.extend({ source: z.string() }).parse(
-          (
-            (await call("/flows", { method: "POST", body: input })) as {
-              flow: unknown;
-            }
-          ).flow,
-        ))(),
-    ),
+  }) => {
+    // Signal the change once the request succeeds, even if parsing fails.
+    const body = (await changed(
+      call("/flows", { method: "POST", body: input }),
+    )) as { flow: unknown };
+    return flowSchema.extend({ source: z.string() }).parse(body.flow);
+  },
   updateFlow: async (
     flowId: string,
     input: {

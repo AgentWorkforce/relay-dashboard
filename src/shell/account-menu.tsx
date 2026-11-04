@@ -66,6 +66,7 @@ export function AccountMenu({
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      event.preventDefault();
       setOpen(false);
       trigger.current?.focus();
     };

@@ -165,6 +165,12 @@ export function WorkspaceChrome({
     focusable()[0]?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        // An open disclosure inside the drawer (the account menu) takes it first.
+        if (
+          event.defaultPrevented ||
+          drawer.current?.querySelector('[aria-expanded="true"][data-account-trigger]')
+        )
+          return;
         event.preventDefault();
         closeDrawer();
         return;

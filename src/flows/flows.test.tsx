@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { App } from "../app";
 import { getAccount } from "../api/client";
-import { flowsApi } from "./api";
+import { FLOWS_CHANGED, flowsApi } from "./api";
 import { parseFlowsRoute } from "./flows-app";
 
 vi.mock("../api/client", () => ({
@@ -128,6 +128,24 @@ it("encodes opaque ids in flow and run links", async () => {
   expect(
     within(flowLink.closest("article")!).getByRole("link", { name: /Last run:\s*Completed/ }),
   ).toHaveAttribute("href", "#/flows/runs/team%2Frun");
+});
+
+it("refreshes the sidebar flow list and reports a failed load", async () => {
+  window.location.hash = "#/flows/workers";
+  const flows = await api.listFlows();
+  api.listFlows.mockRejectedValue(new Error("flows unavailable"));
+  render(<App />);
+  const sidebar = await screen.findByRole("region", { name: "Your flows" });
+  expect(
+    await within(sidebar).findByText("Couldn’t load your flows."),
+  ).toBeInTheDocument();
+  api.listFlows.mockResolvedValue(flows);
+  await act(async () => {
+    window.dispatchEvent(new Event(FLOWS_CHANGED));
+  });
+  expect(
+    await within(sidebar).findByText(flows[0]!.name),
+  ).toBeInTheDocument();
 });
 
 it("keeps the flows list when run history fails to load", async () => {
