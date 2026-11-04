@@ -532,15 +532,21 @@ function SessionList({
     [query, knownProjects],
   );
   const key = JSON.stringify([workspaceId, filters, reload]);
-  const page = useLoad(key, (signal) =>
-    listSessions(workspaceId, filters, null, signal),
+  // Filter changes keep the current rows (and members) on screen, marked
+  // pending, instead of flashing an empty or skeleton state.
+  const page = useLoad(
+    key,
+    (signal) => listSessions(workspaceId, filters, null, signal),
+    { keepPrevious: true },
   );
   // Facet options and counts ignore the project and harness picks.
   const baseFilters = useMemo(() => facetFilters(filters), [filters]);
   const narrowed = baseFilters.project !== filters.project || baseFilters.source !== filters.source;
   const baseKey = narrowed ? JSON.stringify([workspaceId, baseFilters, reload, "facets"]) : null;
-  const base = useLoad(baseKey, (signal) =>
-    listSessions(workspaceId, baseFilters, null, signal),
+  const base = useLoad(
+    baseKey,
+    (signal) => listSessions(workspaceId, baseFilters, null, signal),
+    { keepPrevious: true },
   );
   // The facet query whose next page is in flight (per query, not global).
   const [facetBusy, setFacetBusy] = useState<string | null>(null);
@@ -583,23 +589,26 @@ function SessionList({
     rows: ReadonlyMap<string, SessionRow>;
   }>({ scope: facetScope, rows: new Map() });
   const baseExtra = baseAppended?.key === baseKey ? baseAppended : null;
+  // Only fresh pages feed the facets; stale ones (an earlier query, kept on
+  // screen while the new one loads) belong to another scope.
   const incoming = [
-    ...(narrowed ? [...(base.data?.items ?? []), ...(baseExtra?.rows ?? [])] : []),
-    ...rows,
+    ...(narrowed && !base.stale
+      ? [...(base.data?.items ?? []), ...(baseExtra?.rows ?? [])]
+      : []),
+    ...(page.stale ? [] : rows),
   ];
-  const seenRows = useMemo(
-    () => (seen.scope === facetScope ? seen.rows : new Map<string, SessionRow>()),
-    [seen, facetScope],
-  );
   // Later pages win for a session seen twice (the list after the facet page).
   const latest = new Map(incoming.map((row) => [sessionKey(row), row]));
-  if (
-    seen.scope !== facetScope ||
-    [...latest].some(([id, row]) => seenRows.get(id) !== row)
-  ) {
-    setSeen({ scope: facetScope, rows: new Map([...seenRows, ...latest]) });
+  const sameScope = seen.scope === facetScope;
+  if (sameScope) {
+    if ([...latest].some(([id, row]) => seen.rows.get(id) !== row))
+      setSeen({ scope: facetScope, rows: new Map([...seen.rows, ...latest]) });
+  } else if (latest.size || !page.loading) {
+    // A new text or date query replaces the facets once its first page is in;
+    // until then the previous options stay on screen (no flash).
+    setSeen({ scope: facetScope, rows: latest });
   }
-  const facetRows = useMemo(() => [...seenRows.values()], [seenRows]);
+  const facetRows = useMemo(() => [...seen.rows.values()], [seen]);
   const baseCursor = narrowed
     ? baseExtra
       ? baseExtra.nextCursor
@@ -679,7 +688,9 @@ function SessionList({
 
   const people = new Map(members.map((member) => [member.id, member.name]));
   const visible = sortRows(
-    rows.filter((row) => matchesSessionFilters(row, query, now)),
+    // Facets filter loaded rows at once (the undebounced query); only free
+    // text and dates wait for the server.
+    rows.filter((row) => matchesSessionFilters(row, liveQuery, now)),
     sort,
     now,
     people,
@@ -754,7 +765,7 @@ function SessionList({
       <SidebarFilters
         rows={facetRows}
         members={members}
-        query={query}
+        query={liveQuery}
         onQuery={onQuery}
         now={now}
       />
@@ -772,8 +783,12 @@ function SessionList({
           onClick={() => setReload((value) => value + 1)}
           disabled={busy}
         >
-          <RefreshCw aria-hidden="true" />
+          {/* The pending indicator: the rows stay put and this spins. */}
+          <RefreshCw aria-hidden="true" className={busy ? "animate-spin" : undefined} />
         </Button>
+        <span role="status" className="sr-only">
+          {busy && rows.length > 0 ? "Updating sessions…" : ""}
+        </span>
       </div>
       {selectedRows.length > 0 && (
         <div
@@ -799,11 +814,6 @@ function SessionList({
           <span role="status">{copyStatus}</span>
         </div>
       )}
-      {busy && rows.length > 0 && (
-        <p role="status" className="text-xs text-muted-foreground">
-          Updating sessions… Showing previous results.
-        </p>
-      )}
       {error && (
         <p role="alert">
           {error instanceof SignedOut ? "Taking you to sign in…" : error.message}
@@ -811,7 +821,16 @@ function SessionList({
       )}
       {busy && rows.length === 0 && !error && <SessionsSkeleton />}
       {(!busy || rows.length > 0) && (!error || rows.length > 0) && (
-        <div className={styles.tableSurface} style={{ flex: "0 0 auto" }}>
+        <div
+          className={styles.tableSurface}
+          aria-busy={busy}
+          style={{
+            flex: "0 0 auto",
+            // Stale rows dim slightly while the new ones load; no skeleton.
+            opacity: page.stale ? 0.6 : 1,
+            transition: "opacity 150ms ease",
+          }}
+        >
           <table
             className={`w-full caption-bottom text-sm ${styles.sessionsTable}`}
             style={{ minWidth: 44 + identityColumnWidth + 940 }}
