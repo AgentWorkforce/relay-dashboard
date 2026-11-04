@@ -8,6 +8,15 @@
 .settings .card + .card {
   border-top: 1px solid var(--border-soft);
 }
+/* Hosted members tab: each section is its own bordered card. */
+.settings [data-section="members"] .card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+.settings [data-section="members"] .card + .card {
+  margin-top: 20px;
+}
 .settings .card h2 {
   margin: 0 0 3px;
   font-size: 14px;

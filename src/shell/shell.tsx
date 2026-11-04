@@ -1,11 +1,24 @@
 // The hosted dashboard frame (DashboardShell): the workspace chrome with the
 // signed-in account in the sidebar. Pages keep their own data loading and
 // sign-in redirects; the shell only reads the account for display.
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { getAccount } from "../api/client";
 import type { Account } from "../api/contracts";
 import { AccountMenu } from "./account-menu";
 import { WorkspaceChrome, type RailSection } from "./workspace-chrome";
+
+const AccountContext = createContext<Account | null>(null);
+
+/** The signed-in account the shell loaded, or null before it (or outside the shell). */
+export function useShellAccount() {
+  return useContext(AccountContext);
+}
 
 export function Shell({
   rail,
@@ -31,6 +44,7 @@ export function Shell({
   }, []);
   const userName = account?.user.name || "Your account";
   return (
+    <AccountContext.Provider value={account}>
     <WorkspaceChrome
       rail={rail}
       label={label}
@@ -46,5 +60,6 @@ export function Shell({
     >
       {children}
     </WorkspaceChrome>
+    </AccountContext.Provider>
   );
 }

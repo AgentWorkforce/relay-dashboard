@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { flowsApi, type Flow, type RunPage } from "../api";
 import {
   ArrowRight,
@@ -12,6 +12,8 @@ import { plural, runTone, seg, statusLabel, usePolling } from "../format";
 import { Button, ButtonLink } from "../../shell/ui";
 import { WorkspaceViewSlot } from "../../shell/view-slots";
 import s from "../flows-dashboard.module.css";
+import chrome from "../../shell/workspace-chrome.module.css";
+import { FlowsIcon } from "../../shell/icons";
 
 type Tab = "flows" | "runs";
 
@@ -77,7 +79,7 @@ export function FlowsOverview({
       </WorkspaceViewSlot>
       <FlowsSidebar
         current={tab}
-        flowCount={flows ? flows.length : null}
+        flows={flows}
         runCount={page ? page.totalRuns : null}
       />
       <div className={s.content} aria-busy={!flows}>
@@ -251,15 +253,32 @@ export function FlowsOverview({
  */
 export function FlowsSidebar({
   current,
-  flowCount = null,
+  flows: given,
   runCount = null,
 }: {
   current: "flows" | "runs" | "workers" | null;
-  flowCount?: number | null;
+  /** The overview passes its list; other pages load it here. */
+  flows?: Flow[] | null;
   runCount?: number | null;
 }) {
+  const [loaded, setLoaded] = useState<Flow[] | null>(null);
+  const own = given === undefined;
+  useEffect(() => {
+    if (!own) return;
+    const controller = new AbortController();
+    flowsApi.listFlows(controller.signal).then(
+      (value) => {
+        if (!controller.signal.aborted) setLoaded(value);
+      },
+      () => {
+        /* The page reports its own errors; the sidebar list is optional. */
+      },
+    );
+    return () => controller.abort();
+  }, [own]);
+  const flows = own ? loaded : given;
   const tabs = [
-    { id: "flows", href: "#/flows", label: "Flows", count: flowCount },
+    { id: "flows", href: "#/flows", label: "Flows", count: flows ? flows.length : null },
     { id: "runs", href: "#/flows/runs", label: "Run history", count: runCount },
     { id: "workers", href: "#/flows/workers", label: "Workers", count: null },
   ] as const;
@@ -282,6 +301,32 @@ export function FlowsSidebar({
           ))}
         </div>
       </nav>
+      {/* Hosted workspace-chrome "Your flows" resource rows. */}
+      <section className={chrome.navGroup} aria-label="Your flows">
+        <h2>Your flows</h2>
+        {flows && flows.length > 0 ? (
+          flows.map((flow) => (
+            <a
+              key={flow.id}
+              href={`#/flows/f/${seg(flow.id)}`}
+              className={`${chrome.sidebarRow} ${chrome.resourceRow}`}
+            >
+              <FlowsIcon aria-hidden="true" />
+              <span>
+                <strong>{flow.name}</strong>
+                <small>
+                  {flow.stepCount ? plural(flow.stepCount, "step") : "? steps"}{" "}
+                  · {flow.fileType.toUpperCase()}
+                </small>
+              </span>
+            </a>
+          ))
+        ) : (
+          <p className={chrome.emptyResources}>
+            {flows ? "No flows added yet." : "Loading flows…"}
+          </p>
+        )}
+      </section>
     </WorkspaceViewSlot>
   );
 }

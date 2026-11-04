@@ -228,10 +228,9 @@ it("applies person and status filters in the browser and free text on the server
 it("shows an API failure rather than a misleading empty list", async () => {
   respond(/\/sessions$/, () => new Response("unavailable", { status: 502 }));
   render(<Dashboard />);
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Couldn’t load your sessions",
-  );
-  expect(screen.queryByText("No sessions yet.")).not.toBeInTheDocument();
+  const alerts = await screen.findAllByText(/Couldn’t load your sessions/);
+  for (const alert of alerts) expect(alert).toHaveAttribute("role", "alert");
+  expect(screen.queryByText(/No sessions yet/)).not.toBeInTheDocument();
 });
 
 it("renders the transcript with tool calls, results, diffs, timing, and subagents", async () => {
@@ -242,9 +241,9 @@ it("renders the transcript with tool calls, results, diffs, timing, and subagent
   expect(
     await screen.findByRole("heading", { name: "Fix session loading" }),
   ).toBeInTheDocument();
-  expect(screen.getByLabelText("Session identity")).toHaveTextContent(
-    "Codex·acme/relay·main",
-  );
+  expect(screen.getByLabelText("Session identity")).toHaveTextContent("Codex");
+  expect(screen.getByText("acme/relay")).toBeInTheDocument();
+  expect(screen.getByText("main")).toBeInTheDocument();
   expect(screen.getByText("7m")).toBeInTheDocument();
   expect(screen.getByText("5m")).toBeInTheDocument();
   expect(screen.getAllByText("Please fix the loader")).toHaveLength(1);
@@ -257,6 +256,7 @@ it("renders the transcript with tool calls, results, diffs, timing, and subagent
     screen.getByRole("button", { name: "Next tool call" }),
   ).toBeInTheDocument();
   expect(screen.getAllByText("Alex").length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Details" }));
   expect(screen.getByRole("link", { name: "reviewer" })).toHaveAttribute(
     "href",
     "/?session=child-1&source=codex",
@@ -363,7 +363,9 @@ it("charts team activity by agent", async () => {
   expect(
     await screen.findByText("active conversation-days"),
   ).toBeInTheDocument();
-  expect(screen.getByText("4")).toBeInTheDocument();
+  expect(
+    screen.getByText("active conversation-days").parentElement,
+  ).toHaveTextContent("4 active conversation-days");
   const legend = screen.getByRole("list");
   expect(within(legend).getByText("Codex")).toBeInTheDocument();
   expect(within(legend).getByText("Claude Code")).toBeInTheDocument();

@@ -3,12 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
-  ChevronRight,
+  ArrowLeft,
+  GitBranch,
   MessageSquare,
   PanelRight,
   Play,
 } from "lucide-react";
-import { Button, Skeleton } from "../shell/ui";
+import { Button, buttonClass, Skeleton } from "../shell/ui";
+import styles from "./sessions.module.css";
 import { WorkspaceViewSlot } from "../shell/view-slots";
 import { SignedOut } from "../api/client";
 import { useLoad } from "./use-load";
@@ -85,8 +87,8 @@ export function SessionView({
   } | null>(null);
   const moreRequest = useRef<AbortController | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  // Hosted shows the session overview beside the conversation by default.
-  const [showDetails, setShowDetails] = useState(true);
+  // Hosted keeps the session overview behind the Details toggle.
+  const [showDetails, setShowDetails] = useState(false);
   const [appended, setAppended] = useState<{
     key: string;
     events: Record<string, unknown>[];
@@ -379,22 +381,21 @@ export function SessionView({
   return (
     <div className="session-view mx-auto flex w-full max-w-[1440px] flex-col">
       <WorkspaceViewSlot name="heading">
-        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 text-[15px] font-semibold">
-          <a
-            className="back text-muted-foreground hover:text-foreground"
-            href={backHref(from)}
-            onClick={onLinkClick}
-          >
-            Sessions
-          </a>
-          <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-          <span className="truncate" title={data ? title : undefined}>
-            {data ? title : "Session"}
-          </span>
-        </nav>
+        <div className={styles.heading}>
+          <h1>Session</h1>
+        </div>
       </WorkspaceViewSlot>
-      {data && counts.tools > 0 && (
-        <WorkspaceViewSlot name="toolbar">
+      <WorkspaceViewSlot name="toolbar">
+        <a
+          className={`back ${buttonClass("ghost", "sm")}`}
+          data-slot="button"
+          href={backHref(from)}
+          onClick={onLinkClick}
+        >
+          <ArrowLeft aria-hidden="true" />
+          Sessions
+        </a>
+        {data && counts.tools > 0 && (
           <Button
             variant="ghost"
             size="sm"
@@ -405,8 +406,8 @@ export function SessionView({
             Next tool call
             <ArrowDown aria-hidden="true" />
           </Button>
-        </WorkspaceViewSlot>
-      )}
+        )}
+      </WorkspaceViewSlot>
       {error && (
         <div role="alert" className="load-error px-5 md:px-9">
           <span>
@@ -442,6 +443,29 @@ export function SessionView({
           >
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex min-w-0 flex-1 flex-col gap-2">
+                {(project || text(catalog?.gitBranch)) && (
+                  <p
+                    className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+                    title={project ?? undefined}
+                  >
+                    {project && (
+                      <span className="max-w-full break-words">
+                        {shortProject(project)}
+                      </span>
+                    )}
+                    {project && text(catalog?.gitBranch) && (
+                      <span aria-hidden="true">/</span>
+                    )}
+                    {text(catalog?.gitBranch) && (
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <GitBranch className="size-3.5 shrink-0" aria-hidden="true" />
+                        <span className="break-all font-mono">
+                          {text(catalog?.gitBranch)}
+                        </span>
+                      </span>
+                    )}
+                  </p>
+                )}
                 <h1
                   className="line-clamp-2 min-w-0 max-w-full text-xl font-semibold leading-8 tracking-tight"
                   title={title}
@@ -451,20 +475,11 @@ export function SessionView({
                 <p
                   aria-label="Session identity"
                   className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground"
-                  title={project ?? undefined}
                 >
                   <span className="flex shrink-0 items-center gap-2">
                     <HarnessMark source={source} />
                     {harnessName(source)}
                   </span>
-                  {[project ? shortProject(project) : null, text(catalog?.gitBranch)]
-                    .filter(Boolean)
-                    .map((part) => (
-                      <span key={part} className="flex items-center gap-3">
-                        <span aria-hidden="true">·</span>
-                        {part}
-                      </span>
-                    ))}
                 </p>
               </div>
               <div className="flex items-start gap-2">

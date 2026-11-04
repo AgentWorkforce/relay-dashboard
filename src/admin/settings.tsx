@@ -80,7 +80,7 @@ export function Settings(props: { section: string }) {
               type="search"
               placeholder="Search settings…"
               aria-label="Search settings"
-              className="h-8 bg-transparent outline-none placeholder:text-muted-foreground"
+              className="bg-transparent outline-none placeholder:text-muted-foreground"
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
             />

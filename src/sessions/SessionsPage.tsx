@@ -4,7 +4,11 @@
 // person and status in the browser too).
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   CircleCheck,
+  Copy,
   CirclePause,
   FolderGit2,
   Inbox,
@@ -54,6 +58,7 @@ import {
 } from "./route";
 import { SignedOut } from "../api/client";
 import { InitialsAvatar } from "../shell/account-menu";
+import { useShellAccount } from "../shell/shell";
 import { Button, buttonClass, Skeleton } from "../shell/ui";
 import { WorkspaceViewSlot } from "../shell/view-slots";
 import styles from "./sessions.module.css";
@@ -81,6 +86,54 @@ const HARNESS_ICONS = new Set([
 // Hosted ui/toggle.tsx (ToggleGroupItem) classes.
 const TOGGLE =
   "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-[color,box-shadow] outline-none hover:bg-muted hover:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 bg-transparent";
+
+const COLUMNS = [
+  { id: "session", label: "Session" },
+  { id: "project", label: "Project" },
+  { id: "status", label: "Status" },
+  { id: "people", label: "People" },
+  { id: "events", label: "Events" },
+  { id: "updated", label: "Updated" },
+] as const;
+type SessionSort = {
+  column: (typeof COLUMNS)[number]["id"];
+  direction: "ascending" | "descending";
+};
+const STATUS_ORDER = { active: 0, idle: 1, finished: 2 } as const;
+
+/** Hosted sortSessions(): one column, ascending or descending, stable. */
+function sortRows(
+  rows: SessionRow[],
+  sort: SessionSort,
+  now: number,
+  people: Map<string, string | null>,
+) {
+  const value = (row: SessionRow): string | number => {
+    switch (sort.column) {
+      case "session":
+        return sessionTitle(row).toLowerCase();
+      case "project":
+        return (projectLabel(row)?.name ?? "").toLowerCase();
+      case "status":
+        return STATUS_ORDER[sessionActivity(row, now)];
+      case "people":
+        return row.userIds
+          .map((id) => people.get(id) || "")
+          .join(", ")
+          .toLowerCase();
+      case "events":
+        return row.eventCount ?? -1;
+      case "updated":
+        return row.lastTs ? Date.parse(row.lastTs) || 0 : 0;
+    }
+  };
+  const sign = sort.direction === "ascending" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const left = value(a);
+    const right = value(b);
+    return left < right ? -sign : left > right ? sign : 0;
+  });
+}
 
 /** Hosted relativeTime(): "Just now", "12m ago", "3h ago", "2d ago"… */
 export function relativeTime(value: string | null, now: number) {
@@ -177,11 +230,15 @@ export function SessionsPage({
           className="flex items-center gap-1"
           aria-label="Sessions views"
         >
-          {(["sessions", "search", "activity"] as const).map((name) => (
+          {(["sessions", "search"] as const).map((name) => (
             <a
               key={name}
               href={listHref(query, name)}
-              aria-current={tab === name ? "page" : undefined}
+              aria-current={
+                tab === name || (name === "sessions" && tab === "activity")
+                  ? "page"
+                  : undefined
+              }
               onClick={onLinkClick}
               data-slot="button"
               className={buttonClass(
@@ -190,11 +247,7 @@ export function SessionsPage({
                 "text-xs font-medium text-muted-foreground aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground",
               )}
             >
-              {name === "sessions"
-                ? "Sessions"
-                : name === "search"
-                  ? "Search messages"
-                  : "Activity"}
+              {name === "sessions" ? "Sessions" : "Search messages"}
             </a>
           ))}
         </nav>
@@ -205,6 +258,13 @@ export function SessionsPage({
         </div>
       )}
       {tab !== "sessions" && <UnusedFilters query={query} view={tab} />}
+      {tab === "sessions" && (
+        <ActivityPanel
+          workspaceId={workspaceId}
+          query={parseSessionQuery(debounced).text}
+          onSignedOut={onSignedOut}
+        />
+      )}
       {tab === "sessions" && (
         <SessionList
           workspaceId={workspaceId}
@@ -265,6 +325,7 @@ function SearchBox({
           <Search className="size-4 shrink-0" aria-hidden="true" />
           <input
             type="search"
+            data-slot="input-group-control"
             aria-label="Search sessions"
             className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
             placeholder={
@@ -351,6 +412,7 @@ function SidebarFilters({
   now: number;
 }) {
   const suggestions = sessionSuggestions(rows, members, now);
+  const currentUserId = useShellAccount()?.user.id;
   const count = (field: string, value: string | null) =>
     rows.filter((row) =>
       matchesSessionFilters(row, setSessionFilter(query, field, value), now),
@@ -406,8 +468,9 @@ function SidebarFilters({
             Users,
             of("person").map((item) => ({
               value: item.value,
-              title: item.title,
-              icon: <InitialsAvatar name={item.title} size={18} />,
+              title:
+                item.value === currentUserId ? `${item.title} (you)` : item.title,
+              icon: <InitialsAvatar name={item.title} size={18} single />,
             })),
           )}
         {section(
@@ -479,6 +542,12 @@ function SessionList({
     key: string;
     error: Error;
   } | null>(null);
+  const [sort, setSort] = useState<SessionSort>({
+    column: "updated",
+    direction: "descending",
+  });
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [copyStatus, setCopyStatus] = useState("");
   const filters = useMemo(() => serverFilters(query), [query]);
   const key = JSON.stringify([workspaceId, filters, reload]);
   const page = useLoad(key, (signal) =>
@@ -533,8 +602,37 @@ function SessionList({
     }
   }
 
-  const visible = rows.filter((row) => matchesSessionFilters(row, query, now));
   const people = new Map(members.map((member) => [member.id, member.name]));
+  const visible = sortRows(
+    rows.filter((row) => matchesSessionFilters(row, query, now)),
+    sort,
+    now,
+    people,
+  );
+  const selectedRows = visible.filter((row) => selected.has(sessionKey(row)));
+  const selectRows = (targets: SessionRow[], checked: boolean) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const row of targets)
+        if (checked) next.add(sessionKey(row));
+        else next.delete(sessionKey(row));
+      return next;
+    });
+  async function copySelectedLinks() {
+    const links = selectedRows.map(
+      (row) =>
+        new URL(sessionHref(row.sessionId, row.source), window.location.href)
+          .href,
+    );
+    try {
+      await navigator.clipboard.writeText(links.join("\n"));
+      setCopyStatus(
+        `Copied ${links.length} ${links.length === 1 ? "link" : "links"}`,
+      );
+    } catch {
+      setCopyStatus("Couldn’t copy the links");
+    }
+  }
   const identityCount = Math.max(1, ...visible.map((row) => row.userIds.length + 1));
   const identityColumnWidth = 12 + 22 + (identityCount - 1) * 13;
   return (
@@ -553,16 +651,40 @@ function SessionList({
       >
         <SearchBox query={liveQuery} onChange={onQuery} tab="sessions" />
         <Button
-          variant="outline"
-          size="sm"
-          className="h-[38px]"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Refresh"
+          title="Refresh"
           onClick={() => setReload((value) => value + 1)}
           disabled={busy}
         >
           <RefreshCw aria-hidden="true" />
-          Refresh
         </Button>
       </div>
+      {selectedRows.length > 0 && (
+        <div
+          className={styles.selectionToolbar}
+          role="group"
+          aria-label="Selected sessions"
+        >
+          <span>{selectedRows.length} selected</span>
+          <Button variant="ghost" size="sm" onClick={() => void copySelectedLinks()}>
+            <Copy aria-hidden="true" />
+            Copy session links
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setSelected(new Set());
+              setCopyStatus("");
+            }}
+          >
+            Clear selection
+          </Button>
+          <span role="status">{copyStatus}</span>
+        </div>
+      )}
       {busy && rows.length > 0 && (
         <p role="status" className="text-xs text-muted-foreground">
           Updating sessions… Showing previous results.
@@ -575,7 +697,7 @@ function SessionList({
       )}
       {busy && rows.length === 0 && !error && <SessionsSkeleton />}
       {(!busy || rows.length > 0) && (!error || rows.length > 0) && (
-        <div className={styles.tableSurface}>
+        <div className={styles.tableSurface} style={{ flex: "0 0 auto" }}>
           <table
             className={`w-full caption-bottom text-sm ${styles.sessionsTable}`}
             style={{ minWidth: 44 + identityColumnWidth + 940 }}
@@ -584,30 +706,80 @@ function SessionList({
               Coding sessions, most recently updated first
             </caption>
             <colgroup>
+              <col style={{ width: 44 }} />
               <col style={{ width: identityColumnWidth }} />
-              <col style={{ width: "38%" }} />
-              <col style={{ width: "19%" }} />
+              <col style={{ width: "36%" }} />
+              <col style={{ width: "18%" }} />
+              <col style={{ width: "12%" }} />
               <col style={{ width: "13%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "8%" }} />
+              <col style={{ width: "9%" }} />
               <col style={{ width: "12%" }} />
             </colgroup>
             <thead className="text-muted-foreground">
               <tr className="border-b border-border">
+                <th className={styles.selectionCell}>
+                  <input
+                    type="checkbox"
+                    className={styles.selectionCheckbox}
+                    aria-label="Select all visible sessions"
+                    checked={
+                      visible.length > 0 &&
+                      selectedRows.length === visible.length
+                    }
+                    ref={(element) => {
+                      if (element)
+                        element.indeterminate =
+                          selectedRows.length > 0 &&
+                          selectedRows.length < visible.length;
+                    }}
+                    onChange={(event) =>
+                      selectRows(visible, event.target.checked)
+                    }
+                  />
+                </th>
                 <th>
                   <span className="sr-only">Session identity</span>
                 </th>
-                {["Session", "Project", "Status", "People", "Events", "Updated"].map(
-                  (label) => (
-                    <th
-                      key={label}
-                      scope="col"
-                      className={`${styles.resizableHeader} h-9 px-3 text-left text-xs font-medium`}
+                {COLUMNS.map((column) => (
+                  <th
+                    key={column.id}
+                    scope="col"
+                    aria-sort={
+                      sort.column === column.id ? sort.direction : undefined
+                    }
+                    className={`${styles.resizableHeader} h-9 px-3 text-left text-xs font-medium`}
+                  >
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="-ml-1.5 max-w-full"
+                      aria-label={`Sort by ${column.label}`}
+                      onClick={() =>
+                        setSort((current) => ({
+                          column: column.id,
+                          direction:
+                            current.column === column.id
+                              ? current.direction === "ascending"
+                                ? "descending"
+                                : "ascending"
+                              : column.id === "updated" || column.id === "events"
+                                ? "descending"
+                                : "ascending",
+                        }))
+                      }
                     >
-                      <span className="truncate">{label}</span>
-                    </th>
-                  ),
-                )}
+                      <span className="truncate">{column.label}</span>
+                      {sort.column !== column.id ? (
+                        <ArrowUpDown aria-hidden="true" />
+                      ) : sort.direction === "ascending" ? (
+                        <ArrowUp aria-hidden="true" />
+                      ) : (
+                        <ArrowDown aria-hidden="true" />
+                      )}
+                    </Button>
+                    <span className={styles.columnResizeHandle} aria-hidden="true" />
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -622,7 +794,22 @@ function SessionList({
                   " · ",
                 );
                 return (
-                  <tr key={sessionKey(row)} className={styles.sessionRow}>
+                  <tr
+                    key={sessionKey(row)}
+                    className={styles.sessionRow}
+                    data-selected={selected.has(sessionKey(row)) || undefined}
+                  >
+                    <td className={styles.selectionCell}>
+                      <input
+                        type="checkbox"
+                        className={styles.selectionCheckbox}
+                        aria-label={`Select ${title}`}
+                        checked={selected.has(sessionKey(row))}
+                        onChange={(event) =>
+                          selectRows([row], event.target.checked)
+                        }
+                      />
+                    </td>
                     <td className={styles.harnessIconCell}>
                       <span
                         className={styles.identityStack}
@@ -635,6 +822,7 @@ function SessionList({
                             key={`${row.userIds[index]}`}
                             name={name}
                             size={22}
+                            single
                             className={styles.identityAvatar}
                           />
                         ))}
@@ -732,7 +920,7 @@ function SessionList({
               {visible.length === 0 && !busy && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-5 py-12 text-center text-muted-foreground"
                   >
                     {rows.length ? (

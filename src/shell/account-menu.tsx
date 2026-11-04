@@ -21,10 +21,13 @@ export function InitialsAvatar({
   name,
   size = 32,
   className,
+  single = false,
 }: {
   name: string | null | undefined;
   size?: number;
   className?: string;
+  /** Hosted session lists show one letter (`name.slice(0, 1)`). */
+  single?: boolean;
 }) {
   return (
     <span
@@ -37,7 +40,7 @@ export function InitialsAvatar({
         className="flex size-full items-center justify-center rounded-full bg-muted text-sm text-muted-foreground"
         style={size < 28 ? { fontSize: 10 } : undefined}
       >
-        {initials(name)}
+        {single ? (name || "?").slice(0, 1) : initials(name)}
       </span>
     </span>
   );
