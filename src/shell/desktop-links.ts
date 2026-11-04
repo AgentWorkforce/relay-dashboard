@@ -97,9 +97,9 @@ export function desktopConnectLink(
 export function desktopMessageLink(links: DesktopLinks, address: string): string | null {
   const to = address.trim();
   if (!to || /\s/.test(to) || to.length > 512) return null;
-  // An exact address: an `@` with something on both sides (names may hold `@`).
-  if (to.startsWith("@")) return null;
-  if (![...to].some((c, i) => c === "@" && i > 0 && i < to.length - 1)) return null;
+  // An exact address: an `@` with something on both sides (names may hold
+  // `@`), never starting or ending with one.
+  if (to.startsWith("@") || to.endsWith("@") || !/.@./u.test(to)) return null;
   const query = new URLSearchParams({ to, site: links.site });
   return `${links.scheme}://message?${query}`;
 }

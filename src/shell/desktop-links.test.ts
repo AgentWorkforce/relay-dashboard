@@ -22,7 +22,7 @@ it("builds message links only for exact addresses", () => {
     "agentrelay-gcpproof://message?to=reviewer%40sf-frame&site=https%3A%2F%2Fgcp-proof.agentrelay.com",
   );
   expect(desktopMessageLink(proof, "a@b@c")).toContain("to=a%40b%40c");
-  for (const bad of ["reviewer", "@reviewer", "reviewer@", "re viewer@x", ""])
+  for (const bad of ["reviewer", "@reviewer", "reviewer@", "agent@machine@", "😀@", "re viewer@x", ""])
     expect(desktopMessageLink(proof, bad)).toBeNull();
 });
 

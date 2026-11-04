@@ -81,8 +81,10 @@ A Desktop built for one deployment registers its own scheme and refuses a link
 naming another site, so set both to what that build uses. `urlScheme` must be a
 lowercase scheme (`^[a-z][a-z0-9+.-]{0,63}$`, not `http`, `https`, `file`,
 `javascript` and the like) and defaults to `agentrelay`; `siteUrl` must be a
-bare `https` origin (`http` only for localhost) and defaults to the dashboard's
-own origin. Invalid fields fall back on their own. The hosted build shows no
+bare `https` origin (`http` only for localhost). It defaults to the dashboard's
+own origin when that origin qualifies; a dashboard served over plain `http`
+(other than localhost) shows no Desktop links unless `siteUrl` names a valid
+`https` origin. Invalid fields fall back on their own. The hosted build shows no
 Desktop links here.
 
 `npm run check` runs lint, tests and the production build. Apache-2.0.
