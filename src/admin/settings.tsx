@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { adminApi, canManage, SignedOut } from "./api";
+import { CodingAgentsSection } from "./coding-agents";
 import { ConnectionsSection } from "./connections";
 import { EnvironmentSection } from "./environment";
 import { MembersSection } from "./members";
@@ -9,6 +10,7 @@ import { useLoad } from "./use-load";
 import "./admin.css";
 import { loginHref } from "../app-path";
 import {
+  Blocks,
   Building2,
   KeyRound,
   LockKeyhole,
@@ -26,6 +28,9 @@ export const SETTINGS_SECTIONS = [
   { id: "appearance", label: "Appearance", group: "Preferences", adminOnly: false, icon: SunMoon },
   { id: "workspace", label: "Workspace", group: "Workspace", adminOnly: false, icon: Building2 },
   { id: "connections", label: "Connections", group: "Workspace", adminOnly: false, icon: Plug },
+  // Self-host only: hosted keeps Nango integrations off the settings page.
+  // Self-host's bring-your-own OAuth integrations live here instead.
+  { id: "integrations", label: "Integrations", group: "Workspace", adminOnly: false, icon: Blocks },
   { id: "tokens", label: "API tokens", group: "Workspace", adminOnly: true, icon: KeyRound },
   { id: "environment", label: "Environment", group: "Workspace", adminOnly: false, icon: LockKeyhole },
   { id: "organization", label: "Organization", group: "Organization", adminOnly: false, icon: Building2 },
@@ -36,12 +41,18 @@ export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
 const DESCRIPTIONS: Record<SettingsSectionId, string> = {
   appearance: "Make Relay feel right for you.",
   workspace: "Your workspace and the agents connected to it.",
-  connections: "Tools and model accounts available to your workspace.",
+  connections: "Coding agents and model accounts available to your workspace.",
+  integrations: "GitHub, Slack, Linear and other tools your Flow runs can use.",
   tokens: "Keys that give your tools access to this workspace.",
   environment: "Encrypted variables and API keys your Flow runs receive.",
   organization: "Your organization’s identity and shared settings.",
   members: "The people who share this workspace.",
 };
+
+/** Hosted: a workspace still named "Default" is shown by its organization's name. */
+function workspaceDisplayName(workspaceName: string, organizationName: string) {
+  return /^default(?: workspace)?$/i.test(workspaceName.trim()) ? organizationName : workspaceName;
+}
 
 export function settingsHash(section: SettingsSectionId) {
   return `#/settings/${section}`;
@@ -148,6 +159,16 @@ export function Settings(props: { section: string }) {
             >
               {active === "workspace" && <WorkspaceSection context={context} />}
               {active === "connections" && (
+                <CodingAgentsSection
+                  key={context.currentWorkspace.id}
+                  workspaceId={context.currentWorkspace.id}
+                  workspaceName={workspaceDisplayName(
+                    context.currentWorkspace.name,
+                    context.currentOrganization.name,
+                  )}
+                />
+              )}
+              {active === "integrations" && (
                 <ConnectionsSection workspaceId={context.currentWorkspace.id} />
               )}
               {active === "tokens" && manage && (
