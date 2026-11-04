@@ -92,8 +92,8 @@ export function FlowIntegrations({ source }: { source: string }) {
   if (!required.length) return null;
 
   async function connect(provider: IntegrationProvider) {
-    // One connect at a time: every attempt shares the named popup, so a second
-    // one could take over the window the first is about to close or navigate.
+    // One connect at a time: the pending label, the poll timer and the
+    // providers refresh track a single attempt.
     if (!workspaceId || pending.current) return;
     pending.current = true;
     const mine = ++attempt.current;
