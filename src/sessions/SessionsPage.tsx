@@ -715,9 +715,14 @@ function SessionList({
   // Every settled result is remembered, an empty one too, so the fallback
   // is always the latest view and never an older query's rows.
   const visibleId = visible.map(sessionKey).join("\n");
-  if (!busy && visibleId !== lastVisible.id)
+  // Saved only once the server query has caught up with the live one (not
+  // during the debounce), so a pick never records its own empty in-between.
+  if (!busy && liveQuery === query && visibleId !== lastVisible.id)
     setLastVisible({ id: visibleId, rows: visible });
-  const pendingPick = busy && visible.length === 0 && lastVisible.rows.length > 0;
+  const pendingPick =
+    (busy || liveQuery !== query) &&
+    visible.length === 0 &&
+    lastVisible.rows.length > 0;
   const displayed = pendingPick ? lastVisible.rows : visible;
   const selectedRows = displayed.filter((row) => selected.has(sessionKey(row)));
   const selectRows = (targets: SessionRow[], checked: boolean) => {
@@ -1099,7 +1104,7 @@ function SessionList({
       )}
       <footer className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
         <span>
-          {visible.length} {visible.length === 1 ? "session" : "sessions"}
+          {displayed.length} {displayed.length === 1 ? "session" : "sessions"}
           {cursor ? " loaded · Filters apply to loaded sessions" : ""}
         </span>
         {cursor && (
