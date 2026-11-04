@@ -544,6 +544,24 @@ it("owners invite by email; a link to copy is shown when email is not configured
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
+it("the invite dialog keeps focus inside, closes on Escape and returns focus", async () => {
+  inviteFakes({ inviteEmail: true, delivery: "sent" });
+  render(<Settings section="members" />);
+  const opener = await screen.findByRole("button", { name: "Invite member" });
+  opener.focus();
+  fireEvent.click(opener);
+  const dialog = await screen.findByRole("dialog");
+  const email = within(dialog).getByPlaceholderText("colleague@example.com");
+  expect(document.activeElement).toBe(email);
+  const close = within(dialog).getByRole("button", { name: "Close" });
+  close.focus();
+  fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+  expect(dialog.contains(document.activeElement)).toBe(true);
+  fireEvent.keyDown(document, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(document.activeElement).toBe(opener);
+});
+
 it("pending invites: copy link issues a fresh link, resend emails it, cancel revokes", async () => {
   inviteFakes({ inviteEmail: true, delivery: "sent" });
   const writeText = vi.fn().mockResolvedValue(undefined);
@@ -564,6 +582,12 @@ it("pending invites: copy link issues a fresh link, resend emails it, cancel rev
     ).toEqual([{ send: false }, { send: true }]),
   );
   expect(await screen.findByText("Invitation emailed to old@acme.test.")).toBeInTheDocument();
+  // An emailed link is not displayed unless asked for.
+  expect(screen.queryByText(/sh_inv_rotated/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Show link" }));
+  expect(screen.getByText(/sh_inv_rotated/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  expect(screen.queryByText(/sh_inv_rotated/)).not.toBeInTheDocument();
   fireEvent.click(within(screen.getByTestId("invite-old@acme.test")).getByRole("button", { name: "Cancel" }));
   await waitFor(() =>
     expect(screen.queryByTestId("invite-old@acme.test")).not.toBeInTheDocument(),
@@ -590,6 +614,7 @@ it("admins cannot invite or manage owners; members cannot invite", async () => {
   const boss = await screen.findByTestId("member-boss@acme.test");
   expect(within(boss).queryByLabelText("Role for boss@acme.test")).not.toBeInTheDocument();
   expect(within(boss).getByText("Owner")).toBeInTheDocument();
+  expect(within(boss).queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Invite member" }));
   const dialog = await screen.findByRole("dialog");
   expect(

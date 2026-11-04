@@ -171,7 +171,10 @@ export function MembersSection(props: {
   const mayManage = (member: Member) =>
     props.canManage && (props.viewerRole === "owner" || member.role !== "owner");
 
-  const pending = invites.data ?? [];
+  // Open invites only (the API lists those); an expired one can be renewed.
+  const pending = (invites.data ?? []).filter(
+    (invite) => invite.status === "pending" || invite.status === "expired",
+  );
   const loadError = members.error ?? (canInvite ? invites.error : null);
 
   return (
@@ -290,7 +293,9 @@ export function MembersSection(props: {
 
         {canInvite && (
           <div className="flex flex-col gap-3">
-            {notice && <InviteNotice key={notice.url} notice={notice} />}
+            {notice && (
+              <InviteNotice key={`${notice.url} ${notice.delivery}`} notice={notice} onDismiss={() => setNotice(null)} />
+            )}
             <p className="text-sm font-medium">Pending invitations</p>
             {invites.data && pending.length === 0 && (
               <p className="text-sm text-muted-foreground">No pending invitations.</p>
@@ -386,8 +391,10 @@ export function MembersSection(props: {
   );
 }
 
-function InviteNotice({ notice }: { notice: LinkNotice }) {
+function InviteNotice({ notice, onDismiss }: { notice: LinkNotice; onDismiss: () => void }) {
   const sent = notice.delivery === "sent";
+  // An emailed link is not shown again: it is a working credential until used.
+  const [revealed, setRevealed] = useState(!sent);
   // Keyed by the link: a new link starts with its own copied state.
   const [copied, setCopied] = useState<boolean | "unavailable">(notice.copied);
   return (
@@ -399,7 +406,20 @@ function InviteNotice({ notice }: { notice: LinkNotice }) {
           : "flex flex-col gap-2 rounded-md border border-[var(--status-warning)] bg-[var(--status-warning-soft)] p-3 text-sm"
       }
     >
-      <p>{deliveryText(notice)}</p>
+      <div className="flex items-start justify-between gap-3">
+        <p>{deliveryText(notice)}</p>
+        <Button variant="ghost" size="sm" onClick={onDismiss}>
+          Done
+        </Button>
+      </div>
+      {!revealed && (
+        <div>
+          <Button variant="outline" size="sm" onClick={() => setRevealed(true)}>
+            Show link
+          </Button>
+        </div>
+      )}
+      {revealed && (
       <div className="flex flex-col gap-2 rounded-md border border-[var(--border-default)] bg-[var(--surface-soft)] p-2">
         <p className="text-xs text-muted-foreground">
           {copied === "unavailable"
@@ -417,6 +437,7 @@ function InviteNotice({ notice }: { notice: LinkNotice }) {
           </Button>
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -434,14 +455,44 @@ function InviteMemberDialog(props: {
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(props.onClose);
   useEffect(() => {
+    closeRef.current = props.onClose;
+  });
+  // ConnectAgentDialog's focus handling: focus the email field, keep Tab
+  // inside the dialog, Escape closes, and focus returns to the opener.
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
     input.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") props.onClose();
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeRef.current();
+        return;
+      }
+      const dialog = dialogRef.current;
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = [...dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )];
+      if (!focusable.length) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      previous?.focus?.();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function submit(event: FormEvent) {
@@ -469,12 +520,14 @@ function InviteMemberDialog(props: {
         className="absolute inset-0 bg-[var(--overlay)] backdrop-blur-sm"
         onClick={props.onClose}
       />
-      <Card
+      <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="invite-title"
         className="relative w-full max-w-lg"
       >
+      <Card>
         <CardHeader className="bg-[var(--surface-strong)]">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -545,6 +598,7 @@ function InviteMemberDialog(props: {
           </form>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

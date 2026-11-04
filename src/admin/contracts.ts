@@ -125,7 +125,7 @@ export const invitationSchema = z.object({
   role: roleSchema,
   status: z.enum(["pending", "accepted", "revoked", "expired"]),
   invitedBy: z
-    .object({ id: z.string(), name: z.string(), email: z.string() })
+    .object({ id: z.string(), name: nullableText, email: nullableText })
     .nullable()
     .optional(),
   createdAt: z.string(),
