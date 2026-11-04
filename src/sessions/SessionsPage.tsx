@@ -1079,7 +1079,7 @@ function SessionList({
                   </tr>
                 );
               })}
-              {visible.length === 0 && !busy && (
+              {displayed.length === 0 && !busy && !pendingPick && (
                 <tr>
                   <td
                     colSpan={8}
