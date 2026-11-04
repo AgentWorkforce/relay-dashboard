@@ -184,16 +184,16 @@
 }
 .flows-main button.primary,
 .flows-main a.button.primary {
-  background: #2d6a9c;
-  color: #fff;
-  border: 1.5px solid #234969;
+  background: var(--brand-button);
+  color: var(--brand-button-fg);
+  border: 1.5px solid var(--brand-button-border);
   border-radius: var(--radius-bubble, 10px 10px 10px 3px);
   font-size: 12px;
 }
 .flows-main button.primary:hover:not(:disabled),
 .flows-main a.button.primary:hover {
-  background: #4a90c2;
-  color: #fff;
+  background: var(--brand-button-hover);
+  color: var(--brand-button-fg);
 }
 .flows-main button.danger {
   border-color: transparent;

@@ -8,9 +8,12 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./app";
 import { initTheme } from "./shell/theme";
+import { applyBranding } from "./shell/branding";
 
 // Hosted Cloud sets the theme in an inline head script before hydration.
 initTheme();
+// A customer profile in /runtime-config.js (self-host only) rebrands the page.
+applyBranding();
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />

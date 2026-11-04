@@ -2,7 +2,14 @@
 // dashboard: free text goes to RelayHistory; `harness:`, `project:`, `is:`,
 // `person:`, `updated:`, and `created:` tokens filter rows (hosted applies
 // person and status in the browser too).
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -20,11 +27,14 @@ import {
   Zap,
 } from "lucide-react";
 import { useLoad } from "./use-load";
-import { listSessions, searchSessions, type SearchMatch } from "./api";
+import {
+  listSessions,
+  searchSessions,
+  type SearchMatch,
+} from "./api";
 import { ActivityPanel } from "./ActivityPanel";
 import {
   harnessName,
-  harnessSources,
   memberNames,
   projectLabel,
   promptLabel,
@@ -40,6 +50,8 @@ import {
   type SessionRow,
 } from "./data";
 import {
+  facetFilters,
+  serverFilters,
   filterValue,
   matchesSearchFilters,
   matchesSessionFilters,
@@ -137,40 +149,6 @@ export function relativeTime(value: string | null, now: number) {
 }
 
 type Tab = "sessions" | "activity" | "search";
-
-/** Server-side filters derived from the query tokens. */
-function serverFilters(q: string) {
-  const parsed = parseSessionQuery(q);
-  const single = (field: string) => {
-    const matches = parsed.filters.filter(
-      (filter) => filter.field === field && !filter.exclude && filter.value,
-    );
-    return matches.length === 1 ? matches[0]!.value : undefined;
-  };
-  const updated = parsed.filters.find(
-    (filter) => filter.field === "updated" && !filter.exclude,
-  );
-  const date = updated?.value.match(/^(>=|<=|>|<|=)?(\d{4}-\d{2}-\d{2})$/);
-  const op = date?.[1] ?? "=";
-  const day = date?.[2];
-  // `until` is a superset bound (the next midnight); rows are still filtered
-  // exactly in the browser.
-  const nextDay =
-    day && Number.isFinite(Date.parse(day))
-      ? new Date(Date.parse(day) + 86_400_000).toISOString().slice(0, 10)
-      : undefined;
-  const harness = single("harness");
-  return {
-    q: parsed.text.trim() || undefined,
-    // A harness with aliased sources (claude, claude-terminal…) is filtered in
-    // the browser so the server doesn't drop the aliases.
-    source:
-      harness && harnessSources(harness).length === 1 ? harness : undefined,
-    project: single("project"),
-    since: day && (op === ">=" || op === ">" || op === "=") ? day : undefined,
-    until: day && (op === "<=" || op === "<" || op === "=") ? nextDay : undefined,
-  };
-}
 
 function useSignedOut(error: Error | null | undefined, onSignedOut: () => void) {
   useEffect(() => {
@@ -545,11 +523,39 @@ function SessionList({
   });
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [copyStatus, setCopyStatus] = useState("");
-  const filters = useMemo(() => serverFilters(query), [query]);
+  // Project ids seen in any page, so a facet pick can be matched exactly.
+  const [knownProjects, setKnownProjects] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const filters = useMemo(
+    () => serverFilters(query, knownProjects),
+    [query, knownProjects],
+  );
   const key = JSON.stringify([workspaceId, filters, reload]);
   const page = useLoad(key, (signal) =>
     listSessions(workspaceId, filters, null, signal),
   );
+  // Facet options and counts ignore the project and harness picks.
+  const baseFilters = useMemo(() => facetFilters(filters), [filters]);
+  const narrowed = baseFilters.project !== filters.project || baseFilters.source !== filters.source;
+  const baseKey = narrowed ? JSON.stringify([workspaceId, baseFilters, reload, "facets"]) : null;
+  const base = useLoad(baseKey, (signal) =>
+    listSessions(workspaceId, baseFilters, null, signal),
+  );
+  // The facet query whose next page is in flight (per query, not global).
+  const [facetBusy, setFacetBusy] = useState<string | null>(null);
+  const [facetFailure, setFacetFailure] = useState<string | null>(null);
+  // The facet query on screen; a page for an abandoned query is dropped.
+  const currentBaseKey = useRef(baseKey);
+  // A layout effect: the guard sees the committed query before any response runs.
+  useLayoutEffect(() => {
+    currentBaseKey.current = baseKey;
+  }, [baseKey]);
+  const [baseAppended, setBaseAppended] = useState<{
+    key: string | null;
+    rows: SessionRow[];
+    nextCursor: string | null;
+  } | null>(null);
   // A load-more failure belongs to the request it was raised for.
   const moreError = moreFailure?.key === key ? moreFailure.error : null;
   useSignedOut(page.error ?? moreError, onSignedOut);
@@ -568,6 +574,47 @@ function SessionList({
         : [],
     [page.data, extra],
   );
+  // Facet options and counts read every session seen for this text and date
+  // query: the unnarrowed facet pages and every list page. A pick never drops
+  // an option the user has already loaded.
+  const facetScope = JSON.stringify([workspaceId, baseFilters, reload]);
+  const [seen, setSeen] = useState<{
+    scope: string;
+    rows: ReadonlyMap<string, SessionRow>;
+  }>({ scope: facetScope, rows: new Map() });
+  const baseExtra = baseAppended?.key === baseKey ? baseAppended : null;
+  const incoming = [
+    ...(narrowed ? [...(base.data?.items ?? []), ...(baseExtra?.rows ?? [])] : []),
+    ...rows,
+  ];
+  const seenRows = useMemo(
+    () => (seen.scope === facetScope ? seen.rows : new Map<string, SessionRow>()),
+    [seen, facetScope],
+  );
+  // Later pages win for a session seen twice (the list after the facet page).
+  const latest = new Map(incoming.map((row) => [sessionKey(row), row]));
+  if (
+    seen.scope !== facetScope ||
+    [...latest].some(([id, row]) => seenRows.get(id) !== row)
+  ) {
+    setSeen({ scope: facetScope, rows: new Map([...seenRows, ...latest]) });
+  }
+  const facetRows = useMemo(() => [...seenRows.values()], [seenRows]);
+  const baseCursor = narrowed
+    ? baseExtra
+      ? baseExtra.nextCursor
+      : (base.data?.nextCursor ?? null)
+    : null;
+  const seenProjects = useMemo(
+    () =>
+      [...rows, ...facetRows]
+        .map((row) => row.projectId)
+        .filter((id): id is string => !!id && !knownProjects.has(id)),
+    [rows, facetRows, knownProjects],
+  );
+  // Learning a project id is a one-way set update; it settles after one pass.
+  if (seenProjects.length)
+    setKnownProjects(new Set([...knownProjects, ...seenProjects]));
   const members = page.data?.members ?? [];
   const cursor = extra ? extra.nextCursor : (page.data?.nextCursor ?? null);
   const now = page.data?.now
@@ -576,10 +623,41 @@ function SessionList({
   const busy = page.loading || moreBusy;
   const error = page.error ?? moreError;
 
+  async function loadMoreFacets() {
+    if (!narrowed || !baseCursor || facetBusy === baseKey) return;
+    const requestKey = baseKey;
+    setFacetBusy(requestKey);
+    setFacetFailure(null);
+    try {
+      const facets = await listSessions(
+        workspaceId,
+        baseFilters,
+        baseCursor,
+        new AbortController().signal,
+      );
+      if (currentBaseKey.current !== requestKey) return;
+      setBaseAppended((current) => ({
+        key: requestKey,
+        rows: [
+          ...(current?.key === requestKey ? current.rows : []),
+          ...facets.items,
+        ],
+        nextCursor: facets.nextCursor,
+      }));
+    } catch {
+      if (currentBaseKey.current === requestKey) setFacetFailure(requestKey);
+    } finally {
+      setFacetBusy((current) => (current === requestKey ? null : current));
+    }
+  }
+
   async function loadMore() {
     if (!cursor || busy) return;
     setMoreBusy(true);
     setMoreFailure(null);
+    // The facet pages advance with the list, on their own: a slow or failed
+    // sidebar page never holds back the table.
+    void loadMoreFacets();
     try {
       const next = await listSessions(
         workspaceId,
@@ -636,8 +714,45 @@ function SessionList({
   const identityColumnWidth = 12 + 22 + (identityCount - 1) * 13;
   return (
     <>
+      {narrowed &&
+        ((base.error && !(base.error instanceof SignedOut)) ||
+          (facetFailure !== null && facetFailure === baseKey)) && (
+          <WorkspaceViewSlot name="sidebar">
+            <p role="status" className="px-2 pb-2 text-[11px] text-muted-foreground">
+              Couldn’t load every filter option; counts cover the loaded
+              sessions.{" "}
+              {facetFailure === baseKey && (
+                <button
+                  type="button"
+                  className="more-lines underline underline-offset-4 hover:text-foreground"
+                  onClick={() => void loadMoreFacets()}
+                  disabled={facetBusy === baseKey}
+                >
+                  Retry
+                </button>
+              )}
+            </p>
+          </WorkspaceViewSlot>
+        )}
+      {narrowed && baseCursor && facetFailure !== baseKey && (
+        // Sidebar pages can always be continued, even after the table's last
+        // page or while an earlier sidebar page was still loading.
+        <WorkspaceViewSlot name="sidebar">
+          <p className="px-2 pb-2 text-[11px] text-muted-foreground">
+            Options cover the loaded sessions.{" "}
+            <button
+              type="button"
+              className="more-lines underline underline-offset-4 hover:text-foreground"
+              onClick={() => void loadMoreFacets()}
+              disabled={facetBusy === baseKey}
+            >
+              {facetBusy === baseKey ? "Loading…" : "Load more options"}
+            </button>
+          </p>
+        </WorkspaceViewSlot>
+      )}
       <SidebarFilters
-        rows={rows}
+        rows={facetRows}
         members={members}
         query={query}
         onQuery={onQuery}

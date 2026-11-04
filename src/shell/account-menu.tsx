@@ -5,7 +5,8 @@
 // disclosure (no menu keyboard contract) with the same classes; on narrow
 // screens it opens above the trigger to stay inside the drawer.
 import { useEffect, useId, useRef, useState } from "react";
-import { Check, Settings2, Users2 } from "lucide-react";
+import { Check, LifeBuoy, Settings2, Users2 } from "lucide-react";
+import { branding } from "./branding";
 import styles from "./workspace-switcher.module.css";
 
 export function initials(name: string | null | undefined) {
@@ -150,6 +151,18 @@ export function AccountMenu({
             <Settings2 size={18} aria-hidden="true" />
             Manage workspace
           </a>
+          {branding().supportUrl && (
+            <a
+              href={branding().supportUrl!}
+              onClick={() => setOpen(false)}
+              target="_blank"
+              rel="noreferrer noopener"
+              className={`${styles.item} flex items-center text-sm`}
+            >
+              <LifeBuoy size={18} aria-hidden="true" />
+              Support
+            </a>
+          )}
         </div>
       )}
     </div>

@@ -205,6 +205,94 @@ it("lists sessions with agent, project, people, and status, linking in-app", asy
   ).toBe("deferred");
 });
 
+function facetRow(group: string, label: string) {
+  const facet = screen.getByRole("group", { name: `Filter by ${group}` });
+  const row = within(facet).getByRole("button", { name: label });
+  return { row, count: row.querySelector("span:last-child")?.textContent };
+}
+
+it("keeps every facet option after one is picked, counting against the other filters", async () => {
+  window.history.replaceState(null, "", "/?q=project%3Arelay");
+  render(<Dashboard />);
+  expect(
+    await screen.findByRole("link", { name: "Fix session loading" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("link", { name: "Write docs" }),
+  ).not.toBeInTheDocument();
+  // Once the id is known the table asks the server for that project exactly,
+  // while the facets read the same query without project or harness.
+  await act(async () => {});
+  const lists = calls.filter((url) => url.pathname === base);
+  expect(lists.some((url) => url.searchParams.get("project") === "relay")).toBe(true);
+  // The initial load and the separate facet query both omit the project.
+  expect(
+    lists.filter(
+      (url) => !url.searchParams.has("project") && !url.searchParams.has("source"),
+    ).length,
+  ).toBeGreaterThanOrEqual(2);
+  // The project facet ignores its own selection: every project, true total.
+  expect(facetRow("project", "All projects").count).toBe("2");
+  expect(facetRow("project", "relay").count).toBe("1");
+  expect(facetRow("project", "docs").count).toBe("1");
+  expect(facetRow("project", "relay").row).toHaveAttribute("aria-pressed", "true");
+  // Other facets respect the project selection.
+  expect(facetRow("status", "All sessions").count).toBe("1");
+  expect(facetRow("status", "Finished").count).toBe("0");
+  expect(facetRow("harness", "Codex").count).toBe("1");
+  expect(facetRow("harness", "Claude Code").count).toBe("0");
+  // Switching projects needs no detour through "All".
+  fireEvent.click(facetRow("project", "docs").row);
+  expect(
+    await screen.findByRole("link", { name: "Write docs" }),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Search sessions")).toHaveValue("project:docs");
+  expect(facetRow("project", "relay").count).toBe("1");
+});
+
+it("pages the sidebar facets on their own and keeps earlier options", async () => {
+  const infra = {
+    ...sessions[1]!,
+    sessionId: "s3",
+    summary: "Tune infra",
+    projectId: "infra",
+    project: { name: "infra" },
+  };
+  respond(/\/sessions$/, (url) =>
+    url.searchParams.get("cursor") === "c2"
+      ? { items: [infra], members, nextCursor: null, error: false, now }
+      : url.searchParams.has("project")
+        ? { items: [sessions[0]], members, nextCursor: null, error: false, now }
+        : { items: sessions, members, nextCursor: "c2", error: false, now },
+  );
+  window.history.replaceState(null, "", "/?q=project%3Arelay");
+  render(<Dashboard />);
+  const more = await screen.findByRole("button", { name: "Load more options" });
+  expect(facetRow("project", "docs").count).toBe("1");
+  expect(
+    within(screen.getByRole("group", { name: "Filter by project" })).queryByRole(
+      "button",
+      { name: "infra" },
+    ),
+  ).toBeNull();
+  fireEvent.click(more);
+  expect(await screen.findByRole("button", { name: "infra" })).toBeInTheDocument();
+  expect(facetRow("project", "docs").count).toBe("1");
+  expect(facetRow("project", "All projects").count).toBe("3");
+  expect(screen.queryByRole("button", { name: "Load more options" })).toBeNull();
+});
+
+it("counts each facet against the others, not itself", async () => {
+  window.history.replaceState(null, "", "/?q=project%3Arelay%20is%3Afinished");
+  render(<Dashboard />);
+  expect(await screen.findByText("No sessions match these filters.")).toBeInTheDocument();
+  expect(facetRow("project", "All projects").count).toBe("1");
+  expect(facetRow("project", "relay").count).toBe("0");
+  expect(facetRow("project", "docs").count).toBe("1");
+  expect(facetRow("status", "All sessions").count).toBe("1");
+  expect(facetRow("status", "Active").count).toBe("1");
+});
+
 it("applies person and status filters in the browser and free text on the server", async () => {
   window.history.replaceState(null, "", "/?q=loader%20is%3Afinished");
   render(<Dashboard />);
