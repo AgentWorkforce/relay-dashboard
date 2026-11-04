@@ -28,61 +28,6 @@ export const envVarListSchema = z.object({
   data: z.object({ items: z.array(envVarSchema) }),
 });
 
-export const credentialFieldSchema = z.object({
-  key: z.string(),
-  label: z.string(),
-  secret: z.boolean(),
-  required: z.boolean(),
-  placeholder: z.string().optional(),
-});
-export type CredentialField = z.infer<typeof credentialFieldSchema>;
-
-export const connectionSchema = z.object({
-  connectionId: z.string(),
-  provider: z.string(),
-  status: z.enum(["ready", "error"]),
-  authMode: z.enum(["oauth2", "api_key"]),
-  scopes: z.array(z.string()),
-  accountLabel: nullableText,
-  lastError: nullableText,
-  connectedAt: z.string(),
-  accessTokenExpiresAt: nullableText,
-  refreshable: z.boolean().optional(),
-});
-export type Connection = z.infer<typeof connectionSchema>;
-
-export const oauthAppSchema = z.object({
-  clientId: z.string(),
-  clientSecretMasked: z.string(),
-  scopes: z.array(z.string()),
-  scopesOverridden: z.boolean(),
-  updatedAt: z.string(),
-});
-export type OAuthApp = z.infer<typeof oauthAppSchema>;
-
-export const providerSchema = z.object({
-  id: z.string(),
-  displayName: z.string(),
-  description: z.string().optional(),
-  configKey: z.string().optional(),
-  authMode: z.enum(["OAUTH2", "API_KEY"]),
-  categories: z.array(z.string()).optional(),
-  docs: z.string().optional(),
-  defaultScopes: z.array(z.string()).optional(),
-  appSetupUrl: z.string().url().optional(),
-  credentialFields: z.array(credentialFieldSchema).optional(),
-  configured: z.boolean(),
-  oauthApp: oauthAppSchema.nullable(),
-  connection: connectionSchema.nullable(),
-});
-export type Provider = z.infer<typeof providerSchema>;
-export const providersSchema = z.object({
-  redirectUri: z.string(),
-  canManage: z.boolean(),
-  providers: z.array(providerSchema),
-});
-export type ProvidersView = z.infer<typeof providersSchema>;
-
 export const tokenPurposeSchema = z.enum([
   "agent-runtime",
   "workflow",
@@ -168,9 +113,6 @@ export const workspacesSchema = z.object({
   workspaces: z.array(workspaceSchema),
 });
 
-export const connectSessionSchema = z.object({
-  connectLink: z.string().url(),
-});
 
 /** Hosted `CloudAgent` (Settings > Connections > Coding agents). No secrets. */
 export const codingAgentSchema = z.object({
@@ -241,3 +183,18 @@ export const deviceLoginStatusSchema = z.object({
   retryAfterSeconds: z.number().int().positive().optional(),
   providerCredentialId: z.string().optional(),
 });
+
+/** Just-in-time integration status (relaycontrol GET integrations/providers). */
+export const integrationProviderSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  authMode: z.enum(["OAUTH2", "API_KEY"]),
+  configured: z.boolean(),
+  adminMessage: z.string().optional(),
+  connection: z.object({ status: z.enum(["ready", "error"]) }).passthrough().nullable(),
+}).passthrough();
+export type IntegrationProvider = z.infer<typeof integrationProviderSchema>;
+export const integrationProvidersSchema = z.object({
+  providers: z.array(integrationProviderSchema),
+}).passthrough();
+export const integrationConnectSchema = z.object({ connectLink: z.string().url() }).passthrough();

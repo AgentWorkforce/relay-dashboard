@@ -3,6 +3,7 @@ import { flowsApi, type FlowDetail, type Worker } from "../api";
 import { Badge, Tabs, Time } from "../components";
 import { go, seg, usePolling } from "../format";
 import { FlowForm } from "./flow-editor";
+import { FlowIntegrations } from "../flow-integrations";
 import { RunList } from "./overview";
 
 type Tab = "runs" | "definition";
@@ -131,6 +132,8 @@ export function FlowDetailPage({
         </div>
         <Badge tone="success">Manual</Badge>
       </div>
+
+      <FlowIntegrations source={flow.source} />
 
       <section className="panel" aria-label="Run this flow">
         <div className="run-now">

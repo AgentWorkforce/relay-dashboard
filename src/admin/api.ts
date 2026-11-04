@@ -4,9 +4,10 @@ import {
   apiTokensSchema,
   codingAgentCheckSchema,
   codingAgentsSchema,
+  integrationConnectSchema,
+  integrationProvidersSchema,
   deviceLoginStartSchema,
   deviceLoginStatusSchema,
-  connectSessionSchema,
   createdTokenSchema,
   envVarListSchema,
   envVarSchema,
@@ -14,7 +15,6 @@ import {
   invitationLinkSchema,
   invitationsSchema,
   signInMethodsSchema,
-  providersSchema,
   workspacesSchema,
   type TokenPurpose,
   type Role,
@@ -95,42 +95,15 @@ export const adminApi = {
       method: "DELETE",
     }),
 
-  providers: (workspace: string, signal?: AbortSignal) =>
-    call(`${ws(workspace)}/integrations/providers`, providersSchema, {
-      signal,
-    }),
-  putOAuthApp: (
-    workspace: string,
-    provider: string,
-    input: { clientId: string; clientSecret?: string; scopes: string[] | null },
-  ) =>
-    call(`${ws(workspace)}/integrations/${enc(provider)}/oauth-app`, null, {
-      method: "PUT",
-      body: input,
-    }),
-  deleteOAuthApp: (workspace: string, provider: string) =>
-    call(`${ws(workspace)}/integrations/${enc(provider)}/oauth-app`, null, {
-      method: "DELETE",
-    }),
-  connectSession: (workspace: string, provider: string) =>
-    call(`${ws(workspace)}/integrations/connect-session`, connectSessionSchema, {
+  /** Integration status for just-in-time connects (flows, CLI). */
+  integrationProviders: (workspace: string, signal?: AbortSignal) =>
+    call(`${ws(workspace)}/integrations/providers`, integrationProvidersSchema, { signal }),
+  /** Starts a provider OAuth connect; the callback page links back to returnTo. */
+  connectIntegration: (workspace: string, provider: string, returnTo: string) =>
+    call(`${ws(workspace)}/integrations/connect-session`, integrationConnectSchema, {
       method: "POST",
-      body: { allowedIntegrations: [provider] },
+      body: { allowedIntegrations: [provider], returnTo },
     }),
-  connectApiKey: (
-    workspace: string,
-    provider: string,
-    credentials: Record<string, string>,
-  ) =>
-    call(`${ws(workspace)}/integrations/${enc(provider)}`, null, {
-      method: "POST",
-      body: { credentials },
-    }),
-  disconnect: (workspace: string, provider: string) =>
-    call(`${ws(workspace)}/integrations/${enc(provider)}`, null, {
-      method: "DELETE",
-    }),
-
   codingAgents: (workspace: string, signal?: AbortSignal) =>
     call(`${ws(workspace)}/cloud-agents`, codingAgentsSchema, { signal }),
   putAgentApiKey: (

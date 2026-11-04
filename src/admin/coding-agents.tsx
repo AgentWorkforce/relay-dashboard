@@ -169,13 +169,9 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
   );
   providerIds.add("anthropic");
   providerIds.add("openai");
-  // Self-host: every provider with a subscription login (Grok too) is listed,
-  // so an unselected login reads "None selected" rather than being hidden.
-  for (const provider of data?.providers ?? []) {
-    if (provider.authTypes.some((type) => type === "oauth_token" || type === "provider_oauth")) {
-      providerIds.add(provider.id);
-    }
-  }
+  // Self-host lists every provider it supports (hosted lists all of its own),
+  // so an unconnected one reads "Not connected" rather than being hidden.
+  for (const provider of data?.providers ?? []) providerIds.add(provider.id);
   const providerGroups = [...providerIds]
     .map((provider) => {
       const credentials = displayAgents.filter(
@@ -322,7 +318,7 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground">{summaryHeadline}</p>
                   <p className="truncate text-sm text-muted-foreground">
-                    {summaryDetail || "No credentials yet"}
+                    {summaryDetail}
                   </p>
                 </div>
                 <Button

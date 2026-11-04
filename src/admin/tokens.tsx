@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { adminApi } from "./api";
 import type { TokenPurpose } from "./contracts";
-import { CopyField } from "./connections";
+import { CopyField } from "./copy-field";
 import { formatDate, message, useLoad } from "./use-load";
 
 const PURPOSES: Array<{ value: TokenPurpose; label: string; help: string }> = [

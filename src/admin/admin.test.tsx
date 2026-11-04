@@ -18,66 +18,7 @@ let role: "owner" | "admin" | "member" = "owner";
 let envRows: Array<Record<string, unknown>> = [];
 let extra: Handler | null = null;
 
-const providers = () => ({
-  redirectUri: "https://api.example.com/api/v1/integrations/oauth/callback",
-  canManage: role !== "member",
-  providers: [
-    {
-      id: "github",
-      displayName: "GitHub",
-      description: "Repositories.",
-      configKey: "github-relay",
-      authMode: "OAUTH2",
-      defaultScopes: ["repo", "read:org"],
-      appSetupUrl: "https://github.com/settings/applications/new",
-      configured: false,
-      oauthApp: null,
-      connection: null,
-    },
-    {
-      id: "slack",
-      displayName: "Slack",
-      authMode: "OAUTH2",
-      defaultScopes: ["chat:write"],
-      configured: true,
-      oauthApp: {
-        clientId: "slack-client",
-        clientSecretMasked: "sl****et",
-        scopes: ["chat:write"],
-        scopesOverridden: false,
-        updatedAt: "2026-11-02T00:00:00.000Z",
-      },
-      connection: {
-        connectionId: "c1",
-        provider: "slack",
-        status: "ready",
-        authMode: "oauth2",
-        scopes: ["chat:write"],
-        accountLabel: "Acme Slack",
-        lastError: null,
-        connectedAt: "2026-11-02T00:00:00.000Z",
-        accessTokenExpiresAt: null,
-      },
-    },
-    {
-      id: "posthog",
-      displayName: "PostHog",
-      authMode: "API_KEY",
-      credentialFields: [
-        {
-          key: "apiKey",
-          label: "Personal API key",
-          secret: true,
-          required: true,
-        },
-        { key: "host", label: "API host", secret: false, required: false },
-      ],
-      configured: true,
-      oauthApp: null,
-      connection: null,
-    },
-  ],
-});
+
 
 function respond(call: Call): { status?: number; body?: unknown } {
   const custom = extra?.(call);
@@ -110,8 +51,6 @@ function respond(call: Call): { status?: number; body?: unknown } {
     envRows = envRows.filter((item) => item.name !== name);
     return { body: found };
   }
-  if (path === "/cloud/api/v1/workspaces/w1/integrations/providers")
-    return { body: providers() };
   if (
     path === "/cloud/api/v1/workspaces/w1/deployment-api-tokens" &&
     method === "GET"
@@ -276,103 +215,12 @@ it("members see read-only settings and no API tokens section", async () => {
   expect(within(nav).getByText("Connections")).toBeInTheDocument();
 });
 
-it("connections: shows callback URL, configures a BYO OAuth app, and connects in a popup", async () => {
-  const popup = { location: { href: "" }, closed: false, close: vi.fn() };
-  const open = vi
-    .spyOn(window, "open")
-    .mockReturnValue(popup as unknown as Window);
-  extra = (call) => {
-    if (
-      call.path.endsWith("/integrations/github/oauth-app") &&
-      call.method === "PUT"
-    )
-      return { body: {} };
-    if (call.path.endsWith("/integrations/connect-session"))
-      return {
-        body: { connectLink: "https://slack.com/oauth/v2/authorize?state=s" },
-      };
-    return undefined;
-  };
+it("settings has no Integrations section: integrations connect just in time", async () => {
   render(<Settings section="integrations" />);
-  expect(
-    await screen.findByText(
-      "https://api.example.com/api/v1/integrations/oauth/callback",
-    ),
-  ).toBeInTheDocument();
-  const github = screen.getByRole("article", { name: "GitHub" });
-  expect(within(github).getByText("Disconnected")).toBeInTheDocument();
-  expect(
-    within(github).getByRole("button", { name: "Connect" }),
-  ).toBeDisabled();
-  fireEvent.click(
-    within(github).getByRole("button", { name: "Configure OAuth app" }),
-  );
-  fireEvent.change(within(github).getByLabelText("Client ID"), {
-    target: { value: "gh-id" },
-  });
-  fireEvent.change(within(github).getByLabelText("Client secret"), {
-    target: { value: "gh-secret" },
-  });
-  fireEvent.click(
-    within(github).getByRole("button", { name: "Save OAuth app" }),
-  );
-  await waitFor(() =>
-    expect(calls.find((call) => call.method === "PUT")!.body).toEqual({
-      clientId: "gh-id",
-      clientSecret: "gh-secret",
-      scopes: null,
-    }),
-  );
-
-  const slack = screen.getByRole("article", { name: "Slack" });
-  expect(within(slack).getByText("Connected")).toBeInTheDocument();
-  expect(within(slack).getByText("Acme Slack")).toBeInTheDocument();
-  fireEvent.click(within(slack).getByRole("button", { name: "Reconnect" }));
-  await waitFor(() =>
-    expect(popup.location.href).toBe(
-      "https://slack.com/oauth/v2/authorize?state=s",
-    ),
-  );
-  expect(open).toHaveBeenCalled();
-  expect(
-    calls.find((call) => call.path.endsWith("/connect-session"))!.body,
-  ).toEqual({
-    allowedIntegrations: ["slack"],
-  });
-
-  fireEvent.click(within(slack).getByRole("button", { name: "Disconnect" }));
-  fireEvent.click(
-    within(slack).getByRole("button", { name: "Confirm disconnect" }),
-  );
-  await waitFor(() =>
-    expect(
-      calls.some(
-        (call) =>
-          call.method === "DELETE" && call.path.endsWith("/integrations/slack"),
-      ),
-    ).toBe(true),
-  );
-});
-
-it("connections: API-key providers post only filled credential fields", async () => {
-  extra = (call) =>
-    call.method === "POST" && call.path.endsWith("/integrations/posthog")
-      ? { status: 201, body: {} }
-      : undefined;
-  render(<Settings section="integrations" />);
-  const posthog = await screen.findByRole("article", { name: "PostHog" });
-  fireEvent.click(within(posthog).getByRole("button", { name: "Connect" }));
-  fireEvent.change(within(posthog).getByLabelText("Personal API key"), {
-    target: { value: "phx_1" },
-  });
-  fireEvent.click(within(posthog).getByRole("button", { name: "Save" }));
-  await waitFor(() =>
-    expect(
-      calls.find((call) => call.path.endsWith("/integrations/posthog"))!.body,
-    ).toEqual({
-      credentials: { apiKey: "phx_1" },
-    }),
-  );
+  const nav = await screen.findByRole("navigation", { name: "Settings" });
+  expect(within(nav).queryByText("Integrations")).not.toBeInTheDocument();
+  // An old #/settings/integrations link falls back to the default section.
+  expect(await screen.findByRole("heading", { level: 1, name: "Workspace" })).toBeInTheDocument();
 });
 
 it("API tokens: shows the new token once with a copy panel", async () => {
