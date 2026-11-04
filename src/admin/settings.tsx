@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { adminApi, canManage, SignedOut } from "./api";
 import { CodingAgentsSection } from "./coding-agents";
 import { ConnectionsSection } from "./connections";
+import { DesktopSection } from "./desktop";
 import { EnvironmentSection } from "./environment";
 import { MembersSection } from "./members";
 import { OrganizationSection, WorkspaceSection } from "./organization";
@@ -157,7 +158,12 @@ export function Settings(props: { section: string }) {
               className={s.content}
               data-section={active}
             >
-              {active === "workspace" && <WorkspaceSection context={context} />}
+              {active === "workspace" && (
+                <>
+                  <WorkspaceSection context={context} />
+                  <DesktopSection context={context} />
+                </>
+              )}
               {active === "connections" && (
                 <CodingAgentsSection
                   key={context.currentWorkspace.id}

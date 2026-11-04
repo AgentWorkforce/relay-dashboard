@@ -52,6 +52,7 @@ the SPA validates each field and ignores the ones it can't use:
 | `brandColor` | The solid primary button. |
 | `supportUrl` | Adds Support to the account menu and the device page (`https`, `http`, `mailto:` or a same-origin path). |
 | `poweredByAgentRelay` | `false` hides the "Powered by Agent Relay" line shown under a custom brand. |
+| `desktop` | `{ "urlScheme": "agentrelay-acme", "siteUrl": "https://relay.acme.example" }`: the Agent Relay Desktop deep links (see below). Does not count as branding. |
 
 Logo and favicon URLs may be `https`/`http`, same-origin paths or supported
 `data:image` types (PNG, SVG, JPEG, WebP, GIF or icons, up to about 60 KB).
@@ -69,5 +70,21 @@ Example:
 ```sh
 DASHBOARD_CUSTOMER_PROFILE='{"productName":"Acme Relay","logo":{"light":"https://acme.example/logo-dark-text.svg","dark":"https://acme.example/logo-light-text.svg"},"favicon":"https://acme.example/favicon.svg","accentColor":"#7c3aed","brandColor":"#5b21b6","supportUrl":"mailto:support@acme.example","poweredByAgentRelay":true}'
 ```
+
+#### Agent Relay Desktop links
+
+Settings › Workspace shows **Connect your agents** with an
+`<urlScheme>://connect?site=<siteUrl>&account=<user>&workspace=<workspace>`
+link that opens Agent Relay Desktop signed in to this deployment
+(`src/shell/desktop-links.ts` also builds `<urlScheme>://message?to=<agent@machine>&site=<siteUrl>`).
+A Desktop built for one deployment registers its own scheme and refuses a link
+naming another site, so set both to what that build uses. `urlScheme` must be a
+lowercase scheme (`^[a-z][a-z0-9+.-]{0,63}$`, not `http`, `https`, `file`,
+`javascript` and the like) and defaults to `agentrelay`; `siteUrl` must be a
+bare `https` origin (`http` only for localhost). It defaults to the dashboard's
+own origin when that origin qualifies; a dashboard served over plain `http`
+(other than localhost) shows no Desktop links unless `siteUrl` names a valid
+`https` origin. Invalid fields fall back on their own. The hosted build shows no
+Desktop links here.
 
 `npm run check` runs lint, tests and the production build. Apache-2.0.
