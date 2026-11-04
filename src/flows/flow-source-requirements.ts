@@ -348,18 +348,26 @@ function stripCommentsKeepingLength(source: string): string {
 
 /**
  * The names the flow callbacks bind their context to: the `flow(…)` call's
- * own body parameter first (`async f =>` included), then every other
- * function literal's first parameter, for `.on(…, async (f) => …)` handlers.
+ * own body parameter first (`async f =>` included), then the first parameter
+ * of the callback passed to each `.on(…, async (f) => …)` handler. Other
+ * function literals (`items.map((item) => item.github)`) are data callbacks,
+ * not flow contexts, so their parameters are not read (self-host change).
  */
 function flowContextParameters(source: string): string[] {
   const names = new Set<string>();
   const bodyParameter = flowBodyParameter(source);
   if (bodyParameter) names.add(bodyParameter);
-  const arrow = /(?:async\s*)?\(\s*([A-Za-z_$][\w$]*)\s*(?::[^,)]*)?\s*(?:,[^)]*)?\)\s*(?::[^=]*)?=>|(?:async\s+)?function\s*[\w$]*\s*\(\s*([A-Za-z_$][\w$]*)/gu;
+  const arrow = /(?:async\s*)?\(\s*([A-Za-z_$][\w$]*)\s*(?::[^,)]*)?\s*(?:,[^)]*)?\)\s*(?::[^=]*)?=>|(?:async\s+)?function\s*[\w$]*\s*\(\s*([A-Za-z_$][\w$]*)|(?:async\s+)?([A-Za-z_$][\w$]*)\s*=>/u;
   const code = stripCommentsAndStringsKeepingLength(source);
-  for (const match of code.matchAll(arrow)) {
-    const name = match[1] ?? match[2];
-    if (name) names.add(name);
+  for (const on of code.matchAll(/\.\s*on\s*\(/gu)) {
+    const open = on.index! + on[0].length - 1;
+    const close = matchingClose(code, open);
+    const args = code.slice(open + 1, close === -1 ? code.length : close);
+    const comma = args.indexOf(",");
+    if (comma === -1) continue;
+    const handler = arrow.exec(args.slice(comma + 1).trimStart());
+    const name = handler?.[1] ?? handler?.[2] ?? handler?.[3];
+    if (name && handler!.index === 0) names.add(name);
   }
   return [...names];
 }

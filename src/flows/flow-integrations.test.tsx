@@ -73,3 +73,19 @@ it("renders nothing for a flow that declares no integrations", () => {
   const { container } = render(<FlowIntegrations source={"version: '1.0'\n"} />);
   expect(container).toBeEmptyDOMElement();
 });
+
+it("reads helpers only from the flow body and .on handlers, not data callbacks", () => {
+  const data = `import { flow } from "@relayflows/sdk";
+export default flow("data", async (f) => {
+  const items = [{ github: 1 }];
+  items.map((item) => item.github);
+  [1].forEach(function (row) { return row.slack; });
+});
+`;
+  expect(requiredIntegrationIds(data)).toEqual([]);
+  const handler = `import { flow } from "@relayflows/sdk";
+export default flow("events", async (f) => { await f.linear.comment("x"); })
+  .on("pr.opened", async (ctx) => { await ctx.slack.post("#a", "hi"); });
+`;
+  expect(requiredIntegrationIds(handler).sort()).toEqual(["linear", "slack"]);
+});
