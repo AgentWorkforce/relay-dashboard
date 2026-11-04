@@ -98,3 +98,25 @@ export default flow("notify", notify).on("pr.opened", onPr);
 `;
   expect(requiredIntegrationIds(named).sort()).toEqual(["github", "slack"]);
 });
+
+it("ignores other emitters, decoy flow calls and async-prefixed names", () => {
+  const source = `import { flow as defineFlow } from "@relayflows/surface";
+const emitter = { on() {} };
+function listener(tick) { return tick.linear; }
+emitter.on("tick", listener);
+function decoy(d) { return d.jira; }
+const helper = defineFlow("helper", decoy);
+const main = asyncCtx => asyncCtx.github.comment("x");
+export default defineFlow("main", main).on("evt", async (e) => { await e.slack.post("#a", "b"); });
+`;
+  expect(requiredIntegrationIds(source).sort()).toEqual(["github", "slack"]);
+});
+
+it("reads .on handlers registered on the variable bound to the flow", () => {
+  const source = `import { flow } from "@relayflows/sdk";
+const w = flow("events", async (f) => {});
+w.on("pr.opened", async (ctx) => { await ctx.github.comment("x"); });
+export default w;
+`;
+  expect(requiredIntegrationIds(source)).toEqual(["github"]);
+});

@@ -357,67 +357,125 @@ function stripCommentsKeepingLength(source: string): string {
 function flowContextParameters(source: string): string[] {
   const names = new Set<string>();
   const code = stripCommentsAndStringsKeepingLength(source);
-  const bodyParameter = flowBodyParameter(source) ?? namedCallbackParameter(code, flowBodyReference(code));
-  if (bodyParameter) names.add(bodyParameter);
-  const arrow = /(?:async\s*)?\(\s*([A-Za-z_$][\w$]*)\s*(?::[^,)]*)?\s*(?:,[^)]*)?\)\s*(?::[^=]*)?=>|(?:async\s+)?function\s*[\w$]*\s*\(\s*([A-Za-z_$][\w$]*)|(?:async\s+)?([A-Za-z_$][\w$]*)\s*=>/u;
-  for (const on of code.matchAll(/\.\s*on\s*\(/gu)) {
-    const open = on.index! + on[0].length - 1;
-    const close = matchingClose(code, open);
-    const args = code.slice(open + 1, close === -1 ? code.length : close);
-    const comma = args.indexOf(",");
-    if (comma === -1) continue;
-    const rest = args.slice(comma + 1).trimStart();
-    const handler = arrow.exec(rest);
-    const name = handler && handler.index === 0 ? (handler[1] ?? handler[2] ?? handler[3]) : undefined;
-    const reference = /^([A-Za-z_$][\w$]*)\s*(?:,|$)/u.exec(rest.trimEnd())?.[1] ?? null;
-    const resolved = name ?? namedCallbackParameter(code, reference);
-    if (resolved) names.add(resolved);
+  const call = selectedFlowCall(source, code);
+  const inline = flowBodyParameter(source);
+  if (inline) names.add(inline);
+  else if (call) for (const name of namedCallbackParameters(code, call.bodyReference)) names.add(name);
+  if (!call) return [...names];
+  // `.on(…)` handlers chained from the selected flow call, or called on the
+  // variable it is bound to. Other emitters' `.on` are not flow contexts.
+  const chains = [call.close + 1];
+  if (call.binding) {
+    const bound = new RegExp(`(?:^|[^\\w$.])${escapeRegExp(call.binding)}(?=\\s*\\.)`, "gu");
+    for (const use of code.matchAll(bound)) chains.push(use.index! + use[0].length);
+  }
+  for (const from of chains) {
+    let at = from;
+    for (;;) {
+      const member = /^\s*\.\s*([A-Za-z_$][\w$]*)\s*\(/u.exec(code.slice(at));
+      if (!member) break;
+      const open = at + member[0].length - 1;
+      const close = matchingClose(code, open);
+      if (close === -1) break;
+      if (member[1] === "on") {
+        const args = topLevelArguments(code, open, close);
+        const handler = args[1]?.trim();
+        if (handler) {
+          const literal = callbackLiteralParameter(handler);
+          if (literal) names.add(literal);
+          else if (/^[A-Za-z_$][\w$]*$/u.test(handler)) {
+            for (const name of namedCallbackParameters(code, handler)) names.add(name);
+          }
+        }
+      }
+      at = close + 1;
+    }
   }
   return [...names];
 }
 
 /**
- * The identifier passed as the flow body (`flow("x", notify)` or
- * `flow("x", { … }, notify)`), when the body is a reference rather than a
- * function literal. Read on the copy with comments and strings blanked.
+ * The flow call the page reads: the default-exported one when present,
+ * otherwise the first call of an imported flow callee (`flow`, an alias, or
+ * `ns.flow`). Returns its argument span, the body argument when it is a bare
+ * identifier, and the variable it is assigned to (`const w = flow(…)`).
  */
-function flowBodyReference(code: string): string | null {
-  for (const call of code.matchAll(/(?:^|[^\w$])flow\s*(?:<[^>()]*>)?\s*\(/gu)) {
-    const open = call.index! + call[0].length - 1;
-    const close = matchingClose(code, open);
-    if (close === -1) continue;
-    const args: string[] = [];
-    let depth = 0;
-    let from = open + 1;
-    for (let i = open + 1; i < close; i += 1) {
-      const ch = code[i]!;
-      if (ch === "(" || ch === "{" || ch === "[") depth += 1;
-      else if (ch === ")" || ch === "}" || ch === "]") depth -= 1;
-      else if (ch === "," && depth === 0) { args.push(code.slice(from, i)); from = i + 1; }
-    }
-    args.push(code.slice(from, close));
-    if (args.length < 2 || args.length > 3) continue;
-    const body = /^\s*([A-Za-z_$][\w$]*)\s*$/u.exec(args[args.length - 1]!)?.[1];
-    if (body && body !== "async" && body !== "function") return body;
+function selectedFlowCall(
+  source: string,
+  code: string,
+): { open: number; close: number; bodyReference: string | null; binding: string | null } | null {
+  const { local, namespaces } = flowCalleeNames(source);
+  const callees = [
+    ...[...local].map(escapeRegExp),
+    ...namespaces.map((ns) => `${escapeRegExp(ns)}\\s*\\.\\s*flow`),
+  ];
+  if (callees.length === 0) return null;
+  const pattern = new RegExp(`(?:^|[^\\w$.])(?:${callees.join("|")})\\s*(?:<[^>()]*>)?\\s*\\(`, "gu");
+  let first: { open: number; before: string } | null = null;
+  let exported: { open: number; before: string } | null = null;
+  for (const match of code.matchAll(pattern)) {
+    const open = match.index! + match[0].length - 1;
+    const before = code.slice(0, match.index! + (/^[^\w$.]/u.test(match[0]) ? 1 : 0));
+    first ??= { open, before };
+    if (/\bexport\s+default\s*$/u.test(before)) { exported = { open, before }; break; }
   }
-  return null;
+  const chosen = exported ?? first;
+  if (!chosen) return null;
+  const close = matchingClose(code, chosen.open);
+  if (close === -1) return null;
+  const args = topLevelArguments(code, chosen.open, close);
+  const last = args.length >= 2 && args.length <= 3 ? args[args.length - 1]!.trim() : "";
+  const bodyReference = /^[A-Za-z_$][\w$]*$/u.test(last) && last !== "async" && last !== "function" ? last : null;
+  const binding = /(?:^|[^\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*$/u.exec(chosen.before)?.[1] ?? null;
+  return { open: chosen.open, close, bodyReference, binding };
+}
+
+/** Top-level comma-separated arguments between `open` and its matching `close`. */
+function topLevelArguments(code: string, open: number, close: number): string[] {
+  const args: string[] = [];
+  let depth = 0;
+  let from = open + 1;
+  for (let i = open + 1; i < close; i += 1) {
+    const ch = code[i]!;
+    if (ch === "(" || ch === "{" || ch === "[") depth += 1;
+    else if (ch === ")" || ch === "}" || ch === "]") depth -= 1;
+    else if (ch === "," && depth === 0) { args.push(code.slice(from, i)); from = i + 1; }
+  }
+  const tail = code.slice(from, close);
+  if (args.length > 0 || tail.trim() !== "") args.push(tail);
+  return args;
+}
+
+/** First parameter of a function literal at the start of `text`, if any. */
+function callbackLiteralParameter(text: string): string | null {
+  const literal =
+    /^(?:async(?:\s+|(?=\s*\()))?(?:function\s*\*?\s*[\w$]*\s*\(\s*([A-Za-z_$][\w$]*)|\(\s*([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*)\s*=>)/u.exec(
+      text,
+    );
+  return literal ? (literal[1] ?? literal[2] ?? literal[3] ?? null) : null;
 }
 
 /**
- * First parameter of a callback defined in this file under `name`:
+ * First parameters of the callbacks declared in this file under `name`:
  * `function name(ctx)`, `async function name(ctx)`,
  * `const name = async (ctx) =>`, `const name = ctx =>`, `const name = function (ctx)`.
+ * Scope is not resolved, so every declaration of the name is read: a shadowed
+ * duplicate can only add a provider, never hide the real callback's.
  */
-function namedCallbackParameter(code: string, name: string | null): string | null {
-  if (!name) return null;
+function namedCallbackParameters(code: string, name: string | null): string[] {
+  if (!name) return [];
   const id = escapeRegExp(name);
   const declaration = new RegExp(
     `(?:^|[^\\w$.])(?:async\\s+)?function\\s*\\*?\\s*${id}\\s*\\(\\s*([A-Za-z_$][\\w$]*)` +
-      `|(?:^|[^\\w$.])(?:const|let|var)\\s+${id}\\s*(?::[^=]*)?=\\s*(?:async\\s*)?(?:function\\s*[\\w$]*\\s*\\(\\s*([A-Za-z_$][\\w$]*)|\\(\\s*([A-Za-z_$][\\w$]*)|([A-Za-z_$][\\w$]*)\\s*=>)`,
-    "u",
+      `|(?:^|[^\\w$.])(?:const|let|var)\\s+${id}\\s*(?::[^=]*)?=\\s*`,
+    "gu",
   );
-  const match = declaration.exec(code);
-  return match ? (match[1] ?? match[2] ?? match[3] ?? match[4] ?? null) : null;
+  const names: string[] = [];
+  for (const match of code.matchAll(declaration)) {
+    const parameter = match[1] ?? callbackLiteralParameter(code.slice(match.index! + match[0].length));
+    if (parameter && !names.includes(parameter)) names.push(parameter);
+  }
+  return names;
 }
 
 function escapeRegExp(value: string): string {
