@@ -169,6 +169,13 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
   );
   providerIds.add("anthropic");
   providerIds.add("openai");
+  // Self-host: every provider with a subscription login (Grok too) is listed,
+  // so an unselected login reads "None selected" rather than being hidden.
+  for (const provider of data?.providers ?? []) {
+    if (provider.authTypes.some((type) => type === "oauth_token" || type === "provider_oauth")) {
+      providerIds.add(provider.id);
+    }
+  }
   const providerGroups = [...providerIds]
     .map((provider) => {
       const credentials = displayAgents.filter(
@@ -342,16 +349,15 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
                   const credentialSupportsSandbox = group.credentials.some((agent) =>
                     isHarnessSelectableAuthType(agent.authType),
                   );
-                  // An empty group whose provider offers a subscription login
-                  // (Claude setup token, Codex or Grok device login) can still
-                  // take one later. Do not call that "Not supported".
+                  // A provider that offers a subscription login (Claude setup
+                  // token, Codex or Grok device login) can take one later, even
+                  // while it holds only API keys. Do not call that "Not supported".
                   const catalogEntry = data.providers.find((provider) => provider.id === group.id);
                   const supportsSandbox =
                     credentialSupportsSandbox ||
-                    (group.credentials.length === 0 &&
-                      Boolean(
-                        catalogEntry?.authTypes.some((type) => type === "oauth_token" || type === "provider_oauth"),
-                      ));
+                    Boolean(
+                      catalogEntry?.authTypes.some((type) => type === "oauth_token" || type === "provider_oauth"),
+                    );
                   const sandboxSummary = supportsSandbox
                     ? activeSandboxCredentials.map(credentialIdentity).join(", ") || "None selected"
                     : "Not supported";

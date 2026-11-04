@@ -30,6 +30,11 @@ const brandIcons: Record<string, string> = {
   opencode: "opencode",
 };
 
+const DEVICE_PROVIDERS: readonly DeviceProvider[] = ["openai", "xai"];
+function isDeviceProvider(id: string): id is DeviceProvider {
+  return (DEVICE_PROVIDERS as readonly string[]).includes(id);
+}
+
 /** One entry in the agent picker. */
 export type ConnectChoice = {
   key: string;
@@ -60,7 +65,8 @@ export function connectChoices(providers: CodingAgentProvider[]): ConnectChoice[
   // Hosted DEVICE_LINK_PROVIDERS: browser-only subscription logins.
   const deviceLabels: Record<string, string> = { openai: "Codex", xai: "Grok" };
   for (const provider of providers) {
-    if (!provider.authTypes.includes("provider_oauth")) continue;
+    // Only providers this dialog has a device-login hook for.
+    if (!provider.authTypes.includes("provider_oauth") || !isDeviceProvider(provider.id)) continue;
     choices.push({
       key: `${provider.id}:device-login`,
       provider: provider.id,
@@ -164,6 +170,8 @@ export function ConnectAgentDialog({
     onCloseRef.current = onClose;
   }, [onClose]);
 
+  // Escape closes through the same path as the close button (current state).
+  const closeRef = useRef<() => void>(() => undefined);
   function reset() {
     setChoiceKey(null);
     // Leaving the panel clears a finished link so returning offers a fresh start.
@@ -174,6 +182,9 @@ export function ConnectAgentDialog({
     reset();
     onClose();
   }
+  useEffect(() => {
+    closeRef.current = close;
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -182,8 +193,7 @@ export function ConnectAgentDialog({
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        setChoiceKey(null);
-        onCloseRef.current();
+        closeRef.current();
         return;
       }
       // Keep Tab inside the dialog while it is open (radix Dialog does this on hosted).
@@ -280,11 +290,11 @@ export function ConnectAgentDialog({
               <p className={s.description}>No agents are available to connect.</p>
             ) : null}
           </div>
-        ) : selected.kind === "device-login" ? (
+        ) : selected.kind === "device-login" && isDeviceProvider(selected.provider) ? (
           <DeviceLinkPanel
             key={selected.key}
             label={selected.label}
-            device={devices[selected.provider as DeviceProvider]}
+            device={devices[selected.provider]}
             onDone={close}
           />
         ) : selected.kind === "setup-token" ? (

@@ -192,7 +192,7 @@ export const deviceLoginStartSchema = z.object({
   verificationUri: z.string().url(),
   userCode: z.string(),
   intervalSeconds: z.number().int().positive(),
-  expiresAt: z.string(),
+  expiresAt: z.string().refine((value) => Number.isFinite(Date.parse(value)), "expiresAt must be a valid date"),
 });
 export const deviceLoginStatusSchema = z.object({
   status: z.enum(["pending", "connected", "expired", "failed"]),

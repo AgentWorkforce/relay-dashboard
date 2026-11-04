@@ -3,7 +3,7 @@
 // Grok via xAI). Start a device authorization, show the one-time code, then
 // poll until relaycontrol has stored the login.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { adminApi } from "./api";
+import { adminApi, ApiError } from "./api";
 import { message } from "./use-load";
 
 export type DeviceProvider = "openai" | "xai";
@@ -32,6 +32,10 @@ export function useDeviceConnection({
   const [state, setState] = useState<DeviceConnectionState>("idle");
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const connectionRef = useRef<DeviceConnection | null>(null);
+  useEffect(() => {
+    connectionRef.current = connection;
+  }, [connection]);
   // Held in a ref so callers can pass an inline closure without restarting the
   // poll loop below on every render.
   const onConnectedRef = useRef(onConnected);
@@ -57,7 +61,9 @@ export function useDeviceConnection({
       setError(`Choose a workspace before connecting ${label}.`);
       return;
     }
-    setConnection(null);
+    // Keep an outstanding code (and its poll loop) until a replacement starts:
+    // a failed restart must not abandon a code the operator already approved.
+    const previous = connectionRef.current;
     setState("starting");
     setError(null);
     try {
@@ -67,7 +73,7 @@ export function useDeviceConnection({
       setState("waiting");
     } catch (caught) {
       if (!mounted.current) return;
-      setState("idle");
+      setState(previous ? "waiting" : "idle");
       setError(message(caught));
     }
   }, [workspaceId, provider, label]);
@@ -110,10 +116,17 @@ export function useDeviceConnection({
         );
       } catch (caught) {
         if (!active) return;
-        // Keep polling: a transient failure must not abandon a code the
-        // operator may already have approved.
+        // Keep polling through transient failures (network, 429, 5xx): they must
+        // not abandon a code the operator may already have approved. Anything
+        // else (the login is gone, access was revoked) is terminal.
+        const transient = !(caught instanceof ApiError) || caught.status === 429 || caught.status >= 500;
         setError(message(caught));
-        schedule(connection.intervalSeconds);
+        if (transient) {
+          schedule(connection.intervalSeconds);
+          return;
+        }
+        setConnection(null);
+        setState("idle");
       }
     };
     schedule(connection.intervalSeconds);

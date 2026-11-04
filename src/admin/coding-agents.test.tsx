@@ -8,12 +8,13 @@ let calls: Call[] = [];
 let role: "owner" | "admin" | "member" = "owner";
 let agents: Array<Record<string, unknown>> = [];
 let devicePolls = 0;
+let xaiPolls = 0;
 
 const PROVIDERS = [
   { id: "anthropic", displayName: "Anthropic", harness: "claude", envName: "ANTHROPIC_API_KEY", authTypes: ["oauth_token", "byo_api_key"], keyPlaceholder: "sk-ant-api03-…", docsUrl: "https://console.anthropic.com/settings/keys" },
   { id: "openai", displayName: "OpenAI", harness: "codex", envName: "OPENAI_API_KEY", authTypes: ["provider_oauth", "byo_api_key"] },
   { id: "openrouter", displayName: "OpenRouter", harness: "openrouter", envName: "OPENROUTER_API_KEY", authTypes: ["byo_api_key"] },
-  { id: "xai", displayName: "xAI", harness: "grok", envName: "XAI_API_KEY", authTypes: ["byo_api_key"] },
+  { id: "xai", displayName: "xAI", harness: "grok", envName: "XAI_API_KEY", authTypes: ["provider_oauth", "byo_api_key"] },
   { id: "google", displayName: "Google", harness: "gemini", envName: "GEMINI_API_KEY", authTypes: ["byo_api_key"] },
 ];
 
@@ -110,6 +111,37 @@ function respond(call: Call): { status?: number; body?: unknown } {
     ];
     return { body: { status: "connected", providerCredentialId: "a9" } };
   }
+  if (path === "/cloud/api/v1/workspaces/w1/provider-credentials/xai-device/start" && method === "POST")
+    return {
+      status: 201,
+      body: {
+        transactionId: "22222222-2222-4222-8222-222222222222",
+        verificationUri: "https://accounts.x.ai/oauth2/device",
+        userCode: "GROK-5678",
+        intervalSeconds: 1,
+        expiresAt: new Date(Date.now() + 900_000).toISOString(),
+      },
+    };
+  if (path === "/cloud/api/v1/workspaces/w1/provider-credentials/xai-device/status" && method === "POST") {
+    xaiPolls += 1;
+    // A transient upstream failure must not abandon the code.
+    if (xaiPolls === 1) return { status: 503, body: { error: "unavailable", message: "Try again" } };
+    agents = [
+      agent({
+        id: "a8",
+        modelProvider: "xai",
+        harness: "grok",
+        authType: "provider_oauth",
+        displayName: "Grok login",
+        accountEmail: "grok@acme.test",
+        secretPreview: "grok@acme.test",
+        isActive: false,
+        harnessActive: true,
+      }),
+      ...agents,
+    ];
+    return { body: { status: "connected", providerCredentialId: "a8" } };
+  }
   const activate = /\/cloud-agents\/([^/]+)\/activate$/.exec(path);
   if (activate && method === "POST") {
     const target = agents.find((item) => item.id === activate[1])!;
@@ -135,6 +167,7 @@ beforeEach(() => {
   role = "owner";
   agents = [agent({})];
   devicePolls = 0;
+  xaiPolls = 0;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string, init: RequestInit = {}) => {
@@ -166,7 +199,8 @@ it("connections shows hosted's Coding agents summary and provider rows", async (
   const anthropic = screen.getByTestId("provider-group-anthropic");
   expect(within(anthropic).getByText("Connected")).toBeInTheDocument();
   expect(within(anthropic).getByText("1 credential")).toBeInTheDocument();
-  expect(within(anthropic).getByText("Not supported")).toBeInTheDocument();
+  // Claude still offers a setup token, so an API-key-only group is not "Not supported".
+  expect(within(anthropic).getByText("None selected")).toBeInTheDocument();
   expect(within(anthropic).getByTitle("Me")).toBeInTheDocument();
   const openai = screen.getByTestId("provider-group-openai");
   expect(within(openai).getByText("Not connected")).toBeInTheDocument();
@@ -333,4 +367,36 @@ it("links a Codex subscription with the device login, as hosted", async () => {
   expect(within(row).getByText("Sandbox login only")).toBeInTheDocument();
   expect(within(row).queryByRole("button", { name: "Use for LLM calls" })).not.toBeInTheDocument();
 }, 15000);
+
+it("links a Grok subscription through a transient failure; an unsupported device provider is not offered", async () => {
+  render(<Settings section="connections" />);
+  const xai = await screen.findByTestId("provider-group-xai");
+  expect(within(xai).getByText("Not connected")).toBeInTheDocument();
+  expect(within(xai).getAllByText("None selected")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: /Connect agent/ }));
+  const dialog = screen.getByRole("dialog", { name: "Connect an agent" });
+  fireEvent.click(within(dialog).getByRole("button", { name: /^Grok$/ }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Start Grok link" }));
+  expect(await within(dialog).findByText("GROK-5678")).toBeInTheDocument();
+  expect(await within(dialog).findByText("Grok connected", {}, { timeout: 6000 })).toBeInTheDocument();
+  expect(calls.filter((call) => call.path.endsWith("/xai-device/status"))).toHaveLength(2);
+  // Escape resets a finished link, so reopening offers a fresh start.
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: /Connect agent/ }));
+  const again = screen.getByRole("dialog", { name: "Connect an agent" });
+  fireEvent.click(within(again).getByRole("button", { name: /^Grok$/ }));
+  expect(within(again).getByRole("button", { name: "Start Grok link" })).toBeInTheDocument();
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.click(await screen.findByTestId("provider-group-xai-toggle"));
+  const row = await screen.findByTestId("harness-credential-a8");
+  expect(within(row).getByText("Sandbox login only")).toBeInTheDocument();
+}, 20000);
+
+it("does not offer a device login the dialog cannot run", async () => {
+  const { connectChoices } = await import("./connect-agent-dialog");
+  const choices = connectChoices([
+    { id: "mystery", displayName: "Mystery", harness: "m", envName: "M_KEY", authTypes: ["provider_oauth", "byo_api_key"] },
+  ]);
+  expect(choices.map((choice) => choice.kind)).toEqual(["api-key"]);
+});
 
