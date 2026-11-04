@@ -245,3 +245,30 @@ it("a list refresh does not move focus out of the connect dialog", async () => {
   await screen.findByTestId("harness-credential-a1");
   expect(document.activeElement).toBe(input);
 });
+
+it("each row stays busy until its own check finishes", async () => {
+  agents = [agent({}), agent({ id: "a5", modelProvider: "anthropic", label: "Second", secretPreview: "sk-ant-…0005", isActive: false })];
+  const pending: Array<() => void> = [];
+  const original = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init: RequestInit = {}) => {
+    if (input.endsWith("/check")) {
+      calls.push({ method: "POST", path: input, body: {} });
+      await new Promise<void>((resolve) => pending.push(resolve));
+      return new Response(JSON.stringify({ status: "available", checkedAt: "2026-11-03T00:00:00.000Z", message: `checked ${input}` }), { status: 200 });
+    }
+    return original(input, init);
+  }));
+  render(<Settings section="connections" />);
+  fireEvent.click(await screen.findByTestId("provider-group-anthropic-toggle"));
+  const first = await screen.findByTestId("harness-credential-a1");
+  const second = screen.getByTestId("harness-credential-a5");
+  fireEvent.click(within(first).getByRole("button", { name: /Check token/ }));
+  fireEvent.click(within(second).getByRole("button", { name: /Check token/ }));
+  await waitFor(() => expect(pending.length).toBe(2));
+  pending[0]!();
+  await within(first).findByText(/checked .*a1\/check/);
+  expect(within(second).getByRole("button", { name: /Checking/ })).toBeDisabled();
+  pending[1]!();
+  await within(second).findByText(/checked .*a5\/check/);
+});
+

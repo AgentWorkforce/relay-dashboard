@@ -152,9 +152,10 @@ export function DashboardPanel({
 export function CodingAgentsSection(props: { workspaceId: string; workspaceName: string }) {
   const { data, error, reload } = useLoad((signal) => adminApi.codingAgents(props.workspaceId, signal));
   const [connectDialogOpen, setConnectDialogOpen] = useState(false);
-  const [checkingAgentId, setCheckingAgentId] = useState<string | null>(null);
+  // Per-credential pending sets: several rows can check or disconnect at once.
+  const [checkingAgentIds, setCheckingAgentIds] = useState<ReadonlySet<string>>(() => new Set());
   const [checkResults, setCheckResults] = useState<Record<string, CodingAgentCheck>>({});
-  const [disconnectingAgentId, setDisconnectingAgentId] = useState<string | null>(null);
+  const [disconnectingAgentIds, setDisconnectingAgentIds] = useState<ReadonlySet<string>>(() => new Set());
   const [selectingAgentId, setSelectingAgentId] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   // Collapsed on every visit, as hosted.
@@ -217,8 +218,16 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
       return next;
     });
 
+  const withPending = (set: ReadonlySet<string>, id: string, pending: boolean) => {
+    const next = new Set(set);
+    if (pending) next.add(id);
+    else next.delete(id);
+    return next;
+  };
+
   const checkAgent = async (agentId: string) => {
-    setCheckingAgentId(agentId);
+    if (checkingAgentIds.has(agentId)) return;
+    setCheckingAgentIds((current) => withPending(current, agentId, true));
     try {
       const result = await adminApi.checkAgent(props.workspaceId, agentId);
       setCheckResults((current) => ({ ...current, [agentId]: result }));
@@ -232,20 +241,21 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
         },
       }));
     } finally {
-      setCheckingAgentId(null);
+      setCheckingAgentIds((current) => withPending(current, agentId, false));
       reload();
     }
   };
 
   const disconnectAgent = async (agentId: string) => {
-    setDisconnectingAgentId(agentId);
+    if (disconnectingAgentIds.has(agentId)) return;
+    setDisconnectingAgentIds((current) => withPending(current, agentId, true));
     setRowError(agentId, null);
     try {
       await adminApi.deleteAgent(props.workspaceId, agentId);
     } catch (failure) {
       setRowError(agentId, message(failure));
     } finally {
-      setDisconnectingAgentId(null);
+      setDisconnectingAgentIds((current) => withPending(current, agentId, false));
       reload();
     }
   };
@@ -427,8 +437,8 @@ export function CodingAgentsSection(props: { workspaceId: string; workspaceName:
                             const sandboxCapable = isHarnessSelectableAuthType(agent.authType);
                             const sandboxEligible = sandboxCapable && isConnected(agent);
                             const checkResult = checkResults[agent.id];
-                            const checking = checkingAgentId === agent.id;
-                            const disconnecting = disconnectingAgentId === agent.id;
+                            const checking = checkingAgentIds.has(agent.id);
+                            const disconnecting = disconnectingAgentIds.has(agent.id);
                             const rowError = rowErrors[agent.id];
                             const llmActive = agent.isActive;
 
