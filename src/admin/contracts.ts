@@ -113,9 +113,51 @@ export const memberSchema = z.object({
   email: z.string(),
   name: z.string(),
   role: roleSchema,
+  joinedAt: nullableText,
 });
 export type Member = z.infer<typeof memberSchema>;
 export const membersSchema = z.object({ memberships: z.array(memberSchema) });
+
+/** Self-host invites (relaycontrol /organizations/{id}/invitations). */
+export const invitationSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  role: roleSchema,
+  status: z.enum(["pending", "accepted", "revoked", "expired"]),
+  invitedBy: z
+    .object({ id: z.string(), name: z.string(), email: z.string() })
+    .nullable()
+    .optional(),
+  createdAt: z.string(),
+  expiresAt: z.string(),
+});
+export type Invitation = z.infer<typeof invitationSchema>;
+export const invitationsSchema = z.object({
+  invitations: z.array(invitationSchema),
+});
+export const emailDeliverySchema = z.enum([
+  "sent",
+  "failed",
+  "not_configured",
+  "skipped",
+]);
+export type EmailDelivery = z.infer<typeof emailDeliverySchema>;
+export const invitationLinkSchema = z.object({
+  invitation: invitationSchema,
+  inviteUrl: z.string(),
+  emailDelivery: emailDeliverySchema,
+});
+export type InvitationLink = z.infer<typeof invitationLinkSchema>;
+export const signInMethodsSchema = z.object({
+  oidc: z
+    .object({ displayName: z.string(), allowedDomains: z.array(z.string()) })
+    .nullable(),
+  emailLink: z.boolean(),
+  inviteEmail: z.boolean(),
+  autoJoinDomains: z.array(z.string()),
+  inviteTtlHours: z.number(),
+});
+export type SignInMethods = z.infer<typeof signInMethodsSchema>;
 
 export const workspaceSchema = z.object({
   id: z.string(),
