@@ -349,27 +349,75 @@ function stripCommentsKeepingLength(source: string): string {
 /**
  * The names the flow callbacks bind their context to: the `flow(…)` call's
  * own body parameter first (`async f =>` included), then the first parameter
- * of the callback passed to each `.on(…, async (f) => …)` handler. Other
+ * of the callback passed to each `.on(…, async (f) => …)` handler; a callback
+ * passed by name resolves to its local declaration. Other
  * function literals (`items.map((item) => item.github)`) are data callbacks,
  * not flow contexts, so their parameters are not read (self-host change).
  */
 function flowContextParameters(source: string): string[] {
   const names = new Set<string>();
-  const bodyParameter = flowBodyParameter(source);
+  const code = stripCommentsAndStringsKeepingLength(source);
+  const bodyParameter = flowBodyParameter(source) ?? namedCallbackParameter(code, flowBodyReference(code));
   if (bodyParameter) names.add(bodyParameter);
   const arrow = /(?:async\s*)?\(\s*([A-Za-z_$][\w$]*)\s*(?::[^,)]*)?\s*(?:,[^)]*)?\)\s*(?::[^=]*)?=>|(?:async\s+)?function\s*[\w$]*\s*\(\s*([A-Za-z_$][\w$]*)|(?:async\s+)?([A-Za-z_$][\w$]*)\s*=>/u;
-  const code = stripCommentsAndStringsKeepingLength(source);
   for (const on of code.matchAll(/\.\s*on\s*\(/gu)) {
     const open = on.index! + on[0].length - 1;
     const close = matchingClose(code, open);
     const args = code.slice(open + 1, close === -1 ? code.length : close);
     const comma = args.indexOf(",");
     if (comma === -1) continue;
-    const handler = arrow.exec(args.slice(comma + 1).trimStart());
-    const name = handler?.[1] ?? handler?.[2] ?? handler?.[3];
-    if (name && handler!.index === 0) names.add(name);
+    const rest = args.slice(comma + 1).trimStart();
+    const handler = arrow.exec(rest);
+    const name = handler && handler.index === 0 ? (handler[1] ?? handler[2] ?? handler[3]) : undefined;
+    const reference = /^([A-Za-z_$][\w$]*)\s*(?:,|$)/u.exec(rest.trimEnd())?.[1] ?? null;
+    const resolved = name ?? namedCallbackParameter(code, reference);
+    if (resolved) names.add(resolved);
   }
   return [...names];
+}
+
+/**
+ * The identifier passed as the flow body (`flow("x", notify)` or
+ * `flow("x", { … }, notify)`), when the body is a reference rather than a
+ * function literal. Read on the copy with comments and strings blanked.
+ */
+function flowBodyReference(code: string): string | null {
+  for (const call of code.matchAll(/(?:^|[^\w$])flow\s*(?:<[^>()]*>)?\s*\(/gu)) {
+    const open = call.index! + call[0].length - 1;
+    const close = matchingClose(code, open);
+    if (close === -1) continue;
+    const args: string[] = [];
+    let depth = 0;
+    let from = open + 1;
+    for (let i = open + 1; i < close; i += 1) {
+      const ch = code[i]!;
+      if (ch === "(" || ch === "{" || ch === "[") depth += 1;
+      else if (ch === ")" || ch === "}" || ch === "]") depth -= 1;
+      else if (ch === "," && depth === 0) { args.push(code.slice(from, i)); from = i + 1; }
+    }
+    args.push(code.slice(from, close));
+    if (args.length < 2 || args.length > 3) continue;
+    const body = /^\s*([A-Za-z_$][\w$]*)\s*$/u.exec(args[args.length - 1]!)?.[1];
+    if (body && body !== "async" && body !== "function") return body;
+  }
+  return null;
+}
+
+/**
+ * First parameter of a callback defined in this file under `name`:
+ * `function name(ctx)`, `async function name(ctx)`,
+ * `const name = async (ctx) =>`, `const name = ctx =>`, `const name = function (ctx)`.
+ */
+function namedCallbackParameter(code: string, name: string | null): string | null {
+  if (!name) return null;
+  const id = escapeRegExp(name);
+  const declaration = new RegExp(
+    `(?:^|[^\\w$.])(?:async\\s+)?function\\s*\\*?\\s*${id}\\s*\\(\\s*([A-Za-z_$][\\w$]*)` +
+      `|(?:^|[^\\w$.])(?:const|let|var)\\s+${id}\\s*(?::[^=]*)?=\\s*(?:async\\s*)?(?:function\\s*[\\w$]*\\s*\\(\\s*([A-Za-z_$][\\w$]*)|\\(\\s*([A-Za-z_$][\\w$]*)|([A-Za-z_$][\\w$]*)\\s*=>)`,
+    "u",
+  );
+  const match = declaration.exec(code);
+  return match ? (match[1] ?? match[2] ?? match[3] ?? match[4] ?? null) : null;
 }
 
 function escapeRegExp(value: string): string {

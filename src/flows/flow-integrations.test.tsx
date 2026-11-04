@@ -89,3 +89,12 @@ export default flow("events", async (f) => { await f.linear.comment("x"); })
 `;
   expect(requiredIntegrationIds(handler).sort()).toEqual(["linear", "slack"]);
 });
+
+it("resolves callbacks passed by name to flow and .on", () => {
+  const named = `import { flow } from "@relayflows/sdk";
+async function notify(ctx) { await ctx.slack.post("#a", "hi"); }
+const onPr = async (event) => { await event.github.comment("x"); };
+export default flow("notify", notify).on("pr.opened", onPr);
+`;
+  expect(requiredIntegrationIds(named).sort()).toEqual(["github", "slack"]);
+});
