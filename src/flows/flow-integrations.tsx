@@ -32,6 +32,8 @@ export function FlowIntegrations({ source }: { source: string }) {
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
+  // Bumped when the required set changes: a connect started before then is stale.
+  const attempt = useRef(0);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -72,12 +74,14 @@ export function FlowIntegrations({ source }: { source: string }) {
     );
     return () => {
       controller.abort();
+      // Invalidate any in-flight connect and its poll; nothing is left to
+      // reset the pending state, so clear it here.
+      attempt.current += 1;
       if (timer.current !== null) {
         window.clearInterval(timer.current);
         timer.current = null;
-        // The poll that would have reset the pending connect is gone.
-        setConnecting(null);
       }
+      setConnecting(null);
     };
   }, [requiredKey]);
 
@@ -85,6 +89,7 @@ export function FlowIntegrations({ source }: { source: string }) {
 
   async function connect(provider: IntegrationProvider) {
     if (!workspaceId) return;
+    const mine = ++attempt.current;
     setError(null);
     setConnecting(provider.id);
     // Open synchronously so popup blockers allow it, then navigate it.
@@ -92,8 +97,9 @@ export function FlowIntegrations({ source }: { source: string }) {
     if (popup) popup.opener = null;
     try {
       const session = await adminApi.connectIntegration(workspaceId, provider.id, window.location.href);
-      // Left the page while the session was being created: start nothing.
-      if (!mounted.current) {
+      // Left the page, or the flow's integrations changed, while the session
+      // was being created: start nothing.
+      if (!mounted.current || attempt.current !== mine) {
         popup?.close();
         return;
       }
@@ -115,6 +121,7 @@ export function FlowIntegrations({ source }: { source: string }) {
       }, 3_000);
     } catch (failure) {
       popup?.close();
+      if (!mounted.current || attempt.current !== mine) return;
       setConnecting(null);
       setError(message(failure));
     }

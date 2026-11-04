@@ -859,7 +859,7 @@ function flowHeaderObject(source: string): string | null {
   // Self-host: the header of the same call the body and handlers are read
   // from (the default-exported flow), falling back to the first flow header.
   const selected = selectedFlowCall(source, stripCommentsAndStringsKeepingLength(source));
-  if (selected?.header != null) return selected.header;
+  if (selected) return selected.header;
   return flowCall(source)?.header ?? null;
 }
 
