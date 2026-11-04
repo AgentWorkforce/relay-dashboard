@@ -358,9 +358,14 @@ function flowContextParameters(source: string): string[] {
   const names = new Set<string>();
   const code = stripCommentsAndStringsKeepingLength(source);
   const call = selectedFlowCall(source, code);
-  const inline = flowBodyParameter(source);
-  if (inline) names.add(inline);
-  else if (call) for (const name of namedCallbackParameters(code, call.bodyReference)) names.add(name);
+  // The body and the .on chain are read from the same selected call.
+  if (call) {
+    if (call.bodyParameter) names.add(call.bodyParameter);
+    else for (const name of namedCallbackParameters(code, call.bodyReference)) names.add(name);
+  } else {
+    const inline = flowBodyParameter(source);
+    if (inline) names.add(inline);
+  }
   if (!call) return [...names];
   // `.on(…)` handlers chained from the selected flow call, or called on the
   // variable it is bound to. Other emitters' `.on` are not flow contexts.
@@ -403,7 +408,14 @@ function flowContextParameters(source: string): string[] {
 function selectedFlowCall(
   source: string,
   code: string,
-): { open: number; close: number; bodyReference: string | null; binding: string | null } | null {
+): {
+  open: number;
+  close: number;
+  header: string | null;
+  bodyParameter: string | null;
+  bodyReference: string | null;
+  binding: string | null;
+} | null {
   const { local, namespaces } = flowCalleeNames(source);
   const callees = [
     ...[...local].map(escapeRegExp),
@@ -432,8 +444,20 @@ function selectedFlowCall(
   const args = topLevelArguments(code, chosen.open, close);
   const last = args.length >= 2 && args.length <= 3 ? args[args.length - 1]!.trim() : "";
   const bodyReference = /^[A-Za-z_$][\w$]*$/u.test(last) && last !== "async" && last !== "function" ? last : null;
+  const bodyParameter = last ? callbackLiteralParameter(last) : null;
+  // The header is the object literal between the name and the body, read
+  // from the source (strings intact) at the same offsets, without its braces.
+  let header: string | null = null;
+  if (args.length === 3) {
+    const lead = args[0]!.length + 1 + (args[1]!.length - args[1]!.trimStart().length);
+    const from = chosen.open + 1 + lead;
+    if (code[from] === "{") {
+      const end = matchingClose(code, from);
+      if (end !== -1) header = source.slice(from + 1, end);
+    }
+  }
   const binding = bindingOf(chosen.before);
-  return { open: chosen.open, close, bodyReference, binding };
+  return { open: chosen.open, close, header, bodyParameter, bodyReference, binding };
 }
 
 /** Top-level comma-separated arguments between `open` and its matching `close`. */
@@ -832,6 +856,10 @@ function plainStringLiteral(value: string): string | null {
  * string (a usage note, a decoy in a template literal) is never the one read.
  */
 function flowHeaderObject(source: string): string | null {
+  // Self-host: the header of the same call the body and handlers are read
+  // from (the default-exported flow), falling back to the first flow header.
+  const selected = selectedFlowCall(source, stripCommentsAndStringsKeepingLength(source));
+  if (selected?.header != null) return selected.header;
   return flowCall(source)?.header ?? null;
 }
 

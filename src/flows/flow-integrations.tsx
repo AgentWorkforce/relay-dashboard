@@ -72,7 +72,12 @@ export function FlowIntegrations({ source }: { source: string }) {
     );
     return () => {
       controller.abort();
-      if (timer.current !== null) window.clearInterval(timer.current);
+      if (timer.current !== null) {
+        window.clearInterval(timer.current);
+        timer.current = null;
+        // The poll that would have reset the pending connect is gone.
+        setConnecting(null);
+      }
     };
   }, [requiredKey]);
 

@@ -134,3 +134,12 @@ export default flow("main", {}, notify,);
 `;
   expect(requiredIntegrationIds(trailing)).toEqual(["github"]);
 });
+
+it("reads the inline body and header of the flow bound to the default-exported variable", () => {
+  const source = `import { flow } from "@relayflows/sdk";
+const helper = flow("helper", { tools: { jira: true } }, async (h) => { await h.linear.comment("x"); });
+const main = flow("main", { tools: { github: true } }, async (f) => { await f.slack.post("#a", "b"); });
+export default main;
+`;
+  expect(requiredIntegrationIds(source).sort()).toEqual(["github", "slack"]);
+});
