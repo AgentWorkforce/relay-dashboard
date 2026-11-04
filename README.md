@@ -35,4 +35,30 @@ the API at `/cloud/api` on its own origin, so route that prefix to relaycontrol
 `#/settings/<section>`, and query parameters for sessions, so no history
 fallback is needed.
 
+### Customer profile (enterprise branding)
+
+Self-hosted images can carry a customer's brand without a rebuild. Set
+`DASHBOARD_CUSTOMER_PROFILE` (the chart's `customerProfile` value) to one JSON
+object. The image writes it into `/runtime-config.js` as `customerProfile`, and
+the SPA validates each field and ignores the ones it can't use:
+
+| field | effect |
+| --- | --- |
+| `productName` | Replaces "Agent Relay" in the sidebar, the device page and labels (when there is no logo, the name is shown in place of the wordmark). |
+| `title` | Document title (defaults to `productName`). |
+| `logo` | `{ "light": url, "dark": url }`, or one URL for both themes. Replaces the mark and wordmark. |
+| `favicon` | Favicon URL. |
+| `accentColor` | Links, focus rings and active navigation (`#hex`, `rgb()`, `hsl()`, `oklch()`). |
+| `brandColor` | The solid primary button. |
+| `supportUrl` | Adds Support to the account menu and the device page (`https`, `http`, `mailto:` or a same-origin path). |
+| `poweredByAgentRelay` | `false` hides the "Powered by Agent Relay" line shown under a custom brand. |
+
+URLs may be `https`/`http`, same-origin paths or `data:image/…`. Without a
+profile (and always in the hosted build, which has no runtime config) the
+dashboard looks exactly as before. Example:
+
+```sh
+DASHBOARD_CUSTOMER_PROFILE='{"productName":"Acme Relay","logo":{"light":"https://acme.example/logo-dark-text.svg","dark":"https://acme.example/logo-light-text.svg"},"favicon":"https://acme.example/favicon.svg","accentColor":"#7c3aed","brandColor":"#5b21b6","supportUrl":"mailto:support@acme.example","poweredByAgentRelay":true}'
+```
+
 `npm run check` runs lint, tests and the production build. Apache-2.0.

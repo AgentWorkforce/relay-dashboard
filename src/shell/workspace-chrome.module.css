@@ -463,3 +463,12 @@
   padding: 0;
   justify-content: center;
 }
+
+/* Self-host: the customer-profile footer line sits under the account. */
+.poweredBy {
+  order: 5;
+  margin: 0;
+}
+.collapsedSidebar .poweredBy {
+  display: none;
+}

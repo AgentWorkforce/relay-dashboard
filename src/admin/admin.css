@@ -72,14 +72,14 @@
 }
 /* ui/button default (brand primary) and destructive. */
 .settings button.primary {
-  background: #2d6a9c;
+  background: var(--brand-button, #2d6a9c);
   color: #fff;
-  border: 1.5px solid #234969;
+  border: 1.5px solid var(--brand-button-border, #234969);
   border-radius: var(--radius-bubble, 10px 10px 10px 3px);
   font-size: 12px;
 }
 .settings button.primary:hover:not(:disabled) {
-  background: #4a90c2;
+  background: var(--brand-button-hover, #4a90c2);
   color: #fff;
 }
 .settings button.danger {

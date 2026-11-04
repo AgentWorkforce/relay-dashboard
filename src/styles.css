@@ -1,6 +1,11 @@
 /* Shared helpers for the page stylesheets (legacy layer: above Tailwind's
    preflight, below its utilities). The shell and its tokens come from hosted
    Cloud: see globals.css and shell/. */
+/* Customer-profile logos: one variant per theme (shell/brand.tsx). */
+:root[data-theme="dark"] .brand-logo-light,
+:root:not([data-theme="dark"]) .brand-logo-dark {
+  display: none;
+}
 @layer legacy {
   body {
     margin: 0;

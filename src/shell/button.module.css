@@ -1,9 +1,10 @@
 /* Canonical primary button from agentrelay.com/web/app/globals.css (.btn-primary)
    and public/brand.css (--r-md). Keep the brand treatment independent of theme accents. */
 .primary.primary {
-  background: #2d6a9c;
+  /* Self-host: --brand-button* come from a customer profile (shell/branding.ts). */
+  background: var(--brand-button, #2d6a9c);
   color: #fff;
-  border: 1.5px solid #234969;
+  border: 1.5px solid var(--brand-button-border, #234969);
   border-radius: var(--radius-bubble, 10px 10px 10px 3px);
   /* Dimensions come from the shared Button size variants, matching form controls. */
   font-family: var(--font-geist-sans), sans-serif;
@@ -19,8 +20,8 @@
     box-shadow 0.2s;
 }
 .primary.primary:hover:not(:disabled):not([aria-disabled="true"]) {
-  background: #4a90c2;
-  border-color: #234969;
+  background: var(--brand-button-hover, #4a90c2);
+  border-color: var(--brand-button-border, #234969);
 }
 .primary.primary[data-size^="icon"] {
   padding: 0;

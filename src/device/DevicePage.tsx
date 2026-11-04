@@ -14,11 +14,12 @@ import {
   type DeviceLookup,
 } from "./api";
 import { Check, X } from "lucide-react";
-import { LogoIcon, LogoWordmark } from "../shell/brand";
+import { BrandLockup } from "../shell/brand";
+import { branding } from "../shell/branding";
 
 // Hosted app/device/_components/device-approval.tsx action buttons.
 const primaryAction =
-  "inline-flex min-h-10 items-center justify-center rounded-md border border-[#234969] bg-[#2d6a9c] px-4 text-sm font-medium text-white transition-colors hover:bg-[#4a90c2] active:bg-[#234969] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#80bfe5] disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex min-h-10 items-center justify-center rounded-md border border-[var(--brand-button-border,#234969)] bg-[var(--brand-button,#2d6a9c)] px-4 text-sm font-medium text-white transition-colors hover:bg-[var(--brand-button-hover,#4a90c2)] active:bg-[var(--brand-button-border,#234969)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#80bfe5] disabled:cursor-not-allowed disabled:opacity-50";
 const secondaryAction =
   "inline-flex min-h-10 items-center justify-center rounded-md border border-[#496174] bg-transparent px-4 text-sm font-medium text-[#e8f0f7] transition-colors hover:bg-[#24394b] active:bg-[#1c3041] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#80bfe5] disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -34,6 +35,7 @@ export function DevicePage(props: {
   /** Leaves for sign-in; replaceable in tests. */
   navigate?: (url: string) => void;
 }) {
+  const brand = branding();
   const navigate = props.navigate ?? ((url: string) => window.location.replace(url));
   const [account, setAccount] = useState<Account | null>(null);
   const [signedOut, setSignedOut] = useState(false);
@@ -137,18 +139,23 @@ export function DevicePage(props: {
       <main className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center px-6 py-12 sm:py-16">
         <a
           href={appPath()}
-          aria-label="Agent Relay home"
+          aria-label={`${brand.productName} home`}
           className="mb-8 flex w-fit shrink-0 items-center gap-2.5 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#79b8de]"
         >
-          <LogoIcon className="h-6" />
-          <LogoWordmark className="h-5 [--fg:#e8f0f7]" />
+          <BrandLockup
+            brand={brand}
+            markClassName="h-6"
+            wordmarkClassName="h-5 [--fg:#e8f0f7]"
+            logoClassName="h-6 w-auto max-w-[200px] object-contain object-left"
+            variant="dark"
+          />
         </a>
         <div className="mb-9">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
             Authorize a device
           </h1>
           <p className="mt-3 max-w-xl text-base leading-7 text-[#a9bdce]">
-            Connect an app or device to your Agent Relay workspace. Only approve
+            Connect an app or device to your {brand.productName} workspace. Only approve
             a sign-in you started yourself.
           </p>
           {account && (
@@ -329,6 +336,21 @@ export function DevicePage(props: {
             </p>
           )}
         </section>
+        {(brand.supportUrl || brand.poweredBy) && (
+          <p className="mt-6 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[#a9bdce]">
+            {brand.supportUrl && (
+              <a
+                href={brand.supportUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="underline underline-offset-4 hover:text-[#e8f0f7]"
+              >
+                Contact support
+              </a>
+            )}
+            {brand.poweredBy && <span data-powered-by>Powered by Agent Relay</span>}
+          </p>
+        )}
       </main>
     </div>
   );

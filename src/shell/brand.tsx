@@ -36,3 +36,56 @@ export function LogoWordmark({ className }: { className?: string }) {
     </svg>
   );
 }
+
+/**
+ * The product lockup: Agent Relay's mark and wordmark, or a customer
+ * profile's logo (light and dark variants) or product name.
+ */
+export function BrandLockup({
+  brand,
+  markClassName,
+  wordmarkClassName,
+  logoClassName = "h-5 w-auto max-w-[160px] object-contain object-left",
+  variant,
+}: {
+  brand: import("./branding").Branding;
+  /** A fixed-theme surface (the device page is always dark). */
+  variant?: "light" | "dark";
+  markClassName?: string;
+  wordmarkClassName?: string;
+  logoClassName?: string;
+}) {
+  if (brand.logo && variant)
+    return <img src={brand.logo[variant]} alt="" className={logoClassName} />;
+  if (brand.logo)
+    return (
+      <>
+        <img
+          src={brand.logo.light}
+          alt=""
+          data-brand-logo="light"
+          className={`brand-logo-light ${logoClassName}`}
+        />
+        <img
+          src={brand.logo.dark}
+          alt=""
+          data-brand-logo="dark"
+          className={`brand-logo-dark ${logoClassName}`}
+        />
+      </>
+    );
+  if (brand.custom && brand.productName !== "Agent Relay")
+    return (
+      <span className="truncate text-[15px] font-semibold text-foreground">
+        {brand.productName}
+      </span>
+    );
+  return (
+    <>
+      <LogoIcon className={markClassName} />
+      <span>
+        <LogoWordmark className={wordmarkClassName} />
+      </span>
+    </>
+  );
+}

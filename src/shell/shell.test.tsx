@@ -6,6 +6,7 @@ import { WorkspaceChrome } from "./workspace-chrome";
 import { AccountMenu } from "./account-menu";
 import { WorkspaceViewSlot } from "./view-slots";
 import { Shell } from "./shell";
+import { resetBrandingForTests } from "./branding";
 import { getAccount } from "../api/client";
 
 vi.mock("../api/client", async (importOriginal) => ({
@@ -179,4 +180,52 @@ it("shows the signed-in account in the shell, and none when it fails", async () 
   expect(
     screen.queryByRole("button", { name: /Account and workspaces/ }),
   ).toBeNull();
+});
+
+it("renders a customer profile's brand in the chrome and account menu", () => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = {
+    customerProfile: {
+      productName: "Acme Relay",
+      logo: { light: "/brand/light.svg", dark: "/brand/dark.svg" },
+      supportUrl: "https://support.acme.example",
+    },
+  } as never;
+  resetBrandingForTests();
+  try {
+    render(
+      <WorkspaceChrome
+        rail="Agents"
+        label="Sessions"
+        accountControl={<AccountMenu userName="Khaliq Gant" workspaceName="Acme" />}
+      >
+        <p>content</p>
+      </WorkspaceChrome>,
+    );
+    const home = screen.getByRole("link", { name: "Acme Relay" });
+    expect(
+      [...home.querySelectorAll("img")].map((img) => img.getAttribute("src")),
+    ).toEqual(["/brand/light.svg", "/brand/dark.svg"]);
+    expect(screen.getByText("Powered by Agent Relay")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Account and workspaces: Khaliq Gant" }),
+    );
+    expect(screen.getByRole("link", { name: "Support" })).toHaveAttribute(
+      "href",
+      "https://support.acme.example/",
+    );
+  } finally {
+    delete window.__AGENT_RELAY_DASHBOARD_CONFIG__;
+    resetBrandingForTests();
+  }
+});
+
+it("keeps the Agent Relay lockup without a profile", () => {
+  resetBrandingForTests();
+  render(
+    <WorkspaceChrome rail="Agents" label="Sessions">
+      <p>content</p>
+    </WorkspaceChrome>,
+  );
+  expect(screen.getByRole("link", { name: "Agent Relay" })).toBeInTheDocument();
+  expect(screen.queryByText("Powered by Agent Relay")).toBeNull();
 });

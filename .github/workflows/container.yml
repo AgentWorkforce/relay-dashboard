@@ -89,6 +89,8 @@ jobs:
           curl -fsS http://127.0.0.1:8080/runtime-config.js | tee /tmp/runtime-config.js
           grep -q '__AGENT_RELAY_DASHBOARD_CONFIG__' /tmp/runtime-config.js
           grep -qF 'apiBasePath: "/cloud/api"' /tmp/runtime-config.js
+          # No customer profile: the default branding.
+          grep -qF 'customerProfile: null' /tmp/runtime-config.js
           curl -fsS http://127.0.0.1:8080/ | tee /tmp/index.html | grep -q '<div id="root"'
           # The self-host build is served at / and loads the runtime config.
           grep -q 'src="/runtime-config.js"' /tmp/index.html

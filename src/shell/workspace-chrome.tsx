@@ -22,7 +22,8 @@ import {
   X,
 } from "lucide-react";
 import { appPath } from "../app-path";
-import { LogoIcon, LogoWordmark } from "./brand";
+import { BrandLockup } from "./brand";
+import { branding } from "./branding";
 import { cn } from "./cn";
 import { FlowsIcon, SessionsIcon } from "./icons";
 import { Button } from "./ui";
@@ -193,6 +194,7 @@ export function WorkspaceChrome({
     return () => document.removeEventListener("keydown", onKey);
   }, [navigationOpen, closeDrawer]);
 
+  const brand = branding();
   const views: ViewLink[] = [
     { href: appPath(), label: "Sessions", icon: SessionsIcon, rail: "Agents" },
     { href: "#/flows", label: "Flows", icon: FlowsIcon, rail: "Flows" },
@@ -203,15 +205,16 @@ export function WorkspaceChrome({
       <div className={s.sidebarBody}>
         <a
           href={appPath()}
-          aria-label="Agent Relay"
-          title="Agent Relay"
+          aria-label={brand.productName}
+          title={brand.productName}
           className={s.workspaceBrand}
           onClick={closeSidebar}
         >
-          <LogoIcon className="h-5" />
-          <span>
-            <LogoWordmark className={s.brandWordmark} />
-          </span>
+          <BrandLockup
+            brand={brand}
+            markClassName="h-5"
+            wordmarkClassName={s.brandWordmark}
+          />
         </a>
         <nav aria-label="Workspace views" className={s.navGroup}>
           {views.map(({ href, label: name, icon: Icon, rail: target }) => (
@@ -270,6 +273,14 @@ export function WorkspaceChrome({
         </a>
       </div>
       <div className={s.sidebarAccount}>{accountControl}</div>
+      {brand.poweredBy && (
+        <p
+          className={`${s.poweredBy} px-5 pb-3 text-[11px] text-muted-foreground`}
+          data-powered-by
+        >
+          Powered by Agent Relay
+        </p>
+      )}
       <div
         ref={setSidebarFooter}
         className={s.sidebarFooter}
