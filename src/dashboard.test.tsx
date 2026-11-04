@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { Dashboard } from "./dashboard";
 
 type Handler = (url: URL) => unknown;
@@ -172,7 +179,7 @@ beforeEach(() => {
       calls.push(url);
       const route = routes.find(([pattern]) => pattern.test(url.pathname));
       if (!route) return new Response("{}", { status: 404 });
-      const body = route[1](url);
+      const body = await route[1](url);
       return body instanceof Response
         ? body
         : new Response(JSON.stringify(body));
@@ -280,6 +287,87 @@ it("pages the sidebar facets on their own and keeps earlier options", async () =
   expect(facetRow("project", "docs").count).toBe("1");
   expect(facetRow("project", "All projects").count).toBe("3");
   expect(screen.queryByRole("button", { name: "Load more options" })).toBeNull();
+});
+
+it("keeps the sidebar and rows on screen while a filter change loads", async () => {
+  render(<Dashboard />);
+  await screen.findByRole("link", { name: "Fix session loading" });
+  await act(async () => {});
+  const sidebar = screen.getByRole("group", { name: "Filter by project" });
+  const status = screen.getByRole("group", { name: "Filter by status" });
+  // Hold the narrowed list request open to observe the pending state.
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  respond(/\/sessions$/, async (url) => {
+    if (url.searchParams.has("project")) await held;
+    return { items: sessions, members, nextCursor: null, error: false, now };
+  });
+  fireEvent.click(within(sidebar).getByRole("button", { name: "docs" }));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  });
+  // Same nodes (not remounted), no skeleton, rows filtered in place, pending.
+  expect(screen.getByRole("group", { name: "Filter by project" })).toBe(sidebar);
+  expect(screen.getByRole("group", { name: "Filter by status" })).toBe(status);
+  expect(sidebar.isConnected).toBe(true);
+  expect(screen.queryByRole("status", { name: "Loading sessions…" })).toBeNull();
+  expect(screen.getByRole("link", { name: "Write docs" })).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Fix session loading" })).toBeNull();
+  expect(
+    within(sidebar).getByRole("button", { name: "docs" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("link", { name: "Write docs" }).closest("[aria-busy]"))
+    .toHaveAttribute("aria-busy", "true");
+  await act(async () => {
+    release();
+    await held;
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("link", { name: "Write docs" }).closest("[aria-busy]"),
+    ).toHaveAttribute("aria-busy", "false"),
+  );
+  expect(screen.getByRole("group", { name: "Filter by project" })).toBe(sidebar);
+});
+
+it("keeps older loaded pages and shows no skeleton while a pick loads", async () => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  respond(/\/sessions$/, async (url) => {
+    if (url.searchParams.has("project")) await held;
+    if (url.searchParams.get("cursor") === "c2")
+      return { items: [sessions[1]], members, nextCursor: null, error: false, now };
+    if (url.searchParams.has("project"))
+      return { items: [sessions[1]], members, nextCursor: null, error: false, now };
+    return { items: [sessions[0]], members, nextCursor: "c2", error: false, now };
+  });
+  render(<Dashboard />);
+  await screen.findByRole("link", { name: "Fix session loading" });
+  fireEvent.click(screen.getByRole("button", { name: "Older sessions" }));
+  expect(await screen.findByRole("link", { name: "Write docs" })).toBeInTheDocument();
+  fireEvent.click(
+    within(screen.getByRole("group", { name: "Filter by project" })).getByRole(
+      "button",
+      { name: "docs" },
+    ),
+  );
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  });
+  // The older page's row stays (filtered in place); no skeleton, no empty state.
+  expect(screen.getByRole("link", { name: "Write docs" })).toBeInTheDocument();
+  expect(screen.queryByRole("status", { name: "Loading sessions…" })).toBeNull();
+  expect(screen.queryByText("No sessions match these filters.")).toBeNull();
+  await act(async () => {
+    release();
+    await held;
+  });
+  // The narrowed response applied and loading ended.
+  await waitFor(() =>
+    expect(
+      screen.getByRole("link", { name: "Write docs" }).closest("[aria-busy]"),
+    ).toHaveAttribute("aria-busy", "false"),
+  );
 });
 
 it("counts each facet against the others, not itself", async () => {
