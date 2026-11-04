@@ -233,3 +233,15 @@ it("honors an explicit unselected sandbox token and keeps Tab inside the dialog"
   fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
   expect(document.activeElement).toBe(buttons[buttons.length - 1]);
 });
+
+it("a list refresh does not move focus out of the connect dialog", async () => {
+  render(<Settings section="connections" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Connect agent/ }));
+  const dialog = screen.getByRole("dialog", { name: "Connect an agent" });
+  fireEvent.click(within(dialog).getByRole("button", { name: /OpenRouter/ }));
+  const input = within(dialog).getByLabelText("API key");
+  input.focus();
+  fireEvent.click(screen.getByTestId("provider-group-anthropic-toggle"));
+  await screen.findByTestId("harness-credential-a1");
+  expect(document.activeElement).toBe(input);
+});

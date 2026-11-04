@@ -137,6 +137,12 @@ export function ConnectAgentDialog({
   const [choiceKey, setChoiceKey] = useState<string | null>(null);
   const selected = choices.find((choice) => choice.key === choiceKey) ?? null;
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  // The parent passes a new onClose each render; read it through a ref so a
+  // list refresh does not rerun the focus effect and pull focus out of a field.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   function reset() {
     setChoiceKey(null);
@@ -154,7 +160,7 @@ export function ConnectAgentDialog({
       if (event.key === "Escape") {
         event.preventDefault();
         setChoiceKey(null);
-        onClose();
+        onCloseRef.current();
         return;
       }
       // Keep Tab inside the dialog while it is open (radix Dialog does this on hosted).
@@ -184,7 +190,7 @@ export function ConnectAgentDialog({
       document.removeEventListener("keydown", onKey);
       previous?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   const titleId = "connect-agent-title";
