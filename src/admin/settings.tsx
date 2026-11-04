@@ -196,6 +196,8 @@ export function Settings(props: { section: string }) {
               {active === "members" && (
                 <MembersSection
                   organizationId={context.currentOrganization.id}
+                  organizationName={context.currentOrganization.name}
+                  viewerRole={context.currentOrganization.role}
                   currentUserId={context.user.id}
                   canManage={manage}
                   onChanged={reload}

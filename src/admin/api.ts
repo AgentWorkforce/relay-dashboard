@@ -11,6 +11,9 @@ import {
   envVarListSchema,
   envVarSchema,
   membersSchema,
+  invitationLinkSchema,
+  invitationsSchema,
+  signInMethodsSchema,
   providersSchema,
   workspacesSchema,
   type TokenPurpose,
@@ -218,6 +221,35 @@ export const adminApi = {
       null,
       { method: "DELETE" },
     ),
+  invitations: async (organization: string, signal?: AbortSignal) =>
+    (
+      await call(
+        `/v1/organizations/${enc(organization)}/invitations`,
+        invitationsSchema,
+        { signal },
+      )
+    ).invitations,
+  invite: (organization: string, input: { email: string; role: Role }) =>
+    call(
+      `/v1/organizations/${enc(organization)}/invitations`,
+      invitationLinkSchema,
+      { method: "POST", body: input },
+    ),
+  /** A fresh link for an open invite (earlier links stop working); `send` re-emails it. */
+  inviteLink: (organization: string, id: string, send = false) =>
+    call(
+      `/v1/organizations/${enc(organization)}/invitations/${enc(id)}/link`,
+      invitationLinkSchema,
+      { method: "POST", body: { send } },
+    ),
+  revokeInvite: (organization: string, id: string) =>
+    call(
+      `/v1/organizations/${enc(organization)}/invitations/${enc(id)}`,
+      null,
+      { method: "DELETE" },
+    ),
+  signInMethods: (signal?: AbortSignal) =>
+    call("/v1/auth/methods", signInMethodsSchema, { signal }),
   workspaces: async (organization: string, signal?: AbortSignal) =>
     (
       await call(
