@@ -19,6 +19,7 @@ import { Button } from "../shell/ui";
 import { adminApi } from "./api";
 import type { CodingAgentProvider } from "./contracts";
 import { message } from "./use-load";
+import { useDeviceConnection, type DeviceProvider } from "./use-device-connection";
 import s from "./connect-agent-dialog.module.css";
 
 const brandIcons: Record<string, string> = {
@@ -34,7 +35,7 @@ export type ConnectChoice = {
   key: string;
   provider: string;
   label: string;
-  kind: "setup-token" | "api-key";
+  kind: "setup-token" | "device-login" | "api-key";
   cli?: string;
   envName: string;
   keyPlaceholder?: string;
@@ -56,14 +57,27 @@ export function connectChoices(providers: CodingAgentProvider[]): ConnectChoice[
       });
     }
   }
+  // Hosted DEVICE_LINK_PROVIDERS: browser-only subscription logins.
+  const deviceLabels: Record<string, string> = { openai: "Codex", xai: "Grok" };
+  for (const provider of providers) {
+    if (!provider.authTypes.includes("provider_oauth")) continue;
+    choices.push({
+      key: `${provider.id}:device-login`,
+      provider: provider.id,
+      label: deviceLabels[provider.id] ?? `${provider.displayName} login`,
+      kind: "device-login",
+      envName: provider.id === "xai" ? "GROK_HOME" : "CODEX_HOME",
+    });
+  }
   for (const provider of providers) {
     if (!provider.authTypes.includes("byo_api_key")) continue;
     choices.push({
       key: `${provider.id}:api-key`,
       provider: provider.id,
-      label: provider.authTypes.includes("oauth_token")
-        ? `${provider.displayName} API key`
-        : provider.displayName,
+      label:
+        provider.authTypes.includes("oauth_token") || provider.authTypes.includes("provider_oauth")
+          ? `${provider.displayName} API key`
+          : provider.displayName,
       kind: "api-key",
       envName: provider.envName,
       keyPlaceholder: provider.keyPlaceholder,
@@ -136,6 +150,12 @@ export function ConnectAgentDialog({
 }) {
   const [choiceKey, setChoiceKey] = useState<string | null>(null);
   const selected = choices.find((choice) => choice.key === choiceKey) ?? null;
+  // Called here rather than inside the panel (as hosted): this component stays
+  // mounted while the dialog is closed, so an outstanding code keeps polling
+  // and a login the operator already approved is not abandoned.
+  const codex = useDeviceConnection({ workspaceId, provider: "openai", label: "Codex", onConnected });
+  const grok = useDeviceConnection({ workspaceId, provider: "xai", label: "Grok", onConnected });
+  const devices: Record<DeviceProvider, ReturnType<typeof useDeviceConnection>> = { openai: codex, xai: grok };
   const dialogRef = useRef<HTMLDivElement | null>(null);
   // The parent passes a new onClose each render; read it through a ref so a
   // list refresh does not rerun the focus effect and pull focus out of a field.
@@ -146,6 +166,9 @@ export function ConnectAgentDialog({
 
   function reset() {
     setChoiceKey(null);
+    // Leaving the panel clears a finished link so returning offers a fresh start.
+    if (codex.state === "connected") codex.reset();
+    if (grok.state === "connected") grok.reset();
   }
   function close() {
     reset();
@@ -257,6 +280,13 @@ export function ConnectAgentDialog({
               <p className={s.description}>No agents are available to connect.</p>
             ) : null}
           </div>
+        ) : selected.kind === "device-login" ? (
+          <DeviceLinkPanel
+            key={selected.key}
+            label={selected.label}
+            device={devices[selected.provider as DeviceProvider]}
+            onDone={close}
+          />
         ) : selected.kind === "setup-token" ? (
           <SetupTokenPanel
             key={selected.key}
@@ -275,6 +305,103 @@ export function ConnectAgentDialog({
             onDone={close}
           />
         )}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Hosted DeviceLinkPanel: browser-only connect, no terminal and no sandbox.
+ * relaycontrol starts the device authorization, the operator approves the
+ * one-time code on the provider's site, and the login is stored server-side.
+ */
+function DeviceLinkPanel({
+  label,
+  device,
+  onDone,
+}: {
+  label: string;
+  device: ReturnType<typeof useDeviceConnection>;
+  onDone: () => void;
+}) {
+  const { connection, state, error, start } = device;
+  const host = connection ? docsHost(connection.verificationUri) : null;
+  return (
+    <>
+      <ol className={s.steps} aria-label="Connection steps">
+        <li aria-current={state === "idle" || state === "starting" ? "step" : undefined}>
+          <span>1</span> Get a code
+        </li>
+        <li aria-current={state === "waiting" ? "step" : undefined}>
+          <span>2</span> Approve in browser
+        </li>
+      </ol>
+      <section className={s.instructions} aria-live="polite">
+        {state === "connected" ? (
+          <>
+            <h3>{label} connected</h3>
+            <p>
+              This workspace can now run {label} agents with your subscription. Your access and
+              refresh tokens stay encrypted on your control plane; flow runs get a copy only while
+              they run.
+            </p>
+          </>
+        ) : (
+          <>
+            <h3>Link your {label} account</h3>
+            <p>Start the link, then approve the one-time code on {label}’s sign-in page.</p>
+            {/* Still enabled while a code is outstanding: a lost code is only
+                recoverable by asking for a new one (the start is rate-limited). */}
+            <button
+              type="button"
+              className={s.action}
+              disabled={state === "starting"}
+              onClick={() => void start()}
+            >
+              {state === "starting" ? <Loader2 size={16} className={s.spinner} aria-hidden="true" /> : null}
+              {state === "starting" ? "Starting…" : connection ? `Restart ${label} link` : `Start ${label} link`}
+            </button>
+            {connection ? (
+              <div className={s.command}>
+                <p className={s.hint}>Enter this one-time code:</p>
+                <code className={s.userCode}>{connection.userCode}</code>
+                {host ? (
+                  <a
+                    className={s.deviceLink}
+                    href={connection.verificationUri}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    Open {host}
+                    {new URL(connection.verificationUri).pathname}
+                    <ExternalLink size={14} aria-hidden="true" />
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
+            {state === "waiting" ? (
+              <>
+                <p role="status">Waiting for {label} authorization… Continue only if you started this login.</p>
+                <p className={s.hint}>
+                  You can close this dialog while you approve the code — the link finishes on its own
+                  as long as you stay on this page.
+                </p>
+              </>
+            ) : null}
+          </>
+        )}
+        {error ? (
+          <p role="alert" className={s.error}>
+            {error}
+          </p>
+        ) : null}
+      </section>
+      <div className={s.footer}>
+        <span />
+        <Button className={s.primary} onClick={onDone}>
+          {state === "connected" ? "Back to connections" : "Done"}
+          <ArrowRight size={16} />
+        </Button>
       </div>
     </>
   );

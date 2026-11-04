@@ -186,3 +186,16 @@ export const codingAgentCheckSchema = z.object({
   message: z.string(),
 });
 export type CodingAgentCheck = z.infer<typeof codingAgentCheckSchema>;
+
+export const deviceLoginStartSchema = z.object({
+  transactionId: z.string(),
+  verificationUri: z.string().url(),
+  userCode: z.string(),
+  intervalSeconds: z.number().int().positive(),
+  expiresAt: z.string(),
+});
+export const deviceLoginStatusSchema = z.object({
+  status: z.enum(["pending", "connected", "expired", "failed"]),
+  retryAfterSeconds: z.number().int().positive().optional(),
+  providerCredentialId: z.string().optional(),
+});

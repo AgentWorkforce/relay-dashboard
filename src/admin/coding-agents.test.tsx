@@ -7,10 +7,11 @@ type Call = { method: string; path: string; body: unknown };
 let calls: Call[] = [];
 let role: "owner" | "admin" | "member" = "owner";
 let agents: Array<Record<string, unknown>> = [];
+let devicePolls = 0;
 
 const PROVIDERS = [
   { id: "anthropic", displayName: "Anthropic", harness: "claude", envName: "ANTHROPIC_API_KEY", authTypes: ["oauth_token", "byo_api_key"], keyPlaceholder: "sk-ant-api03-…", docsUrl: "https://console.anthropic.com/settings/keys" },
-  { id: "openai", displayName: "OpenAI", harness: "codex", envName: "OPENAI_API_KEY", authTypes: ["byo_api_key"] },
+  { id: "openai", displayName: "OpenAI", harness: "codex", envName: "OPENAI_API_KEY", authTypes: ["provider_oauth", "byo_api_key"] },
   { id: "openrouter", displayName: "OpenRouter", harness: "openrouter", envName: "OPENROUTER_API_KEY", authTypes: ["byo_api_key"] },
   { id: "xai", displayName: "xAI", harness: "grok", envName: "XAI_API_KEY", authTypes: ["byo_api_key"] },
   { id: "google", displayName: "Google", harness: "gemini", envName: "GEMINI_API_KEY", authTypes: ["byo_api_key"] },
@@ -79,6 +80,36 @@ function respond(call: Call): { status?: number; body?: unknown } {
     agents = [created, ...agents];
     return { status: 201, body: { id: "a3", providerCredentialId: "a3", agent: created } };
   }
+  if (path === "/cloud/api/v1/workspaces/w1/provider-credentials/openai-device/start" && method === "POST")
+    return {
+      status: 201,
+      body: {
+        transactionId: "11111111-1111-4111-8111-111111111111",
+        verificationUri: "https://auth.openai.com/codex/device",
+        userCode: "ABCD-1234",
+        intervalSeconds: 1,
+        expiresAt: new Date(Date.now() + 900_000).toISOString(),
+      },
+    };
+  if (path === "/cloud/api/v1/workspaces/w1/provider-credentials/openai-device/status" && method === "POST") {
+    devicePolls += 1;
+    if (devicePolls < 2) return { body: { status: "pending", retryAfterSeconds: 1 } };
+    agents = [
+      agent({
+        id: "a9",
+        modelProvider: "openai",
+        harness: "codex",
+        authType: "provider_oauth",
+        displayName: "Codex login",
+        accountEmail: "dev@acme.test",
+        secretPreview: "dev@acme.test",
+        isActive: false,
+        harnessActive: true,
+      }),
+      ...agents,
+    ];
+    return { body: { status: "connected", providerCredentialId: "a9" } };
+  }
   const activate = /\/cloud-agents\/([^/]+)\/activate$/.exec(path);
   if (activate && method === "POST") {
     const target = agents.find((item) => item.id === activate[1])!;
@@ -103,6 +134,7 @@ beforeEach(() => {
   calls = [];
   role = "owner";
   agents = [agent({})];
+  devicePolls = 0;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string, init: RequestInit = {}) => {
@@ -138,7 +170,8 @@ it("connections shows hosted's Coding agents summary and provider rows", async (
   expect(within(anthropic).getByTitle("Me")).toBeInTheDocument();
   const openai = screen.getByTestId("provider-group-openai");
   expect(within(openai).getByText("Not connected")).toBeInTheDocument();
-  expect(within(openai).getByText("Not supported")).toBeInTheDocument();
+  // OpenAI offers a Codex login, so an empty group can still take sandbox access (hosted).
+  expect(within(openai).getAllByText("None selected")).toHaveLength(2);
 
   // Integrations (BYO OAuth) moved to their own section.
   const nav = screen.getByRole("navigation", { name: "Settings" });
@@ -271,4 +304,33 @@ it("each row stays busy until its own check finishes", async () => {
   pending[1]!();
   await within(second).findByText(/checked .*a5\/check/);
 });
+
+it("links a Codex subscription with the device login, as hosted", async () => {
+  render(<Settings section="connections" />);
+  const openai = await screen.findByTestId("provider-group-openai");
+  expect(within(openai).getAllByText("None selected").length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: /Connect agent/ }));
+  const dialog = screen.getByRole("dialog", { name: "Connect an agent" });
+  expect(within(dialog).getByRole("button", { name: /OpenAI API key/ })).toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole("button", { name: /^Codex$/ }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Start Codex link" }));
+  expect(await within(dialog).findByText("ABCD-1234")).toBeInTheDocument();
+  expect(within(dialog).getByRole("link", { name: /auth\.openai\.com\/codex\/device/ })).toHaveAttribute(
+    "href",
+    "https://auth.openai.com/codex/device",
+  );
+  expect(await within(dialog).findByText("Codex connected", {}, { timeout: 5000 })).toBeInTheDocument();
+  expect(calls.filter((call) => call.path.endsWith("/openai-device/status"))).toHaveLength(2);
+  expect(calls.find((call) => call.path.endsWith("/openai-device/status"))!.body).toEqual({
+    transactionId: "11111111-1111-4111-8111-111111111111",
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: /Back to connections/ }));
+  const group = await screen.findByTestId("provider-group-openai");
+  await waitFor(() => expect(within(group).getByText("Connected")).toBeInTheDocument());
+  expect(within(group).getByTitle("dev@acme.test")).toBeInTheDocument();
+  fireEvent.click(screen.getByTestId("provider-group-openai-toggle"));
+  const row = await screen.findByTestId("harness-credential-a9");
+  expect(within(row).getByText("Sandbox login only")).toBeInTheDocument();
+  expect(within(row).queryByRole("button", { name: "Use for LLM calls" })).not.toBeInTheDocument();
+}, 15000);
 
