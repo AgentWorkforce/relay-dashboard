@@ -1,8 +1,10 @@
 // Search tokens, ported from the hosted dashboard's session-query.ts:
 // `harness:`, `project:`, `is:`, `person:`, `updated:`, `created:`, with a
 // leading `-` to negate. Free text goes to RelayHistory; tokens filter rows.
+import type { ListFilters } from "./api";
 import {
   harnessName,
+  harnessSources,
   projectLabel,
   sessionActivity,
   toolKey,
@@ -268,4 +270,60 @@ export function matchesSearchFilters(
     if (matches === null) return true;
     return exclude ? !matches : matches;
   });
+}
+
+/**
+ * Server-side filters derived from the query tokens: free text, dates, a
+ * single unaliased harness, and a project only when the value is a project
+ * id the dashboard has seen (every sidebar pick is one), because RelayHistory
+ * matches `projectId` exactly. Labels and short names such as `relay` are
+ * filtered in the browser. The sidebar's facet options and counts come from
+ * the same query without project and harness (`facetFilters`), so a pick
+ * never removes the other options.
+ */
+export function serverFilters(
+  q: string,
+  knownProjects: ReadonlySet<string> = new Set(),
+) {
+  const parsed = parseSessionQuery(q);
+  const single = (field: string) => {
+    const matches = parsed.filters.filter(
+      (filter) => filter.field === field && !filter.exclude && filter.value,
+    );
+    return matches.length === 1 ? matches[0]!.value : undefined;
+  };
+  const updated = parsed.filters.find(
+    (filter) => filter.field === "updated" && !filter.exclude,
+  );
+  const date = updated?.value.match(/^(>=|<=|>|<|=)?(\d{4}-\d{2}-\d{2})$/);
+  const op = date?.[1] ?? "=";
+  const day = date?.[2];
+  // `until` is a superset bound (the next midnight); rows are still filtered
+  // exactly in the browser.
+  const nextDay =
+    day && Number.isFinite(Date.parse(day))
+      ? new Date(Date.parse(day) + 86_400_000).toISOString().slice(0, 10)
+      : undefined;
+  const harness = single("harness");
+  const project = single("project");
+  return {
+    q: parsed.text.trim() || undefined,
+    // A harness with aliased sources (claude, claude-terminal…) is filtered in
+    // the browser so the server doesn't drop the aliases.
+    source:
+      harness && harnessSources(harness).length === 1 ? harness : undefined,
+    project: project && isProjectId(project, knownProjects) ? project : undefined,
+    since: day && (op === ">=" || op === ">" || op === "=") ? day : undefined,
+    until: day && (op === "<=" || op === "<" || op === "=") ? nextDay : undefined,
+  };
+}
+
+/** A value RelayHistory can match exactly: a `projectId` seen in a page. */
+function isProjectId(value: string, known: ReadonlySet<string>) {
+  return known.has(value);
+}
+
+/** The list query without the sidebar's own facets, for options and counts. */
+export function facetFilters(filters: ListFilters): ListFilters {
+  return { ...filters, source: undefined, project: undefined };
 }

@@ -225,11 +225,12 @@ it("keeps every facet option after one is picked, counting against the other fil
   await act(async () => {});
   const lists = calls.filter((url) => url.pathname === base);
   expect(lists.some((url) => url.searchParams.get("project") === "relay")).toBe(true);
+  // The initial load and the separate facet query both omit the project.
   expect(
-    lists.some(
+    lists.filter(
       (url) => !url.searchParams.has("project") && !url.searchParams.has("source"),
-    ),
-  ).toBe(true);
+    ).length,
+  ).toBeGreaterThanOrEqual(2);
   // The project facet ignores its own selection: every project, true total.
   expect(facetRow("project", "All projects").count).toBe("2");
   expect(facetRow("project", "relay").count).toBe("1");

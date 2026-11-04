@@ -88,7 +88,7 @@ export function BrandLockup({
         <span
           aria-hidden="true"
           data-brand-initial
-          className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-[var(--nav-logo-mark,var(--primary))] text-[11px] font-semibold text-[var(--brand-button-fg,#fff)]"
+          className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-[var(--nav-logo-mark,var(--primary))] text-[11px] font-semibold text-[var(--brand-mark-fg,#fff)]"
         >
           {brand.productName.slice(0, 1).toUpperCase()}
         </span>

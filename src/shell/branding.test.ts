@@ -100,11 +100,15 @@ it("applies the title, favicon and color tokens from runtime config", () => {
   expect(document.documentElement.dataset.customerBrand).toBe("");
 });
 
-it("drops colors the browser would not accept and picks readable button text", () => {
+it("drops colors outside the allowed syntax and picks readable button text", () => {
   for (const bad of ["#12345", "#1234567", "rgb(foo)", "red", "var(--x)"])
     expect(parseBranding({ productName: "Acme", accentColor: bad }).accentColor).toBeNull();
   for (const good of ["#abc", "#abcd", "#7c3aed", "#7c3aedff", "rgb(91, 33, 182)", "hsl(260 80% 50%)"])
     expect(parseBranding({ productName: "Acme", accentColor: good }).accentColor).toBe(good);
+  // Long digit runs are rejected quickly (no catastrophic backtracking).
+  const started = Date.now();
+  expect(parseBranding({ productName: "Acme", accentColor: `rgb(${"1".repeat(400)}` }).accentColor).toBeNull();
+  expect(Date.now() - started).toBeLessThan(200);
   expect(readableOn("#ffffff")).toBe("#111827");
   expect(readableOn("#fde047")).toBe("#111827");
   expect(readableOn("#5b21b6")).toBe("#ffffff");

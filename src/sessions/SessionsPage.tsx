@@ -23,13 +23,11 @@ import { useLoad } from "./use-load";
 import {
   listSessions,
   searchSessions,
-  type ListFilters,
   type SearchMatch,
 } from "./api";
 import { ActivityPanel } from "./ActivityPanel";
 import {
   harnessName,
-  harnessSources,
   memberNames,
   projectLabel,
   promptLabel,
@@ -45,6 +43,8 @@ import {
   type SessionRow,
 } from "./data";
 import {
+  facetFilters,
+  serverFilters,
   filterValue,
   matchesSearchFilters,
   matchesSessionFilters,
@@ -142,62 +142,6 @@ export function relativeTime(value: string | null, now: number) {
 }
 
 type Tab = "sessions" | "activity" | "search";
-
-/**
- * Server-side filters derived from the query tokens: free text, dates, a
- * single unaliased harness, and a project only when the value is a full
- * project id (one the list has seen, or an `owner/name` id), because
- * RelayHistory matches `projectId` exactly. Short names such as `relay` are
- * filtered in the browser. The sidebar's facet options and counts come from
- * the same query without project and harness (`facetFilters`), so a pick
- * never removes the other options.
- */
-export function serverFilters(
-  q: string,
-  knownProjects: ReadonlySet<string> = new Set(),
-) {
-  const parsed = parseSessionQuery(q);
-  const single = (field: string) => {
-    const matches = parsed.filters.filter(
-      (filter) => filter.field === field && !filter.exclude && filter.value,
-    );
-    return matches.length === 1 ? matches[0]!.value : undefined;
-  };
-  const updated = parsed.filters.find(
-    (filter) => filter.field === "updated" && !filter.exclude,
-  );
-  const date = updated?.value.match(/^(>=|<=|>|<|=)?(\d{4}-\d{2}-\d{2})$/);
-  const op = date?.[1] ?? "=";
-  const day = date?.[2];
-  // `until` is a superset bound (the next midnight); rows are still filtered
-  // exactly in the browser.
-  const nextDay =
-    day && Number.isFinite(Date.parse(day))
-      ? new Date(Date.parse(day) + 86_400_000).toISOString().slice(0, 10)
-      : undefined;
-  const harness = single("harness");
-  const project = single("project");
-  return {
-    q: parsed.text.trim() || undefined,
-    // A harness with aliased sources (claude, claude-terminal…) is filtered in
-    // the browser so the server doesn't drop the aliases.
-    source:
-      harness && harnessSources(harness).length === 1 ? harness : undefined,
-    project: project && isProjectId(project, knownProjects) ? project : undefined,
-    since: day && (op === ">=" || op === ">" || op === "=") ? day : undefined,
-    until: day && (op === "<=" || op === "<" || op === "=") ? nextDay : undefined,
-  };
-}
-
-/** A value RelayHistory can match exactly as a `projectId`. */
-function isProjectId(value: string, known: ReadonlySet<string>) {
-  return known.has(value) || value.includes("/");
-}
-
-/** The list query without the sidebar's own facets, for options and counts. */
-export function facetFilters(filters: ListFilters): ListFilters {
-  return { ...filters, source: undefined, project: undefined };
-}
 
 function useSignedOut(error: Error | null | undefined, onSignedOut: () => void) {
   useEffect(() => {
@@ -591,6 +535,11 @@ function SessionList({
   const base = useLoad(baseKey, (signal) =>
     listSessions(workspaceId, baseFilters, null, signal),
   );
+  const [baseAppended, setBaseAppended] = useState<{
+    key: string | null;
+    rows: SessionRow[];
+    nextCursor: string | null;
+  } | null>(null);
   // A load-more failure belongs to the request it was raised for.
   const moreError = moreFailure?.key === key ? moreFailure.error : null;
   useSignedOut(page.error ?? moreError, onSignedOut);
@@ -609,10 +558,37 @@ function SessionList({
         : [],
     [page.data, extra],
   );
-  const facetRows = useMemo(
-    () => (narrowed ? (base.data?.items ?? rows) : rows),
-    [narrowed, base.data, rows],
+  // Facet options and counts read every session seen for this text and date
+  // query: the unnarrowed facet pages and every list page. A pick never drops
+  // an option the user has already loaded.
+  const facetScope = JSON.stringify([workspaceId, baseFilters, reload]);
+  const [seen, setSeen] = useState<{
+    scope: string;
+    rows: ReadonlyMap<string, SessionRow>;
+  }>({ scope: facetScope, rows: new Map() });
+  const baseExtra = baseAppended?.key === baseKey ? baseAppended : null;
+  const incoming = [
+    ...(narrowed ? [...(base.data?.items ?? []), ...(baseExtra?.rows ?? [])] : []),
+    ...rows,
+  ];
+  const seenRows = useMemo(
+    () => (seen.scope === facetScope ? seen.rows : new Map<string, SessionRow>()),
+    [seen, facetScope],
   );
+  // Later pages win for a session seen twice (the list after the facet page).
+  const latest = new Map(incoming.map((row) => [sessionKey(row), row]));
+  if (
+    seen.scope !== facetScope ||
+    [...latest].some(([id, row]) => seenRows.get(id) !== row)
+  ) {
+    setSeen({ scope: facetScope, rows: new Map([...seenRows, ...latest]) });
+  }
+  const facetRows = useMemo(() => [...seenRows.values()], [seenRows]);
+  const baseCursor = narrowed
+    ? baseExtra
+      ? baseExtra.nextCursor
+      : (base.data?.nextCursor ?? null)
+    : null;
   const seenProjects = useMemo(
     () =>
       [...rows, ...facetRows]
@@ -636,17 +612,24 @@ function SessionList({
     setMoreBusy(true);
     setMoreFailure(null);
     try {
-      const next = await listSessions(
-        workspaceId,
-        filters,
-        cursor,
-        new AbortController().signal,
-      );
+      // The facet pages advance with the list, so options keep up with it.
+      const [next, facets] = await Promise.all([
+        listSessions(workspaceId, filters, cursor, new AbortController().signal),
+        narrowed && baseCursor
+          ? listSessions(workspaceId, baseFilters, baseCursor, new AbortController().signal).catch(() => null)
+          : Promise.resolve(null),
+      ]);
       setAppended({
         key,
         rows: [...(extra?.rows ?? []), ...next.items],
         nextCursor: next.nextCursor,
       });
+      if (facets)
+        setBaseAppended({
+          key: baseKey,
+          rows: [...(baseExtra?.rows ?? []), ...facets.items],
+          nextCursor: facets.nextCursor,
+        });
     } catch (reason) {
       setMoreFailure({ key, error: reason as Error });
     } finally {
@@ -691,6 +674,13 @@ function SessionList({
   const identityColumnWidth = 12 + 22 + (identityCount - 1) * 13;
   return (
     <>
+      {narrowed && base.error && !(base.error instanceof SignedOut) && (
+        <WorkspaceViewSlot name="sidebar">
+          <p role="status" className="px-2 pb-2 text-[11px] text-muted-foreground">
+            Couldn’t load every filter option; counts cover the loaded sessions.
+          </p>
+        </WorkspaceViewSlot>
+      )}
       <SidebarFilters
         rows={facetRows}
         members={members}

@@ -1,4 +1,3 @@
-import { facetFilters, serverFilters } from "./SessionsPage";
 import { expect, it } from "vitest";
 import {
   backHref,
@@ -10,8 +9,10 @@ import {
 } from "./route";
 import {
   compareDate,
+  facetFilters,
   matchesSearchFilters,
   projectMatches,
+  serverFilters,
   matchesSessionFilters,
   parseSessionQuery,
   sessionSuggestions,
@@ -167,10 +168,12 @@ it("sends a project to the server only as an exact project id", () => {
     project: undefined,
   });
   expect(serverFilters("project:relay", new Set(["relay"])).project).toBe("relay");
-  expect(serverFilters("project:acme/relay").project).toBe("acme/relay");
+  // Labels and paths are not ids: they filter in the browser.
+  expect(serverFilters("project:acme/relay").project).toBeUndefined();
+  expect(serverFilters("project:acme/relay", new Set(["acme/relay"])).project).toBe("acme/relay");
   // A harness with one source narrows on the server; aliased ones don't.
   expect(serverFilters("harness:codex").source).toBe("codex");
   expect(serverFilters("harness:claude").source).toBeUndefined();
-  const filters = serverFilters("x project:acme/relay harness:codex");
+  const filters = serverFilters("x project:acme/relay harness:codex", new Set(["acme/relay"]));
   expect(facetFilters(filters)).toEqual({ ...filters, project: undefined, source: undefined });
 });

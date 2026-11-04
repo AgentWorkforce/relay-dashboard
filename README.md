@@ -48,15 +48,16 @@ the SPA validates each field and ignores the ones it can't use:
 | `title` | Document title (defaults to `productName` when set, otherwise `Agent Relay · Dashboard`). |
 | `logo` | `{ "light": url, "dark": url }`, or one URL for both themes. Replaces the mark and wordmark. |
 | `favicon` | Favicon URL. |
-| `accentColor` | Links, focus rings and active navigation (`#hex`, `rgb()`, `hsl()`, `oklch()`). |
+| `accentColor` | Links, focus rings and active navigation (`#hex`, `rgb()`, `hsl()`, `oklch()`, `oklab()`). |
 | `brandColor` | The solid primary button. |
 | `supportUrl` | Adds Support to the account menu and the device page (`https`, `http`, `mailto:` or a same-origin path). |
 | `poweredByAgentRelay` | `false` hides the "Powered by Agent Relay" line shown under a custom brand. |
 
 Logo and favicon URLs may be `https`/`http`, same-origin paths or supported
 `data:image` types (PNG, SVG, JPEG, WebP, GIF or icons, up to about 60 KB).
-Colors must be `#hex`, `rgb()`, `hsl()`, `oklch()` or `oklab()` values the browser accepts; any other value keeps the default, and the
-primary button's text turns dark on a light `brandColor`. Without a profile
+Colors must be `#hex`, `rgb()`, `hsl()`, `oklch()` or `oklab()` values the
+browser accepts; any other value keeps the default, and the primary button's
+text turns dark on a light `brandColor`. Without a profile
 (and always in the hosted build, which has no runtime config) the dashboard
 looks exactly as before.
 

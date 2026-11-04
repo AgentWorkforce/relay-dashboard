@@ -38,7 +38,7 @@ export const DEFAULT_BRANDING: Branding = {
 // Colors are only ever written into CSS custom properties, so accept plain
 // color syntax and nothing else (no `;`, `}`, url() or var()).
 const COLOR =
-  /^(#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})|(rgb|rgba|hsl|hsla|oklch|oklab)\((\s*[+-]?[0-9.]+(%|deg|turn|rad)?\s*[,/]?){3,4}\s*\))$/i;
+  /^(#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})|(rgb|rgba|hsl|hsla|oklch|oklab)\((\s*[+-]?[0-9.]{1,16}(%|deg|turn|rad)?\s*[,/]?){3,4}\s*\))$/i;
 
 /** Same-origin path, data: image, or an http(s) URL. */
 function assetUrl(value: unknown): string | null {
@@ -202,6 +202,7 @@ export function applyBranding(brand: Branding = branding()) {
       `--status-info: ${brand.accentColor} !important;`,
       `--brand-primary: ${brand.accentColor} !important;`,
       `--nav-logo-mark: ${brand.accentColor} !important;`,
+      `--brand-mark-fg: ${readableOn(brand.accentColor)} !important;`,
     );
   if (brand.brandColor)
     rules.push(
