@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { SignedOut } from "../api/client";
-import { ApiError, flowsApi, runSchema } from "./api";
+import { ApiError, FLOWS_CHANGED, flowsApi, runSchema } from "./api";
 import {
   duration,
   relativeTime,
@@ -126,4 +126,26 @@ it("shell-quotes names in copied commands", () => {
   expect(shellQuote("relayflows-worker")).toBe("relayflows-worker");
   expect(shellQuote("my worker")).toBe("'my worker'");
   expect(shellQuote("a'b; rm -rf /")).toBe("'a'\\''b; rm -rf /'");
+});
+
+it("signals a created flow even when its response fails validation", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ flow: { id: 1 } }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      }),
+    ),
+  );
+  const changed = vi.fn();
+  window.addEventListener(FLOWS_CHANGED, changed);
+  try {
+    await expect(
+      flowsApi.createFlow({ name: "x", fileType: "yaml", source: "a: 1" }),
+    ).rejects.toThrow();
+    expect(changed).toHaveBeenCalledTimes(1);
+  } finally {
+    window.removeEventListener(FLOWS_CHANGED, changed);
+  }
 });

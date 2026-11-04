@@ -1,162 +1,77 @@
-@import "./brand.css";
-* {
-  box-sizing: border-box;
-}
-html {
-  color-scheme: dark;
-}
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font:
-    14px/1.5 "Inter Variable",
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-}
-a {
-  color: inherit;
-  text-decoration: none;
-}
-button {
-  font: inherit;
-  color: var(--fg);
-  background: var(--nav-surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r-xs);
-  padding: 8px 14px;
-  cursor: pointer;
-}
-button:hover {
-  background: var(--nav-surface-hover);
-}
-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 4px;
-}
-header {
-  height: 76px;
-  padding: 0 32px;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-header > span {
-  color: var(--fg-muted);
-}
-/* Primary navigation shared by every page header. */
-.top-nav {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  min-width: 0;
-}
-.top-nav a,
-.top-nav span {
-  color: var(--fg-muted);
-}
-.top-nav a:hover,
-.top-nav a[aria-current="page"] {
-  color: var(--fg);
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.brand img {
-  width: 28px;
-  height: 28px;
-}
-.brand .wordmark {
-  width: 120px;
-  height: auto;
-}
-main {
-  max-width: 960px;
-  margin: 48px auto;
-  padding: 0 24px;
-}
-.heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 28px;
-}
-h1 {
-  font-size: 28px;
-  letter-spacing: -0.035em;
-  font-weight: 550;
-  margin: 0;
-}
-p {
-  color: var(--fg-muted);
-  margin: 6px 0;
-}
-[role="alert"] {
-  padding: 16px 0;
-  color: var(--secondary-fg);
-}
-.sessions {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  border-top: 1px solid var(--line);
-}
-.sessions li {
-  border-bottom: 1px solid var(--line);
-}
-.sessions a {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 19px 12px;
-}
-.sessions a:hover {
-  background: var(--nav-surface);
-}
-.sessions strong {
-  display: block;
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-.sessions span {
-  display: block;
-  color: var(--fg-muted);
-  font-size: 12px;
-  margin-top: 4px;
-}
-time {
-  color: var(--fg-muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-.more {
-  display: block;
-  margin: 24px auto;
-}
-@media (max-width: 600px) {
-  header {
-    padding: 0 20px;
+/* Shared helpers for the page stylesheets (legacy layer: above Tailwind's
+   preflight, below its utilities). The shell and its tokens come from hosted
+   Cloud: see globals.css and shell/. */
+@layer legacy {
+  body {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
   }
-  header > span,
-  .top-nav span {
-    max-width: 120px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  a {
+    color: inherit;
+    text-decoration: none;
   }
-  .top-nav {
+  [role="alert"] {
+    color: var(--destructive);
+    font-size: 13px;
+  }
+  .load-error {
+    display: flex;
+    align-items: center;
     gap: 12px;
+    padding: 12px 0;
   }
-  main {
-    margin-top: 32px;
-    padding: 0 16px;
+  /* Unstyled page controls follow hosted ui/button (outline) and ui/input;
+     Tailwind utilities on hosted components still win (higher layer). */
+  button:not([data-slot]):not(.more-lines) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--input);
+    border-radius: 6px;
+    background: var(--background);
+    color: var(--foreground);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  button:not([data-slot]):not(.more-lines):hover:not(:disabled) {
+    background: var(--accent);
+    color: var(--accent-foreground);
+  }
+  button:not([data-slot]):not(.more-lines):disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([data-slot]),
+  select,
+  textarea {
+    min-height: 36px;
+    padding: 4px 12px;
+    border: 1px solid var(--input);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--foreground);
+    font-size: 14px;
+  }
+  textarea {
+    padding: 8px 12px;
+  }
+  :root[data-theme="dark"] :is(input:not([data-slot]), select, textarea) {
+    background: color-mix(in srgb, var(--input) 30%, transparent);
+  }
+  :is(input:not([data-slot]), select, textarea):focus-visible {
+    border-color: var(--ring);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 50%, transparent);
+  }
+  .more {
+    display: flex;
+    margin: 16px auto;
   }
 }

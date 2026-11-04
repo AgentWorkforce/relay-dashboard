@@ -1,77 +1,46 @@
-/* admin lane: settings area. Uses brand.css semantic tokens only. */
-main.settings {
-  max-width: 1180px;
-}
-.settings-layout {
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 32px;
-  align-items: start;
-}
-.settings-layout > nav {
-  position: sticky;
-  top: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-.settings-layout > nav h4 {
-  margin: 0 0 6px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fg-faint);
-}
-.settings-layout > nav a {
-  display: block;
-  padding: 7px 10px;
-  border-radius: var(--r-xs);
-  color: var(--fg-muted);
-}
-.settings-layout > nav a:hover {
-  background: var(--nav-surface);
-  color: var(--fg);
-}
-.settings-layout > nav a[aria-current="page"] {
-  background: var(--nav-surface-hover);
-  color: var(--fg);
-}
-.settings input,
-.settings select {
-  font: inherit;
-  color: var(--fg);
-  background: var(--surface, var(--bg-elevated));
-  border: 1px solid var(--line);
-  border-radius: var(--r-xs);
-  padding: 8px 10px;
-  min-width: 0;
-}
-.settings input:focus-visible,
-.settings select:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
-}
+/* Legacy layer: above Tailwind's preflight, below its utilities (see globals.css). */
+@layer legacy {
+/* Settings sections, restyled to hosted settings.module.css: sections sit in
+   the one content card, separated by hairlines. */
 .settings .card {
-  border: 1px solid var(--card-border, var(--line));
-  background: var(--card-bg, transparent);
-  border-radius: var(--r-md);
   padding: 24px;
 }
+.settings .card + .card {
+  border-top: 1px solid var(--border-soft);
+}
+/* Hosted members tab: each section is its own bordered card. */
+.settings [data-section="members"] .card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+.settings [data-section="members"] .card + .card {
+  margin-top: 20px;
+}
 .settings .card h2 {
-  font-size: 18px;
-  font-weight: 550;
-  letter-spacing: -0.02em;
-  margin: 0 0 6px;
+  margin: 0 0 3px;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.settings .card h2 + p {
+  margin: 0 0 20px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
 }
 .settings .card h3 {
-  font-size: 14px;
-  font-weight: 550;
   margin: 20px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.settings .card p {
+  font-size: 13px;
+  color: var(--text-muted);
 }
 .settings .card code {
   font-size: 12.5px;
-  background: var(--inline-code-bg, var(--nav-surface));
+  background: var(--inline-code-bg, var(--muted));
   color: var(--inline-code-fg, var(--fg));
   padding: 1px 5px;
   border-radius: 4px;
@@ -101,24 +70,34 @@ main.settings {
   padding-top: 16px;
   border-top: 1px solid var(--line);
 }
+/* ui/button default (brand primary) and destructive. */
 .settings button.primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--primary-fg, #fff);
+  background: #2d6a9c;
+  color: #fff;
+  border: 1.5px solid #234969;
+  border-radius: var(--radius-bubble, 10px 10px 10px 3px);
+  font-size: 12px;
 }
-.settings button.primary:hover {
-  background: var(--primary-hover, var(--primary));
+.settings button.primary:hover:not(:disabled) {
+  background: #4a90c2;
+  color: #fff;
 }
 .settings button.danger {
-  border-color: var(--status-red);
-  color: var(--status-red);
+  border-color: transparent;
+  background: color-mix(in srgb, var(--destructive) 60%, transparent);
+  color: #fff;
+}
+.settings button.danger:hover:not(:disabled) {
+  background: var(--destructive);
+  color: #fff;
 }
 .settings .note {
   font-size: 13px;
 }
 .settings [role="status"] {
-  color: var(--status-green);
+  color: var(--status-success);
   padding: 8px 0;
+  font-size: 13px;
 }
 .settings [role="alert"] {
   padding: 8px 0;
@@ -130,16 +109,21 @@ main.settings {
   font-size: 13px;
 }
 .settings th {
+  height: 36px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
   text-align: left;
+  font-size: 12px;
   font-weight: 500;
-  color: var(--fg-muted);
-  padding: 8px;
-  border-bottom: 1px solid var(--line);
+  color: var(--muted-foreground);
 }
 .settings td {
-  padding: 10px 8px;
-  border-bottom: 1px solid var(--line);
-  vertical-align: top;
+  padding: 12px;
+  border-bottom: 1px solid var(--border-soft);
+  vertical-align: middle;
+}
+.settings tbody tr:hover {
+  background: color-mix(in srgb, var(--dashboard-panel-soft) 65%, transparent);
 }
 .settings td.actions {
   text-align: right;
@@ -148,29 +132,35 @@ main.settings {
 .settings td.actions button + button {
   margin-left: 8px;
 }
+/* ui/badge. */
 .settings .badge {
-  display: inline-block;
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: var(--r-xs);
-  border: 1px solid var(--line);
-  color: var(--fg-muted);
+  display: inline-flex;
+  align-items: center;
   margin-left: 8px;
+  padding: 2px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
   white-space: nowrap;
 }
 .settings .badge.ok {
-  color: var(--success-fg);
-  background: var(--success-bg);
+  color: var(--status-success);
+  background: var(--status-success-soft);
   border-color: transparent;
 }
 .settings .badge.warn {
-  color: var(--warning-fg);
-  background: var(--warning-bg);
+  color: var(--status-warning);
+  background: var(--status-warning-soft);
   border-color: transparent;
 }
 .settings .badge.error {
-  color: var(--danger-fg);
-  background: var(--danger-bg);
+  color: var(--status-danger);
+  background: var(--status-danger-soft);
   border-color: transparent;
 }
 .settings .callout {
@@ -181,8 +171,8 @@ main.settings {
   padding: 12px 14px;
   margin: 14px 0;
   border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--note-bg, var(--nav-surface));
+  border-radius: 8px;
+  background: var(--note-bg, var(--muted));
   font-size: 13px;
 }
 .settings .copy {
@@ -205,8 +195,9 @@ main.settings {
   gap: 16px;
 }
 .settings .provider {
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 8px;
   padding: 18px;
   display: flex;
   flex-direction: column;
@@ -276,4 +267,5 @@ main.settings {
     display: block;
     overflow-x: auto;
   }
+}
 }

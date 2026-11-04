@@ -26,6 +26,23 @@ import {
   shortId,
   usePolling,
 } from "../format";
+import { useShellAccount } from "../../shell/shell";
+
+/** Hosted WorkspaceSummaryCard: the workspace this run belongs to. */
+function WorkspaceSummary() {
+  const account = useShellAccount();
+  const workspace = account?.currentWorkspace?.name;
+  if (!workspace) return null;
+  return (
+    <aside className="workspace-summary" aria-label="Active workspace">
+      <p>
+        <span>Active workspace</span>
+        <span className="live">Live</span>
+      </p>
+      <strong>{workspace}</strong>
+    </aside>
+  );
+}
 
 export function RunDetailPage({
   runId,
@@ -147,28 +164,37 @@ export function RunDetailPage({
 
   return (
     <>
+      {/* Hosted DashboardPageFrame: eyebrow, title, description, workspace. */}
       <div className="heading">
         <div>
-          <a
-            className="back"
-            href={
-              run.flowId ? `#/flows/f/${seg(run.flowId)}` : "#/flows/runs"
-            }
-          >
-            ← Back to {run.flowId ? "flow" : "flows"}
-          </a>
+          <p className="eyebrow">Flow run</p>
           <h1>{run.workflowName}</h1>
-          <div className="badges">
-            <StatusBadge status={run.status} />
-            <Badge>
-              <span className="mono" title={run.runId}>
-                {shortId(run.runId)}
-              </span>
-            </Badge>
-            {!terminal && <Badge tone="info">Refreshing every 5s</Badge>}
-          </div>
+          <p>
+            Inspect the runner log, steps, and artifacts for this relayflow
+            run.
+          </p>
         </div>
-        <div className="actions">
+        <WorkspaceSummary />
+      </div>
+      <div className="run-bar">
+        <a
+          className="back"
+          href={
+            run.flowId ? `#/flows/f/${seg(run.flowId)}` : "#/flows/runs"
+          }
+        >
+          Back to {run.flowId ? "flow" : "flows"}
+        </a>
+        <div className="badges">
+          <StatusBadge status={run.status} />
+          <Badge>
+            <span className="mono" title={run.runId}>
+              {shortId(run.runId)}
+            </span>
+          </Badge>
+          {!terminal && <Badge tone="info">Refreshing every 5s</Badge>}
+        </div>
+        <div className="actions ml-auto">
           {!terminal && (
             <button
               className="danger"

@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { App } from "../app";
 import { getAccount } from "../api/client";
-import { flowsApi } from "./api";
+import { FLOWS_CHANGED, flowsApi } from "./api";
 import { parseFlowsRoute } from "./flows-app";
 
 vi.mock("../api/client", () => ({
@@ -126,8 +126,26 @@ it("encodes opaque ids in flow and run links", async () => {
   const flowLink = await screen.findByRole("link", { name: "slashed" });
   expect(flowLink).toHaveAttribute("href", "#/flows/f/team%2Fflow");
   expect(
-    within(flowLink.closest("tr")!).getByRole("link", { name: "Completed" }),
+    within(flowLink.closest("article")!).getByRole("link", { name: /Last run:\s*Completed/ }),
   ).toHaveAttribute("href", "#/flows/runs/team%2Frun");
+});
+
+it("refreshes the sidebar flow list and reports a failed load", async () => {
+  window.location.hash = "#/flows/workers";
+  const flows = await api.listFlows();
+  api.listFlows.mockRejectedValue(new Error("flows unavailable"));
+  render(<App />);
+  const sidebar = await screen.findByRole("region", { name: "Your flows" });
+  expect(
+    await within(sidebar).findByText("Couldn’t load your flows."),
+  ).toBeInTheDocument();
+  api.listFlows.mockResolvedValue(flows);
+  await act(async () => {
+    window.dispatchEvent(new Event(FLOWS_CHANGED));
+  });
+  expect(
+    await within(sidebar).findByText(flows[0]!.name),
+  ).toBeInTheDocument();
 });
 
 it("keeps the flows list when run history fails to load", async () => {
@@ -159,7 +177,9 @@ it("keeps the flows list when run history fails to load", async () => {
 
 it("makes Flows discoverable from the sessions page", async () => {
   render(<App />);
-  const nav = await screen.findByRole("navigation", { name: "Primary" });
+  const nav = await screen.findByRole("navigation", {
+    name: "Workspace views",
+  });
   expect(within(nav).getByRole("link", { name: "Flows" })).toHaveAttribute(
     "href",
     "#/flows",
@@ -172,17 +192,19 @@ it("lists flows and run history from the API", async () => {
   expect(
     await screen.findByRole("link", { name: "hello-selfhost" }),
   ).toHaveAttribute("href", "#/flows/f/f1");
-  expect(
-    screen.getByText(/Deterministic smoke flow · 2 steps · YAML · 1 run$/),
-  ).toBeInTheDocument();
+  expect(screen.getByText("2 steps · YAML · 1 run")).toBeInTheDocument();
+  expect(screen.getByText("Deterministic smoke flow")).toBeInTheDocument();
   await act(async () => {
     window.location.hash = "#/flows/runs";
     window.dispatchEvent(new HashChangeEvent("hashchange"));
   });
   const runLink = await screen.findByRole("link", {
-    name: /hello-selfhost.*on e2e-worker/,
+    name: "View run: hello-selfhost",
   });
   expect(runLink).toHaveAttribute("href", `#/flows/runs/${run().runId}`);
+  expect(
+    within(runLink.closest("li")!).getByText(/on e2e-worker/),
+  ).toBeInTheDocument();
 });
 
 it("shows run detail with declared steps, timeline, missing logs, and retry", async () => {

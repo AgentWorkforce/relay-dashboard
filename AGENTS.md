@@ -18,5 +18,9 @@ proxy. Keep hosted-only features (billing, hosted MCP, identity sync) out
 unless relaycontrol implements them.
 
 Never display a secret value after creation; show masked values only.
-Use brand.css, semantic colors, and the supplied logo assets.
+The look is hosted Cloud's: src/globals.css is cloud/packages/web/app/globals.css
+(Tailwind v4 tokens) and src/shell/ holds the ported workspace chrome, CSS
+modules and shadcn primitives. Copy from Cloud rather than restyling; page
+stylesheets sit in the `legacy` cascade layer (below Tailwind utilities).
+brand.css supplies the brand scales and status/harness tokens.
 Run npm run check. Do not merge or deploy without authorization.

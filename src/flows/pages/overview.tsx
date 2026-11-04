@@ -1,7 +1,19 @@
-import { useState } from "react";
-import { flowsApi, type Flow, type RunPage } from "../api";
-import { Badge, StatusBadge, Tabs, Time } from "../components";
-import { plural, seg, usePolling } from "../format";
+import { useEffect, useState } from "react";
+import { FLOWS_CHANGED, flowsApi, type Flow, type RunPage } from "../api";
+import {
+  ArrowRight,
+  Clock3,
+  FileCode2,
+  Plus,
+  Workflow,
+} from "lucide-react";
+import { StatusBadge, Time } from "../components";
+import { plural, runTone, seg, statusLabel, usePolling } from "../format";
+import { Button, ButtonLink } from "../../shell/ui";
+import { WorkspaceViewSlot } from "../../shell/view-slots";
+import s from "../flows-dashboard.module.css";
+import chrome from "../../shell/workspace-chrome.module.css";
+import { FlowsIcon } from "../../shell/icons";
 
 type Tab = "flows" | "runs";
 
@@ -50,205 +62,346 @@ export function FlowsOverview({
     [cursor, status],
   );
 
+  const flowCount = flows?.length ?? 0;
   return (
-    <>
-      <div className="heading">
-        <div>
-          <h1>Flows</h1>
+    <div className={`${s.overview} ${s.embeddedOverview}`} id="flows-content">
+      <WorkspaceViewSlot name="heading">
+        <div className={s.shellHeading}>
+          <h1>{tab === "runs" ? "Run history" : "Flows"}</h1>
           <p>Build, manage, and run your flows.</p>
         </div>
-        <a className="button primary" href="#/flows/new">
-          + New flow
-        </a>
-      </div>
-      <Tabs
-        label="Flows sections"
+      </WorkspaceViewSlot>
+      <WorkspaceViewSlot name="toolbar">
+        <ButtonLink size="sm" href="#/flows/new">
+          <Plus aria-hidden="true" />
+          New flow
+        </ButtonLink>
+      </WorkspaceViewSlot>
+      <FlowsSidebar
         current={tab}
-        onChange={(next) =>
-          (window.location.hash = next === "flows" ? "/flows" : "/flows/runs")
-        }
-        tabs={[
-          {
-            id: "flows",
-            label: (
-              <>
-                Flows{" "}
-                {flows ? <span className="count">{flows.length}</span> : null}
-              </>
-            ),
-          },
-          {
-            id: "runs",
-            label: (
-              <>
-                Run history{" "}
-                {page ? <span className="count">{page.totalRuns}</span> : null}
-              </>
-            ),
-          },
-        ]}
+        flows={flows}
+        runCount={page ? page.totalRuns : null}
       />
-      {tab === "flows" && (
-        <section aria-label="Your flows">
-          {!flows && <p role="status">Loading your flows…</p>}
-          {flows && flows.length === 0 && (
-            <div className="empty">
-              <strong>Make room for your first flow.</strong>
-              <p>
-                Define a flow, register a worker, and its runs will appear here.
-              </p>
-              <a className="button" href="#/flows/new">
-                Build a flow →
-              </a>
+      <div className={s.content} aria-busy={!flows}>
+        {tab === "flows" && (
+          <section className={s.tabContent} aria-labelledby="your-flows-title">
+            <div className={s.sectionHeading}>
+              <h2 id="your-flows-title">
+                Your flows {flows && <span>{flowCount}</span>}
+              </h2>
             </div>
-          )}
-          {flows && flows.length > 0 && (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Flow</th>
-                  <th>Last run</th>
-                  <th>Last edited</th>
-                  <th aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {flows.map((flow) => (
-                  <tr key={flow.id}>
-                    <td>
-                      <a href={`#/flows/f/${seg(flow.id)}`}>
-                        <strong>{flow.name}</strong>
-                      </a>
-                      <span className="sub">
-                        {[
-                          flow.description,
-                          flow.stepCount
-                            ? plural(flow.stepCount, "step")
-                            : "? steps",
-                          flow.fileType.toUpperCase(),
-                          plural(flow.runCount, "run"),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    </td>
-                    <td>
-                      {flow.lastRun ? (
-                        <a href={`#/flows/runs/${seg(flow.lastRun.runId)}`}>
-                          <StatusBadge status={flow.lastRun.status} />
-                        </a>
-                      ) : (
-                        <Badge>Never run</Badge>
-                      )}
-                    </td>
-                    <td>
-                      <Time value={flow.updatedAt} />
-                    </td>
-                    <td className="actions">
-                      <a href={`#/flows/f/${seg(flow.id)}`}>Open flow →</a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-      )}
-      {tab === "runs" && (
-        <section aria-label="Recent runs">
-          <div className="toolbar">
-            {page && (
-              <div className="chips">
-                {page.activeRuns > 0 && (
-                  <Badge tone="info">{page.activeRuns} running</Badge>
-                )}
-                {page.failedRuns > 0 && (
-                  <Badge tone="danger">{page.failedRuns} failed</Badge>
-                )}
+            {!flows && (
+              <div className={s.loading} role="status">
+                <span>Loading your flows…</span>
+                <div className={s.skeleton} aria-hidden="true" />
+                <div className={s.skeleton} aria-hidden="true" />
               </div>
             )}
-            <label>
-              Status{" "}
-              <select
-                value={status}
-                onChange={(event) => {
-                  setStatus(event.target.value);
-                  setCursors([null]);
-                }}
-              >
-                <option value="">All</option>
-                <option value="pending">Pending</option>
-                <option value="running">Running</option>
-                <option value="completed">Completed</option>
-                <option value="failed">Failed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </label>
-          </div>
-          <RunList page={page} />
-          {page && (cursors.length > 1 || page.nextCursor) && (
-            <div className="pager">
-              <span>
-                {page.runs.length} of {page.totalRuns} runs
-              </span>
-              <button
-                disabled={cursors.length <= 1 || pageKey !== key}
-                onClick={() => setCursors(cursors.slice(0, -1))}
-              >
-                Newer runs
-              </button>
-              <button
-                disabled={!page.nextCursor || pageKey !== key}
-                onClick={() => {
-                  const next = page.nextCursor;
-                  if (!next) return;
-                  setCursors((current) =>
-                    current.includes(next) ? current : [...current, next],
-                  );
-                }}
-              >
-                Older runs
-              </button>
+            {flows && flows.length === 0 && (
+              <div className={s.emptyFlows}>
+                <Workflow size={28} strokeWidth={1.5} aria-hidden="true" />
+                <h3>Make room for your first flow.</h3>
+                <p>
+                  Define a flow, register a worker, and its runs will appear
+                  here.
+                </p>
+                <a href="#/flows/new" className={s.textLink}>
+                  Build a flow <ArrowRight size={16} aria-hidden="true" />
+                </a>
+              </div>
+            )}
+            {flows && flows.length > 0 && (
+              <>
+                <div className={s.columnHeadings} aria-hidden="true">
+                  <span>Flow</span>
+                  <span>Last run</span>
+                  <span>Last edited</span>
+                  <span />
+                </div>
+                <ul className={s.flowList}>
+                  {flows.map((flow) => (
+                    <li key={flow.id}>
+                      <article className={s.flowRow}>
+                        <div className={s.flowInfo}>
+                          <div className={s.flowTitle}>
+                            <h3>
+                              <a href={`#/flows/f/${seg(flow.id)}`}>
+                                {flow.name}
+                              </a>
+                            </h3>
+                          </div>
+                          <p className={s.repository}>
+                            <FileCode2 size={14} aria-hidden="true" />
+                            {[
+                              flow.stepCount
+                                ? plural(flow.stepCount, "step")
+                                : "? steps",
+                              flow.fileType.toUpperCase(),
+                              plural(flow.runCount, "run"),
+                            ].join(" · ")}
+                          </p>
+                          {flow.description && (
+                            <ul className={s.sources}>
+                              <li>{flow.description}</li>
+                            </ul>
+                          )}
+                        </div>
+                        {flow.lastRun ? (
+                          <a
+                            href={`#/flows/runs/${seg(flow.lastRun.runId)}`}
+                            className={
+                              runTone(flow.lastRun.status) === "success"
+                                ? s.listeningStatus
+                                : s.draftStatus
+                            }
+                          >
+                            <span className="sr-only">Last run: </span>
+                            {statusLabel(flow.lastRun.status)}
+                          </a>
+                        ) : (
+                          <span className={s.draftStatus}>
+                            <span className="sr-only">Last run: </span>
+                            Never run
+                          </span>
+                        )}
+                        <span className={s.lastEdited}>
+                          <span className="sr-only">Last edited </span>
+                          <Time value={flow.updatedAt} />
+                        </span>
+                        <div className={s.flowActions}>
+                          <a
+                            href={`#/flows/f/${seg(flow.id)}`}
+                            className={s.secondaryButton}
+                            aria-label={`Open flow: ${flow.name}`}
+                          >
+                            Open flow
+                            <ArrowRight size={16} aria-hidden="true" />
+                          </a>
+                        </div>
+                      </article>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </section>
+        )}
+        {tab === "runs" && (
+          <section className={s.tabContent} aria-labelledby="recent-runs-title">
+            <div className={s.sectionHeading}>
+              <h2 id="recent-runs-title">Recent runs</h2>
+              <div className={s.runSummary}>
+                {page && page.activeRuns > 0 && (
+                  <span>{page.activeRuns} running</span>
+                )}
+                {page && page.failedRuns > 0 && (
+                  <span className={s.failure}>{page.failedRuns} failed</span>
+                )}
+                <label className="inline-flex items-center gap-2">
+                  Status
+                  <select
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                    value={status}
+                    onChange={(event) => {
+                      setStatus(event.target.value);
+                      setCursors([null]);
+                    }}
+                  >
+                    <option value="">All</option>
+                    <option value="pending">Pending</option>
+                    <option value="running">Running</option>
+                    <option value="completed">Completed</option>
+                    <option value="failed">Failed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </label>
+              </div>
             </div>
-          )}
-        </section>
-      )}
-    </>
+            <RunList page={page} />
+            {page && (cursors.length > 1 || page.nextCursor) && (
+              <div className={s.pagination}>
+                <span>
+                  {page.runs.length} of {page.totalRuns} runs
+                </span>
+                <Button
+                  variant="ghost"
+                  disabled={cursors.length <= 1 || pageKey !== key}
+                  onClick={() => setCursors(cursors.slice(0, -1))}
+                >
+                  Newer runs
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={!page.nextCursor || pageKey !== key}
+                  onClick={() => {
+                    const next = page.nextCursor;
+                    if (!next) return;
+                    setCursors((current) =>
+                      current.includes(next) ? current : [...current, next],
+                    );
+                  }}
+                >
+                  Older runs
+                </Button>
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Hosted flows-overview.tsx sidebar (Flows label and section tabs). Workers
+ * is a self-host section: hosted runs flows on its own sandboxes.
+ */
+export function FlowsSidebar({
+  current,
+  flows: given,
+  runCount = null,
+}: {
+  current: "flows" | "runs" | "workers" | null;
+  /** The overview passes its list; other pages load it here. */
+  flows?: Flow[] | null;
+  runCount?: number | null;
+}) {
+  const [loaded, setLoaded] = useState<Flow[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [version, setVersion] = useState(0);
+  const own = given === undefined;
+  // Refresh on every route change and after any flow is saved or deleted.
+  useEffect(() => {
+    if (!own) return;
+    const refresh = () => setVersion((value) => value + 1);
+    window.addEventListener(FLOWS_CHANGED, refresh);
+    window.addEventListener("hashchange", refresh);
+    return () => {
+      window.removeEventListener(FLOWS_CHANGED, refresh);
+      window.removeEventListener("hashchange", refresh);
+    };
+  }, [own]);
+  useEffect(() => {
+    if (!own) return;
+    const controller = new AbortController();
+    flowsApi.listFlows(controller.signal).then(
+      (value) => {
+        if (controller.signal.aborted) return;
+        setLoaded(value);
+        setFailed(false);
+      },
+      () => {
+        // The page reports its own errors; the sidebar says the list failed.
+        if (!controller.signal.aborted) setFailed(true);
+      },
+    );
+    return () => controller.abort();
+  }, [own, version]);
+  const flows = own ? loaded : given;
+  const tabs = [
+    { id: "flows", href: "#/flows", label: "Flows", count: flows ? flows.length : null },
+    { id: "runs", href: "#/flows/runs", label: "Run history", count: runCount },
+    { id: "workers", href: "#/flows/workers", label: "Workers", count: null },
+  ] as const;
+  return (
+    <WorkspaceViewSlot name="sidebar">
+      <nav className={s.flowSidebar} aria-label="Flows">
+        <p className={s.sidebarLabel}>Flows</p>
+        <div className={s.tabs}>
+          {tabs.map((tab) => (
+            <a
+              key={tab.id}
+              href={tab.href}
+              className={`${s.tab} flex items-center`}
+              data-state={current === tab.id ? "active" : "inactive"}
+              aria-current={current === tab.id ? "page" : undefined}
+            >
+              {tab.label}
+              {tab.count !== null && <span>{tab.count}</span>}
+            </a>
+          ))}
+        </div>
+      </nav>
+      {/* Hosted workspace-chrome "Your flows" resource rows. */}
+      <section className={chrome.navGroup} aria-label="Your flows">
+        <h2>Your flows</h2>
+        {flows && flows.length > 0 ? (
+          flows.map((flow) => (
+            <a
+              key={flow.id}
+              href={`#/flows/f/${seg(flow.id)}`}
+              className={`${chrome.sidebarRow} ${chrome.resourceRow}`}
+            >
+              <FlowsIcon aria-hidden="true" />
+              <span>
+                <strong>{flow.name}</strong>
+                <small>
+                  {flow.stepCount ? plural(flow.stepCount, "step") : "? steps"}{" "}
+                  · {flow.fileType.toUpperCase()}
+                </small>
+              </span>
+            </a>
+          ))
+        ) : (
+          <p className={chrome.emptyResources}>
+            {flows
+              ? "No flows added yet."
+              : own && failed
+                ? "Couldn’t load your flows."
+                : "Loading flows…"}
+          </p>
+        )}
+      </section>
+    </WorkspaceViewSlot>
   );
 }
 
 export function RunList({ page }: { page: Pick<RunPage, "runs"> | null }) {
-  if (!page) return <p role="status">Loading runs…</p>;
+  if (!page)
+    return (
+      <div className={s.loading} role="status">
+        <span>Loading runs…</span>
+        <div className={s.skeleton} aria-hidden="true" />
+      </div>
+    );
   if (!page.runs.length) {
     return (
-      <div className="empty">
-        <strong>No runs yet</strong>
-        <p>Run a flow and its runs will appear here.</p>
+      <div className={s.emptyRuns}>
+        <Clock3 size={20} strokeWidth={1.5} aria-hidden="true" />
+        <div>
+          <h3>No runs yet</h3>
+          <p>Run a flow and its runs will appear here.</p>
+        </div>
       </div>
     );
   }
   return (
-    <ul className="runs">
+    <ul className={s.runList}>
       {page.runs.map((run) => (
-        <li key={run.runId}>
-          <a href={`#/flows/runs/${seg(run.runId)}`}>
-            <div>
-              <strong>{run.workflowName}</strong>
-              <span className="sub">
-                {[
-                  run.runId.slice(0, 8),
-                  run.workerName
-                    ? `on ${run.workerName}`
-                    : run.dispatchType === "local"
-                      ? "local runtime"
-                      : "waiting for a worker",
-                  run.trigger,
-                ].join(" · ")}
-              </span>
-            </div>
-            <Time value={run.updatedAt} />
-            <StatusBadge status={run.status} />
-            <span className="view">View run →</span>
+        <li key={run.runId} className={s.runRow}>
+          <div className={s.runName}>
+            <a href={`#/flows/runs/${seg(run.runId)}`}>{run.workflowName}</a>
+            <span>
+              {[
+                run.runId.slice(0, 8),
+                run.workerName
+                  ? `on ${run.workerName}`
+                  : run.dispatchType === "local"
+                    ? "local runtime"
+                    : "waiting for a worker",
+                run.trigger,
+              ].join(" · ")}
+              {" · "}
+              <Time value={run.updatedAt} />
+            </span>
+          </div>
+          <StatusBadge status={run.status} />
+          <a
+            href={`#/flows/runs/${seg(run.runId)}`}
+            className={s.textLink}
+            aria-label={`View run: ${run.workflowName}`}
+          >
+            View run <ArrowRight size={15} aria-hidden="true" />
           </a>
         </li>
       ))}

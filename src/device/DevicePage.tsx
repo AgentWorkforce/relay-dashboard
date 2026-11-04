@@ -13,7 +13,14 @@ import {
   workspaceLabel,
   type DeviceLookup,
 } from "./api";
-import "./device.css";
+import { Check, X } from "lucide-react";
+import { LogoIcon, LogoWordmark } from "../shell/brand";
+
+// Hosted app/device/_components/device-approval.tsx action buttons.
+const primaryAction =
+  "inline-flex min-h-10 items-center justify-center rounded-md border border-[#234969] bg-[#2d6a9c] px-4 text-sm font-medium text-white transition-colors hover:bg-[#4a90c2] active:bg-[#234969] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#80bfe5] disabled:cursor-not-allowed disabled:opacity-50";
+const secondaryAction =
+  "inline-flex min-h-10 items-center justify-center rounded-md border border-[#496174] bg-transparent px-4 text-sm font-medium text-[#e8f0f7] transition-colors hover:bg-[#24394b] active:bg-[#1c3041] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#80bfe5] disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * Authorize a device (hosted Cloud's `/device`). Two steps: look the code up
@@ -126,84 +133,127 @@ export function DevicePage(props: {
   const workspace = lookup ? workspaceLabel(lookup) : null;
 
   return (
-    <div className="dashboard">
-      <header>
-        <a className="brand" href={appPath()}>
-          <img src={`${import.meta.env.BASE_URL}mark.svg`} alt="" />
-          <img
-            className="wordmark"
-            src={`${import.meta.env.BASE_URL}wordmark.svg`}
-            alt="Agent Relay"
-          />
+    <div className="min-h-dvh bg-[#101c29] text-[#e8f0f7]">
+      <main className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center px-6 py-12 sm:py-16">
+        <a
+          href={appPath()}
+          aria-label="Agent Relay home"
+          className="mb-8 flex w-fit shrink-0 items-center gap-2.5 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#79b8de]"
+        >
+          <LogoIcon className="h-6" />
+          <LogoWordmark className="h-5 [--fg:#e8f0f7]" />
         </a>
-        <nav className="top-nav" aria-label="Primary">
-          <a href={appPath()}>Sessions</a>
-          <a href="#/flows">Flows</a>
-          <a href="#/settings/workspace">Settings</a>
+        <div className="mb-9">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            Authorize a device
+          </h1>
+          <p className="mt-3 max-w-xl text-base leading-7 text-[#a9bdce]">
+            Connect an app or device to your Agent Relay workspace. Only approve
+            a sign-in you started yourself.
+          </p>
           {account && (
-            <span>
-              {[account.currentWorkspace?.name, account.user.name]
-                .filter(Boolean)
-                .join(" · ")}
-            </span>
+            <p className="mt-3 text-sm text-[#a9bdce]">
+              Signed in as{" "}
+              <span className="font-medium text-[#e8f0f7]">
+                {account.user.name || "your account"}
+              </span>
+              {account.currentWorkspace
+                ? ` · ${account.currentWorkspace.name}`
+                : ""}
+            </p>
           )}
-        </nav>
-      </header>
-      <main className="device">
-        <h1>Authorize a device</h1>
-        <p>
-          Connect an app or device to your Agent Relay workspace. Only approve a
-          sign-in you started yourself.
-        </p>
-        <section className="device-card" aria-label="Device authorization">
-          {signedOut && <p role="status">Taking you to sign in…</p>}
-          {!signedOut && !account && !error && <p role="status">Checking your sign-in…</p>}
+        </div>
+        <section
+          className="rounded-xl border border-[#30485e] bg-[#182838] p-6 sm:p-8"
+          aria-label="Device authorization"
+        >
+          {signedOut && (
+            <p role="status" className="text-sm leading-7 text-[#e8f0f7]">
+              Taking you to sign in…
+            </p>
+          )}
+          {!signedOut && !account && !error && (
+            <p role="status" className="text-sm leading-7 text-[#a9bdce]">
+              Checking your sign-in…
+            </p>
+          )}
 
           {account && outcome && (
-            <div role="status">
-              <h2>{outcome === "approved" ? "Device approved" : "Device denied"}</h2>
-              <p>
-                {outcome === "approved"
-                  ? `Return to ${lookup ? approvalName(lookup) : "the app or device where you started signing in"}. Sign-in will finish within a few seconds. You can close this tab.`
-                  : "No credentials were issued. You can close this tab."}
-              </p>
+            <div role="status" className="flex items-start gap-4">
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#203e55] text-[#80bfe5]"
+                aria-hidden="true"
+              >
+                {outcome === "approved" ? (
+                  <Check size={19} strokeWidth={2.5} />
+                ) : (
+                  <X size={19} strokeWidth={2.5} />
+                )}
+              </span>
+              <div className="min-w-0 break-words">
+                <h2 className="text-lg font-semibold text-[#e8f0f7]">
+                  {outcome === "approved" ? "Device approved" : "Device denied"}
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-[#a9bdce]">
+                  {outcome === "approved"
+                    ? `Return to ${lookup ? approvalName(lookup) : "the app or device where you started signing in"}. Sign-in will finish within a few seconds. You can close this tab.`
+                    : "No credentials were issued. You can close this tab."}
+                </p>
+              </div>
             </div>
           )}
 
           {account && !outcome && lookup && (
-            <div>
-              <p>Requesting app or device</p>
-              <h2>{approvalName(lookup)}</h2>
-              <dl>
-                <dt>Code</dt>
-                <dd>
-                  <code>{lookup.user_code}</code>
-                </dd>
-                {lookup.desktop_host_name && (
-                  <>
-                    <dt>Client</dt>
-                    <dd>{displayClientName(lookup.client_name)}</dd>
-                  </>
-                )}
-                <dt>Workspace</dt>
-                <dd>{workspace ?? "Your current workspace"}</dd>
-                <dt>Expires</dt>
-                <dd>
-                  <time dateTime={lookup.expires_at}>
-                    {new Date(lookup.expires_at).toLocaleTimeString()}
-                  </time>
-                </dd>
-              </dl>
-              <p>
-                {lookup.desktop_host_name
-                  ? `Approving authorizes Agent Relay Desktop on ${lookup.desktop_host_name} to access ${workspace ?? "your workspace"}. Check that this is the computer where you started sign-in; otherwise, deny it.`
-                  : `Approving grants this app or device access to ${workspace ?? "your workspace"}. If you did not start this sign-in, deny it.`}
-              </p>
-              {error && <p role="alert">{error}</p>}
-              <div className="device-actions">
+            <div className="space-y-5">
+              <div>
+                <p className="text-sm font-medium text-[#a9bdce]">
+                  Requesting app or device
+                </p>
+                <h2 className="mt-3 break-words text-lg font-medium text-[#e8f0f7]">
+                  {approvalName(lookup)}
+                </h2>
+                <dl className="mt-4 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+                  <dt className="text-[#a9bdce]">Code</dt>
+                  <dd className="min-w-0 break-words">
+                    <code className="font-mono tracking-[0.12em]">
+                      {lookup.user_code}
+                    </code>
+                  </dd>
+                  {lookup.desktop_host_name && (
+                    <>
+                      <dt className="text-[#a9bdce]">Client</dt>
+                      <dd className="min-w-0 break-words">
+                        {displayClientName(lookup.client_name)}
+                      </dd>
+                    </>
+                  )}
+                  <dt className="text-[#a9bdce]">Workspace</dt>
+                  <dd className="min-w-0 break-words">
+                    {workspace ?? "Your current workspace"}
+                  </dd>
+                  <dt className="text-[#a9bdce]">Expires</dt>
+                  <dd>
+                    <time dateTime={lookup.expires_at}>
+                      {new Date(lookup.expires_at).toLocaleTimeString()}
+                    </time>
+                  </dd>
+                </dl>
+                <p className="mt-2 text-sm leading-7 text-[#a9bdce]">
+                  {lookup.desktop_host_name
+                    ? `Approving authorizes Agent Relay Desktop on ${lookup.desktop_host_name} to access ${workspace ?? "your workspace"}. Check that this is the computer where you started sign-in; otherwise, deny it.`
+                    : `Approving grants this app or device access to ${workspace ?? "your workspace"}. If you did not start this sign-in, deny it.`}
+                </p>
+              </div>
+              {error && (
+                <p role="alert" className="text-sm text-[#f3a5ad]">
+                  {error}
+                </p>
+              )}
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <button
                   type="button"
-                  className="primary"
+                  data-slot="device-action"
+                  className={primaryAction}
                   disabled={busy}
                   onClick={() => void decide("approve")}
                 >
@@ -211,6 +261,8 @@ export function DevicePage(props: {
                 </button>
                 <button
                   type="button"
+                  data-slot="device-action"
+                  className={secondaryAction}
                   disabled={busy}
                   onClick={() => void decide("deny")}
                 >
@@ -222,40 +274,60 @@ export function DevicePage(props: {
 
           {account && !outcome && !lookup && (
             <form
+              className="space-y-5"
               onSubmit={(event) => {
                 event.preventDefault();
                 void check(userCode);
               }}
             >
-              <label htmlFor="user_code">Device code</label>
-              <p id="device-code-help">
-                Enter the code shown in the app or device you’re connecting.
-              </p>
-              <input
-                id="user_code"
-                name="user_code"
-                aria-describedby="device-code-help"
-                value={userCode}
-                onChange={(event) => setUserCode(event.target.value)}
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                placeholder="XXXX-XXXX"
-              />
-              {error && <p role="alert">{error}</p>}
-              <div className="device-actions">
-                <button
-                  type="submit"
-                  className="primary"
-                  disabled={busy || userCode.trim().length === 0}
+              <div>
+                <label
+                  htmlFor="user_code"
+                  className="text-sm font-medium text-[#a9bdce]"
                 >
-                  {busy ? "Checking…" : "Continue"}
-                </button>
+                  Device code
+                </label>
+                <p
+                  id="device-code-help"
+                  className="mt-2 text-sm leading-6 text-[#a9bdce]"
+                >
+                  Enter the code shown in the app or device you’re connecting.
+                </p>
+                <input
+                  id="user_code"
+                  name="user_code"
+                  data-slot="input"
+                  aria-describedby="device-code-help"
+                  value={userCode}
+                  onChange={(event) => setUserCode(event.target.value)}
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  placeholder="XXXX-XXXX"
+                  className="mt-3 w-full rounded-md border border-[#30485e] bg-[#101c29] px-4 py-3 font-mono text-lg tracking-[0.3em] text-[#e8f0f7] outline-none transition-colors placeholder:text-[#8298aa] focus:border-[#80bfe5] focus-visible:ring-2 focus-visible:ring-[#80bfe5]/30"
+                />
               </div>
+              {error && (
+                <p role="alert" className="text-sm text-[#f3a5ad]">
+                  {error}
+                </p>
+              )}
+              <button
+                type="submit"
+                data-slot="device-action"
+                className={primaryAction}
+                disabled={busy || userCode.trim().length === 0}
+              >
+                {busy ? "Checking…" : "Continue"}
+              </button>
             </form>
           )}
 
-          {!account && error && <p role="alert">{error}</p>}
+          {!account && error && (
+            <p role="alert" className="text-sm text-[#f3a5ad]">
+              {error}
+            </p>
+          )}
         </section>
       </main>
     </div>

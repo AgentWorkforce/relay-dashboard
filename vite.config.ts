@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // Hosted builds mount the SPA at /dashboard/. Self-hosted images build with
 // DASHBOARD_BASE_PATH=/ and DASHBOARD_RUNTIME_CONFIG_URL=/runtime-config.js so
@@ -25,6 +26,8 @@ export default defineConfig({
   base: basePath(process.env.DASHBOARD_BASE_PATH),
   plugins: [
     react(),
+    // Tailwind v4, as in hosted Cloud (packages/web uses @tailwindcss/postcss).
+    tailwindcss(),
     runtimeConfigScript(process.env.DASHBOARD_RUNTIME_CONFIG_URL),
   ],
   server: {

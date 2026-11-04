@@ -1,0 +1,465 @@
+/* Agent Relay palette from agentrelay.com/web/public/brand.css.
+   Use the 600 shade for light-theme controls so white labels stay readable. */
+.theme.theme.theme {
+  --background: #f9fafb;
+  --foreground: #111827;
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: #ffffff;
+  --popover-foreground: var(--foreground);
+  --primary: #2d6a9c;
+  --primary-foreground: #ffffff;
+  --secondary: #f3f4f6;
+  --secondary-foreground: var(--foreground);
+  --muted: #f3f4f6;
+  --muted-foreground: #4b5563;
+  --accent: #e7eff7;
+  --accent-foreground: #26557e;
+  --border: rgba(74, 144, 194, 0.16);
+  --input: #c9ddee;
+  --ring: #4a90c2;
+  --sidebar: #ffffff;
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --surface-page: var(--background);
+  --surface-card: var(--card);
+  --surface-glass: var(--card);
+  --surface-soft: var(--muted);
+  --surface-muted: var(--muted);
+  --surface-strong: var(--card);
+  --border-default: var(--border);
+  --border-soft: var(--border);
+  --border-strong: var(--input);
+  --text-secondary: var(--muted-foreground);
+  --text-muted: var(--muted-foreground);
+  --text-faint: var(--muted-foreground);
+  --dashboard-shell-bg: var(--background);
+  --dashboard-sidebar: var(--sidebar);
+  --dashboard-canvas: var(--background);
+  --dashboard-panel: var(--card);
+  --dashboard-border: var(--border);
+  --nav-logo-mark: #4a90c2;
+  --sidebar-ring: var(--ring);
+  --status-info: var(--primary);
+  --status-info-soft: var(--accent);
+  --note-bg: var(--accent);
+  --primary-hover: #26557e;
+  --dashboard-panel-soft: var(--muted);
+  --dashboard-sidebar-accent: var(--accent);
+  --dashboard-sidebar-foreground: var(--foreground);
+  --dashboard-sidebar-muted: var(--muted-foreground);
+  --dashboard-muted: var(--muted-foreground);
+  --dashboard-border-strong: var(--input);
+}
+:global(html[data-theme="dark"]) .theme.theme.theme {
+  --nav-logo-mark: #74b8e2;
+  --primary-hover: #94cbef;
+  /* Use the brand surface-strong canvas rather than its near-black page ground. */
+  --background: #14191f;
+  --foreground: #edf4fb;
+  --card: #1a2129;
+  --popover: #1a2129;
+  --primary: #74b8e2;
+  --primary-foreground: #08111a;
+  --secondary: #1a2129;
+  --muted: #1d252e;
+  --muted-foreground: #a8b8c8;
+  --accent: #223e58;
+  --accent-foreground: #99c2e0;
+  --border: rgba(168, 184, 200, 0.13);
+  --input: rgba(116, 184, 226, 0.32);
+  --ring: #74b8e2;
+  --sidebar: #10151b;
+}
+/* The theme also lives on body so portaled menus and sheets share affordances. */
+.theme
+  :where(
+    a[href],
+    button,
+    summary,
+    select,
+    input[type="checkbox"],
+    input[type="radio"],
+    [role="button"],
+    [role="link"],
+    [role="tab"],
+    [role="switch"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"],
+    [role="option"]
+  ):not(:disabled):not([aria-disabled="true"]):not([data-disabled]) {
+  cursor: pointer;
+}
+.theme
+  :where(a[href], button, select, input, [role]):is(
+    :disabled,
+    [aria-disabled="true"],
+    [data-disabled]
+  ) {
+  cursor: not-allowed;
+}
+.theme
+  :where(select, [data-slot="select-trigger"]):not(:disabled):not(
+    [aria-disabled="true"]
+  ):not([data-disabled]):hover {
+  background: var(--muted);
+  border-color: var(--muted-foreground);
+}
+.theme
+  :where([role="switch"], input[type="checkbox"], input[type="radio"]):not(
+    :disabled
+  ):not([aria-disabled="true"]):not([data-disabled]):hover {
+  box-shadow:
+    0 0 0 2px var(--background),
+    0 0 0 4px var(--ring);
+}
+.shell {
+  --shell-sidebar: 240px;
+  --shell-topbar: 60px;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.sidebar {
+  width: var(--shell-sidebar);
+  flex: 0 0 var(--shell-sidebar);
+  display: flex;
+  flex-direction: column;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  min-height: 0;
+}
+.sidebarBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 10px 10px;
+}
+.sidebarFooter {
+  flex: 0 0 auto;
+  padding: 6px 10px 0;
+  border-top: 1px solid var(--border);
+}
+.sidebarFooter:empty {
+  display: none;
+}
+.sidebarSlot {
+  min-width: 0;
+}
+.navGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 18px;
+}
+.navGroup h2 {
+  padding: 6px 10px 4px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sidebarRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 30px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  color: var(--foreground);
+  font-size: 13px;
+}
+.sidebarRow > svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.sidebarRow > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebarRow:hover {
+  background: var(--muted);
+}
+.sidebarRow[aria-current="page"] {
+  background: var(--accent);
+  font-weight: 500;
+}
+.sidebarRow[aria-current="page"]:hover {
+  background: color-mix(in srgb, var(--accent) 80%, var(--primary));
+}
+.sidebarRow[aria-current="page"] svg {
+  color: var(--primary);
+}
+.resourceRow {
+  align-items: flex-start;
+  padding-block: 8px;
+}
+.resourceRow strong,
+.resourceRow small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.resourceRow strong {
+  font-weight: 500;
+  font-size: 12px;
+}
+.resourceRow small {
+  font-size: 11px;
+  margin-top: 3px;
+  color: var(--muted-foreground);
+}
+.emptyResources {
+  padding: 4px 10px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.center {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  background: var(--background);
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--shell-topbar);
+  min-height: var(--shell-topbar);
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+}
+.heading {
+  flex: 1;
+  min-width: 0;
+}
+.headingSlot {
+  min-width: 0;
+}
+.heading h1,
+.headingSlot p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.heading:has(.headingSlot:not(:empty)) .defaultHeading {
+  display: none;
+}
+.defaultHeading h1 {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.defaultHeading p {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toolbarSlot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  max-width: 52%;
+}
+.toolbarSlot:empty {
+  display: none;
+}
+.content {
+  /* Keep absolute descendants (including sr-only labels) inside this scroller. */
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  outline: none;
+  container-type: inline-size;
+}
+.shell a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.skipLink {
+  position: fixed;
+  top: -100px;
+  left: 12px;
+  z-index: 50;
+  padding: 12px;
+  background: var(--background);
+  color: var(--foreground);
+}
+.skipLink:focus {
+  top: 12px;
+}
+.mobileContext {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.mobileSheet {
+  gap: 0;
+}
+@media (max-width: 759px) {
+  .topbar {
+    padding-inline: 10px;
+    gap: 8px;
+  }
+  .heading p {
+    display: none;
+  }
+  .toolbarSlot {
+    max-width: 48%;
+  }
+}
+
+.workspaceBrand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  height: var(--shell-topbar);
+  padding: 0 10px;
+  color: var(--primary);
+}
+.workspaceBrand span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.workspaceBrand .brandWordmark {
+  width: 110px;
+  height: auto;
+  color: var(--foreground);
+}
+.sidebarRow {
+  min-height: 36px;
+}
+.sidebarAccount {
+  display: flex;
+  gap: 4px;
+  padding: 0 10px 8px;
+  align-items: center;
+}
+.sidebarAccount > a {
+  flex: 1;
+}
+.sidebarFooter {
+  order: 1;
+}
+.sidebarCollapse {
+  order: 2;
+  padding: 6px 10px 0;
+}
+.sidebarCollapse > button {
+  width: 100%;
+  justify-content: flex-start;
+  font-size: 13px;
+  font-weight: 400;
+}
+.sidebarSettings {
+  order: 3;
+  padding: 0 10px;
+}
+.sidebarAccount {
+  order: 4;
+  padding-top: 8px;
+}
+.collapsedSidebar .sidebarSettings {
+  padding-inline: 12px;
+}
+.collapsedSidebar .sidebarCollapse {
+  padding-inline: 12px;
+}
+
+/* Keep the same navigation mounted so page-owned filters retain their state. */
+.collapsedSidebar {
+  --shell-sidebar: 64px;
+}
+.collapsedSidebar .sidebarBody {
+  padding-inline: 8px;
+}
+.collapsedSidebar .workspaceBrand {
+  justify-content: center;
+  padding-inline: 0;
+}
+.collapsedSidebar .workspaceBrand > span,
+.collapsedSidebar .sidebarRow > span,
+.collapsedSidebar .sidebarSlot {
+  display: none;
+}
+.collapsedSidebar .sidebarFooter {
+  padding-inline: 12px;
+}
+.collapsedSidebar .sidebarFooter [data-agent-access-trigger] {
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  justify-content: center;
+}
+.collapsedSidebar [data-agent-access-trigger] > span,
+.collapsedSidebar [data-agent-access-hint] {
+  display: none;
+}
+.collapsedSidebar .sidebarRow {
+  justify-content: center;
+  padding-inline: 0;
+  width: 40px;
+  min-height: 40px;
+}
+.collapsedSidebar .navGroup {
+  align-items: center;
+  gap: 6px;
+}
+.collapsedSidebar .sidebarAccount {
+  flex-direction: column;
+  padding: 10px 8px;
+  gap: 8px;
+}
+.collapsedSidebar .sidebarAccount > a {
+  flex: initial;
+}
+
+.collapsedSidebar [data-account-identity] {
+  display: none;
+}
+.collapsedSidebar [data-account-trigger] {
+  width: 40px;
+  min-height: 40px;
+  padding: 0;
+  justify-content: center;
+}

@@ -253,6 +253,14 @@ const q = (params: Record<string, string | null | undefined>) => {
 };
 const id = (value: string) => encodeURIComponent(value);
 
+/** Fired after a flow is created, changed, or deleted, so lists can refresh. */
+export const FLOWS_CHANGED = "relay:flows-changed";
+async function changed<T>(result: Promise<T>): Promise<T> {
+  const value = await result;
+  window.dispatchEvent(new Event(FLOWS_CHANGED));
+  return value;
+}
+
 export const flowsApi = {
   listFlows: async (signal?: AbortSignal) =>
     z
@@ -265,14 +273,13 @@ export const flowsApi = {
     description?: string;
     fileType: "yaml" | "ts";
     source: string;
-  }) =>
-    flowSchema.extend({ source: z.string() }).parse(
-      (
-        (await call("/flows", { method: "POST", body: input })) as {
-          flow: unknown;
-        }
-      ).flow,
-    ),
+  }) => {
+    // Signal the change once the request succeeds, even if parsing fails.
+    const body = (await changed(
+      call("/flows", { method: "POST", body: input }),
+    )) as { flow: unknown };
+    return flowSchema.extend({ source: z.string() }).parse(body.flow);
+  },
   updateFlow: async (
     flowId: string,
     input: {
@@ -281,9 +288,9 @@ export const flowsApi = {
       fileType?: "yaml" | "ts";
       source?: string;
     },
-  ) => call(`/flows/${id(flowId)}`, { method: "PATCH", body: input }),
+  ) => changed(call(`/flows/${id(flowId)}`, { method: "PATCH", body: input })),
   deleteFlow: async (flowId: string) =>
-    call(`/flows/${id(flowId)}`, { method: "DELETE" }),
+    changed(call(`/flows/${id(flowId)}`, { method: "DELETE" })),
   invokeFlow: async (
     flowId: string,
     input: { inputs?: unknown; workerId?: string; tags?: string[] },

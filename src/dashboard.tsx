@@ -2,9 +2,10 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { getAccount, SignedOut } from "./api/client";
 import type { Account } from "./api/contracts";
 import { parseRoute, type SessionRoute } from "./sessions/route";
-import { SessionsPage } from "./sessions/SessionsPage";
+import { SessionsPage, SessionsSkeleton } from "./sessions/SessionsPage";
+import { Button } from "./shell/ui";
 import "./sessions/sessions.css";
-import { appPath, loginHref } from "./app-path";
+import { loginHref } from "./app-path";
 
 // The transcript renderer (Markdown, diff parsing) loads with the first session opened.
 const SessionView = lazy(() =>
@@ -53,71 +54,58 @@ export function Dashboard() {
   }, [error]);
 
   return (
-    <div className="dashboard">
-      <header>
-        <a className="brand" href={appPath()}>
-          <img src={`${import.meta.env.BASE_URL}mark.svg`} alt="" />
-          <img
-            className="wordmark"
-            src={`${import.meta.env.BASE_URL}wordmark.svg`}
-            alt="Agent Relay"
-          />
-        </a>
-        <nav className="top-nav" aria-label="Primary">
-          <a href={appPath()} aria-current="page">
-            Sessions
-          </a>
-          <a href="#/flows">Flows</a>
-          <a href="#/settings/workspace">Settings</a>
-          {account && (
-            <span>
-              {[workspace?.name, account.user.name].filter(Boolean).join(" · ")}
-            </span>
+    <div
+      className={
+        route.view === "session"
+          ? "flex min-h-full flex-col"
+          : "flex min-h-full flex-col px-5 py-4"
+      }
+    >
+      {error && (
+        <div role="alert" className="load-error">
+          <span>
+            {error instanceof SignedOut
+              ? "Taking you to sign in…"
+              : error.message}
+          </span>
+          {!account && !(error instanceof SignedOut) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAttempt((value) => value + 1)}
+            >
+              Retry
+            </Button>
           )}
-        </nav>
-      </header>
-      <main className="wide">
-        {error && (
-          <div role="alert" className="load-error">
-            <span>
-              {error instanceof SignedOut
-                ? "Taking you to sign in…"
-                : error.message}
-            </span>
-            {!account && !(error instanceof SignedOut) && (
-              <button
-                type="button"
-                onClick={() => setAttempt((value) => value + 1)}
-              >
-                Retry
-              </button>
-            )}
-          </div>
-        )}
-        {!account && !error && <p role="status">Loading sessions…</p>}
-        {account && !workspace && <p>You don’t have a workspace yet.</p>}
-        {workspace && route.view === "list" && (
-          <SessionsPage
-            key={route.tab}
+        </div>
+      )}
+      {!account && !error && <SessionsSkeleton />}
+      {account && !workspace && (
+        <p className="text-sm text-muted-foreground">
+          You don’t have a workspace yet.
+        </p>
+      )}
+      {workspace && route.view === "list" && (
+        <SessionsPage
+          key={route.tab}
+          workspaceId={workspace.id}
+          initialQuery={route.q}
+          tab={route.tab}
+          onSignedOut={signedOut}
+        />
+      )}
+      {workspace && route.view === "session" && (
+        <Suspense fallback={<SessionsSkeleton label="Loading session…" />}>
+          <SessionView
             workspaceId={workspace.id}
-            initialQuery={route.q}
-            tab={route.tab}
+            sessionId={route.sessionId}
+            source={route.source}
+            event={route.event}
+            from={route.from}
             onSignedOut={signedOut}
           />
-        )}
-        {workspace && route.view === "session" && (
-          <Suspense fallback={<p role="status">Loading session…</p>}>
-            <SessionView
-              workspaceId={workspace.id}
-              sessionId={route.sessionId}
-              source={route.source}
-              event={route.event}
-              from={route.from}
-              onSignedOut={signedOut}
-            />
-          </Suspense>
-        )}
-      </main>
+        </Suspense>
+      )}
     </div>
   );
 }

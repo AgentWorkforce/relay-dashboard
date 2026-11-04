@@ -5,7 +5,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ChevronRight, UserRound } from "lucide-react";
 import { harnessName, type Member } from "./data";
+import { HarnessIcon } from "./harness-icon";
+
 import {
   transcriptCellAnchor,
   type EditedFile,
@@ -471,6 +474,7 @@ function Disclosure({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>
+        <ChevronRight aria-hidden="true" className="disclosure-chevron size-3" />
         {label}
         {extra}
       </summary>
@@ -534,10 +538,30 @@ function MessageHeader({
     ? owner?.name || event?.actorName || "User"
     : event?.actorName || harnessName(event?.source || source) || "Agent";
   const anchor = transcriptCellAnchor(cell);
+  const harness = event?.source || source;
+  // Hosted transcript-view.tsx MessageHeader: avatar or harness icon, name, time.
   return (
     <div className="message-header">
+      {human ? (
+        <span
+          data-slot="avatar"
+          className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+        >
+          <UserRound className="size-3.5" aria-hidden="true" />
+        </span>
+      ) : (
+        <HarnessIcon source={harness} className="size-4" />
+      )}
       <span className="speaker">{name}</span>
-      <time dateTime={cell.ts}>
+      <time
+        dateTime={cell.ts}
+        className="text-[10px]"
+        title={
+          Number.isFinite(Date.parse(cell.ts))
+            ? new Date(cell.ts).toLocaleString()
+            : undefined
+        }
+      >
         {Number.isFinite(Date.parse(cell.ts))
           ? new Date(cell.ts).toLocaleString(undefined, {
               month: "short",

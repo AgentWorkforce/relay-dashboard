@@ -1,0 +1,40 @@
+.trigger { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 48px; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; }
+.trigger:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.trigger:disabled { opacity: .5; cursor: default; }
+.trigger:hover, .trigger[data-state="open"] { background: var(--muted); }
+.menu { width: 300px; max-width: calc(100vw - 24px); padding: 6px; border-radius: 12px; background: var(--popover); color: var(--popover-foreground); border-color: var(--border); box-shadow: 0 12px 36px #030b1440; }
+.heading { padding: 10px 12px 12px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-foreground); }
+.item { gap: 12px; padding: 10px; border-radius: 7px; cursor: pointer; }
+.item[data-current="true"] { background: var(--accent); }
+.item:focus, .item[data-highlighted] { background: var(--accent); color: var(--popover-foreground); }
+.identity { min-width: 0; flex: 1; }
+.identity strong, .identity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.identity strong { font-size: 14px; font-weight: 500; }
+.identity small { margin-top: 2px; font-size: 11px; color: var(--muted-foreground); }
+.separator { margin: 6px -6px; background: var(--border); }
+.overlay { position: fixed; inset: 0; z-index: 60; background: #030b14a6; }
+.dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 61; width: min(440px, calc(100vw - 32px)); padding: 28px; border: 1px solid var(--border); border-radius: 14px; background: var(--popover); color: var(--popover-foreground); box-shadow: 0 24px 80px #030b1460; }
+.title { margin: 0 24px 8px 0; font-size: 20px; font-weight: 600; letter-spacing: -.025em; }
+.description { margin-bottom: 24px; font-size: 14px; line-height: 1.6; color: var(--muted-foreground); }
+.close { position: absolute; right: 18px; top: 20px; padding: 4px; color: var(--muted-foreground); cursor: pointer; }
+.label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 500; }
+.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.error { color: #f29c9c; font-size: 13px; margin-top: 10px; }
+.close:hover { color: var(--popover-foreground); background: var(--accent); border-radius: 4px; }
+.close:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+
+.account { display: flex; align-items: center; gap: 12px; padding: 10px; }
+
+.account .accountAvatar { width: 32px; height: 32px; flex: 0 0 32px; }
+
+.triggerUser .triggerAvatar { width: 32px; height: 32px; }
+.triggerStack { position: relative; display: block; width: 40px; height: 40px; }
+.triggerWorkspace { position: absolute; left: 0; top: 0; }
+.triggerStack .triggerAvatar { position: absolute; right: 0; bottom: 0; width: 28px; height: 28px; border: 2px solid var(--background); }
+.triggerStack .triggerAvatar [data-slot="avatar-fallback"] { font-size: 10px; }
+
+.triggerUser, .triggerStack { flex-shrink: 0; }
+.triggerIdentity { flex: 1; min-width: 0; }
+.triggerIdentity strong, .triggerIdentity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.triggerIdentity strong { font-size: 13px; font-weight: 500; color: var(--foreground); }
+.triggerIdentity small { margin-top: 2px; font-size: 11px; color: var(--muted-foreground); }
