@@ -205,6 +205,55 @@ it("lists sessions with agent, project, people, and status, linking in-app", asy
   ).toBe("deferred");
 });
 
+function facetRow(group: string, label: string) {
+  const facet = screen.getByRole("group", { name: `Filter by ${group}` });
+  const row = within(facet).getByRole("button", { name: label });
+  return { row, count: row.querySelector("span:last-child")?.textContent };
+}
+
+it("keeps every facet option after one is picked, counting against the other filters", async () => {
+  window.history.replaceState(null, "", "/?q=project%3Arelay");
+  render(<Dashboard />);
+  expect(
+    await screen.findByRole("link", { name: "Fix session loading" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("link", { name: "Write docs" }),
+  ).not.toBeInTheDocument();
+  // Facets are browser filters: the list request carries no project or source.
+  const list = [...calls].reverse().find((url) => url.pathname === base)!;
+  expect(list.searchParams.has("project")).toBe(false);
+  expect(list.searchParams.has("source")).toBe(false);
+  // The project facet ignores its own selection: every project, true total.
+  expect(facetRow("project", "All projects").count).toBe("2");
+  expect(facetRow("project", "relay").count).toBe("1");
+  expect(facetRow("project", "docs").count).toBe("1");
+  expect(facetRow("project", "relay").row).toHaveAttribute("aria-pressed", "true");
+  // Other facets respect the project selection.
+  expect(facetRow("status", "All sessions").count).toBe("1");
+  expect(facetRow("status", "Finished").count).toBe("0");
+  expect(facetRow("harness", "Codex").count).toBe("1");
+  expect(facetRow("harness", "Claude Code").count).toBe("0");
+  // Switching projects needs no detour through "All".
+  fireEvent.click(facetRow("project", "docs").row);
+  expect(
+    await screen.findByRole("link", { name: "Write docs" }),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Search sessions")).toHaveValue("project:docs");
+  expect(facetRow("project", "relay").count).toBe("1");
+});
+
+it("counts each facet against the others, not itself", async () => {
+  window.history.replaceState(null, "", "/?q=project%3Arelay%20is%3Afinished");
+  render(<Dashboard />);
+  expect(await screen.findByText("No sessions match these filters.")).toBeInTheDocument();
+  expect(facetRow("project", "All projects").count).toBe("1");
+  expect(facetRow("project", "relay").count).toBe("0");
+  expect(facetRow("project", "docs").count).toBe("1");
+  expect(facetRow("status", "All sessions").count).toBe("1");
+  expect(facetRow("status", "Active").count).toBe("1");
+});
+
 it("applies person and status filters in the browser and free text on the server", async () => {
   window.history.replaceState(null, "", "/?q=loader%20is%3Afinished");
   render(<Dashboard />);

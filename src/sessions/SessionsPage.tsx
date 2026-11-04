@@ -138,8 +138,15 @@ export function relativeTime(value: string | null, now: number) {
 
 type Tab = "sessions" | "activity" | "search";
 
-/** Server-side filters derived from the query tokens. */
-function serverFilters(q: string) {
+/**
+ * Server-side filters derived from the query tokens. The session list sends
+ * only free text and dates: harness, project, person and status are sidebar
+ * facets, filtered in the browser so each facet keeps every option (standard
+ * faceting) and its counts ignore its own selection. Project is never sent:
+ * the sidebar's project values are display labels (repo, project key) that
+ * RelayHistory's exact `projectId` match does not recognize.
+ */
+export function serverFilters(q: string, view: "list" | "search" = "list") {
   const parsed = parseSessionQuery(q);
   const single = (field: string) => {
     const matches = parsed.filters.filter(
@@ -165,8 +172,9 @@ function serverFilters(q: string) {
     // A harness with aliased sources (claude, claude-terminal…) is filtered in
     // the browser so the server doesn't drop the aliases.
     source:
-      harness && harnessSources(harness).length === 1 ? harness : undefined,
-    project: single("project"),
+      view === "search" && harness && harnessSources(harness).length === 1
+        ? harness
+        : undefined,
     since: day && (op === ">=" || op === ">" || op === "=") ? day : undefined,
     until: day && (op === "<=" || op === "<" || op === "=") ? nextDay : undefined,
   };
@@ -967,7 +975,7 @@ function MessageSearch({
   query: string;
   onSignedOut: () => void;
 }) {
-  const filters = useMemo(() => serverFilters(query), [query]);
+  const filters = useMemo(() => serverFilters(query, "search"), [query]);
   const key = filters.q ? JSON.stringify([workspaceId, filters]) : null;
   const page = useLoad(key, (signal) =>
     searchSessions(workspaceId, filters, null, signal),
