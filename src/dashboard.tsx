@@ -5,7 +5,7 @@ import { parseRoute, type SessionRoute } from "./sessions/route";
 import { SessionsPage, SessionsSkeleton } from "./sessions/SessionsPage";
 import { Button } from "./shell/ui";
 import "./sessions/sessions.css";
-import { loginHref } from "./app-path";
+import { loginHref, sessionVisualizationsEnabled } from "./app-path";
 
 // The transcript renderer (Markdown, diff parsing) loads with the first session opened.
 const SessionView = lazy(() =>
@@ -13,6 +13,8 @@ const SessionView = lazy(() =>
     default: module.SessionView,
   })),
 );
+
+const GraphPage = lazy(() => import("./sessions/visualizations/GraphPage").then((module) => ({ default: module.GraphPage })));
 
 function useRoute(): SessionRoute {
   const [route, setRoute] = useState(() => parseRoute(window.location));
@@ -30,6 +32,8 @@ export function Dashboard() {
   const [attempt, setAttempt] = useState(0);
   const route = useRoute();
   const workspace = account?.currentWorkspace;
+  const requestedWorkspace = route.view !== "list" ? route.workspaceId : undefined;
+  const workspaceMismatch = Boolean(workspace && requestedWorkspace && workspace.id !== requestedWorkspace);
 
   useEffect(() => {
     const request = new AbortController();
@@ -85,7 +89,11 @@ export function Dashboard() {
           You don’t have a workspace yet.
         </p>
       )}
-      {workspace && route.view === "list" && (
+      {workspaceMismatch && <p role="status" className="p-6 text-sm text-muted-foreground">This link belongs to a different workspace.</p>}
+      {workspace && !workspaceMismatch && route.view === "graph" && <Suspense fallback={<SessionsSkeleton label="Loading work graph…" />}>
+        {sessionVisualizationsEnabled() ? <GraphPage key={JSON.stringify([account?.user.id, workspace.id, route.sessionId, route.source])} accountId={account?.user.id ?? ""} workspaceId={workspace.id} initialFocus={route.sessionId && route.source ? { sessionId: route.sessionId, source: route.source } : undefined} onSignedOut={signedOut} /> : <p className="p-6 text-sm text-muted-foreground">Session visualizations are not enabled.</p>}
+      </Suspense>}
+      {workspace && !workspaceMismatch && route.view === "list" && (
         <SessionsPage
           key={route.tab}
           workspaceId={workspace.id}
@@ -94,7 +102,7 @@ export function Dashboard() {
           onSignedOut={signedOut}
         />
       )}
-      {workspace && route.view === "session" && (
+      {workspace && !workspaceMismatch && route.view === "session" && (
         <Suspense fallback={<SessionsSkeleton label="Loading session…" />}>
           <SessionView
             workspaceId={workspace.id}

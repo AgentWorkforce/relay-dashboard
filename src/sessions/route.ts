@@ -4,8 +4,10 @@
 import { appPath } from "../app-path";
 export type SessionRoute =
   | { view: "list"; q: string; tab: "sessions" | "activity" | "search" }
+  | { view: "graph"; sessionId?: string; source?: string; workspaceId?: string }
   | {
       view: "session";
+      workspaceId?: string;
       sessionId: string;
       source: string;
       event: string | null;
@@ -21,6 +23,11 @@ export function parseRoute(location: {
   hash?: string;
 }): SessionRoute {
   const params = new URLSearchParams(location.search);
+  const workspace = params.get("workspace");
+  if (params.get("view") === "graph") return {
+    view: "graph", ...(workspace ? { workspaceId: workspace } : {}),
+    ...(params.get("session") && params.get("source") ? { sessionId: params.get("session")!, source: params.get("source")! } : {}),
+  };
   const hostedPath = /\/sessions\/([^/]+)\/?$/.exec(location.pathname);
   const sessionId =
     params.get("session") ?? (hostedPath ? safeDecode(hostedPath[1]!) : null);
@@ -29,6 +36,7 @@ export function parseRoute(location: {
     const anchor = location.hash?.replace(/^#/, "") || null;
     return {
       view: "session",
+      ...(workspace ? { workspaceId: workspace } : {}),
       sessionId,
       source,
       event: params.get("event") ?? anchorEvent(anchor),
@@ -64,8 +72,10 @@ export function sessionHref(
   source: string,
   event?: string | null,
   from?: string | null,
+  workspaceId?: string,
 ) {
   const params = new URLSearchParams({ session: sessionId, source });
+  if (workspaceId) params.set("workspace", workspaceId);
   if (event) params.set("event", event);
   if (from) params.set("from", from);
   return `${base()}?${params}`;
@@ -139,4 +149,8 @@ export function onLinkClick(event: React.MouseEvent<HTMLAnchorElement>) {
     return;
   event.preventDefault();
   navigate(event.currentTarget.getAttribute("href")!);
+}
+
+export function graphHref(workspaceId: string, focus?: { sessionId: string; source: string }) {
+  return `${base()}?${new URLSearchParams({ view: "graph", workspace: workspaceId, ...(focus ?? {}) })}`;
 }

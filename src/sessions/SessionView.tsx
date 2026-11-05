@@ -1,6 +1,6 @@
 // Session detail: overview (who, where, when, how long), subagent links,
 // resume command, and the full transcript, as on the hosted session page.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -9,7 +9,7 @@ import {
   PanelRight,
   Play,
 } from "lucide-react";
-import { Button, buttonClass, Skeleton } from "../shell/ui";
+import { Button, ButtonLink, buttonClass, Skeleton } from "../shell/ui";
 import styles from "./sessions.module.css";
 import { HarnessIcon } from "./harness-icon";
 import { WorkspaceViewSlot } from "../shell/view-slots";
@@ -45,12 +45,19 @@ import {
   withRecordedFileEdits,
 } from "./transcript-extras";
 import { formatSessionDuration } from "./model/session-timing";
-import { backHref, onLinkClick, sessionHref } from "./route";
+import { backHref, graphHref, onLinkClick, sessionHref } from "./route";
 import { Transcript } from "./Transcript";
+import { sessionVisualizationsEnabled } from "../app-path";
+import { TraceWaterfall } from "./visualizations/trace-waterfall";
+import { SessionDecisionTree } from "./visualizations/decision-tree";
+import { ToggleGroup, ToggleGroupItem } from "./visualizations/view-toggle";
+import { ChartGantt, Network } from "lucide-react";
 
 type Loaded = {
   events: Record<string, unknown>[];
   turns: Record<string, unknown>[];
+  turnsNextCursor: string | null;
+  turnsError: string | null;
   members: Member[];
   nextCursor: string | null;
   timing: SessionTiming | null;
@@ -78,6 +85,10 @@ export function SessionView({
   from?: string | null;
   onSignedOut?: () => void;
 }) {
+  const visualizations = sessionVisualizationsEnabled();
+  const [selectedView, setSelectedView] = useState<"conversation" | "timeline" | "decisions">(() => visualizations && !event ? "timeline" : "conversation");
+  // Existing citations always open the transcript, even if a visualization was selected.
+  const visibleView = !visualizations || event ? "conversation" : selectedView;
   const [attempt, setAttempt] = useState(0);
   const [more, setMore] = useState(false);
   // A load-more failure belongs to the request key it was raised for.
@@ -92,9 +103,13 @@ export function SessionView({
   const [appended, setAppended] = useState<{
     key: string;
     events: Record<string, unknown>[];
+    turns: Record<string, unknown>[];
     nextCursor: string | null;
+    turnsNextCursor: string | null;
+    turnsError: string | null;
   } | null>(null);
   const key = JSON.stringify([workspaceId, sessionId, source, event, attempt]);
+  const visitedPairs = useMemo(() => ({ key, values: new Set<string>() }), [key]);
   useEffect(() => () => moreRequest.current?.abort(), [key]);
   const loaded = useLoad<Loaded>(key, async (signal) => {
     const session = { sessionId, source };
@@ -108,14 +123,24 @@ export function SessionView({
     // every page of them (bounded) before rendering.
     const allTurns = async () => {
       const rows: Record<string, unknown>[] = [];
-      let cursor: string | null = null;
-      for (let page = 0; page < MAX_TURN_PAGES; page += 1) {
-        const next = await sessionTurns(workspaceId, session, signal, cursor);
-        rows.push(...next.turns);
-        cursor = next.nextCursor;
-        if (!cursor) break;
+      const seen = new Set<string>();
+      let cursor: string | null = null, error: string | null = null;
+      // Visualization views stream the remaining pages progressively.
+      for (let page = 0; page < (visualizations ? 1 : MAX_TURN_PAGES); page += 1) {
+        try {
+          const next = await sessionTurns(workspaceId, session, signal, cursor);
+          rows.push(...next.turns);
+          cursor = next.nextCursor;
+          if (!cursor) break;
+          if (seen.has(cursor)) { error = "History pagination did not advance."; break; }
+          seen.add(cursor);
+        } catch (reason) {
+          if (signal.aborted || reason instanceof SignedOut) throw reason;
+          error = "Some recorded messages could not be loaded.";
+          break;
+        }
       }
-      return rows;
+      return { turns: rows, nextCursor: cursor, error };
     };
     // A cited event can sit past the first page; keep reading until it loads.
     const eventsThrough = async () => {
@@ -138,7 +163,7 @@ export function SessionView({
     };
     const [page, turns, timing, catalog] = await Promise.all([
       eventsThrough(),
-      optional(allTurns(), []),
+      allTurns(),
       optional(sessionTiming(workspaceId, session, signal), null),
       optional(sessionCatalog(workspaceId, session, signal), null),
     ]);
@@ -146,7 +171,9 @@ export function SessionView({
       events: page.events,
       members: page.members,
       nextCursor: page.nextCursor,
-      turns,
+      turns: turns.turns,
+      turnsNextCursor: turns.nextCursor,
+      turnsError: turns.error,
       timing,
       catalog,
     };
@@ -165,7 +192,10 @@ export function SessionView({
           ]),
         ).values(),
       ],
+      turns: [...new Map([...loaded.data.turns, ...extra.turns].map((row) => [String(row.id), row])).values()],
       nextCursor: extra.nextCursor,
+      turnsNextCursor: extra.turnsNextCursor,
+      turnsError: extra.turnsError,
     };
   }, [loaded.data, extra]);
   const moreError = moreFailure?.key === key ? moreFailure.error : null;
@@ -186,6 +216,12 @@ export function SessionView({
       ),
     [replay],
   );
+  function openTranscript(anchor: string) {
+    setSelectedView("conversation");
+    // The existing citation handler waits for the transcript and opens its
+    // disclosure before scrolling, including when the route reloads history.
+    window.location.hash = anchor;
+  }
   const counts = useMemo(() => transcriptCounts(cells), [cells]);
 
   // Citation deep links: scroll to the cited event once the session loads
@@ -231,36 +267,43 @@ export function SessionView({
     }
   }, [initial, event]);
 
-  async function loadMore() {
-    if (!data?.nextCursor) return;
-    moreRequest.current?.abort();
+  const loadMore = useCallback(async () => {
+    if (!data || (!data.nextCursor && !data.turnsNextCursor && !data.turnsError) || moreRequest.current) return;
     const controller = new AbortController();
     moreRequest.current = controller;
     setMore(true);
     setMoreFailure(null);
+    const pair = JSON.stringify([data.nextCursor, data.turnsNextCursor]);
     try {
-      const page = await sessionEvents(
-        workspaceId,
-        { sessionId, source },
-        data.nextCursor,
-        controller.signal,
-      );
+      const [eventPage, turnPage] = await Promise.allSettled([
+        data.nextCursor ? sessionEvents(workspaceId, { sessionId, source }, data.nextCursor, controller.signal) : Promise.resolve(null),
+        data.turnsNextCursor || data.turnsError ? sessionTurns(workspaceId, { sessionId, source }, controller.signal, data.turnsNextCursor) : Promise.resolve(null),
+      ]);
       if (controller.signal.aborted) return;
-      setAppended({
-        key,
-        events: [...(extra?.events ?? []), ...page.events],
-        nextCursor: page.nextCursor,
-      });
+      for (const result of [eventPage, turnPage]) if (result.status === "rejected" && result.reason instanceof SignedOut) throw result.reason;
+      const events = eventPage.status === "fulfilled" ? eventPage.value : null;
+      const turns = turnPage.status === "fulfilled" ? turnPage.value : null;
+      const nextCursor = events ? events.nextCursor : data.nextCursor;
+      const turnsNextCursor = turns ? turns.nextCursor : data.turnsNextCursor;
+      setAppended({ key, events: [...(extra?.events ?? []), ...(events?.events ?? [])], turns: [...(extra?.turns ?? []), ...(turns?.turns ?? [])], nextCursor, turnsNextCursor,
+        turnsError: turnPage.status === "rejected" ? "Some recorded messages could not be loaded." : turns ? null : data.turnsError });
+      if (eventPage.status === "rejected") throw eventPage.reason;
+      if (turnPage.status === "rejected") throw turnPage.reason;
+      visitedPairs.values.add(pair);
+      if ((nextCursor || turnsNextCursor) && visitedPairs.values.has(JSON.stringify([nextCursor, turnsNextCursor]))) throw new Error("History pagination did not advance.");
     } catch (reason) {
-      if (!controller.signal.aborted)
-        setMoreFailure({ key, error: reason as Error });
+      if (!controller.signal.aborted) setMoreFailure({ key, error: reason as Error });
     } finally {
-      if (moreRequest.current === controller) {
-        moreRequest.current = null;
-        setMore(false);
-      }
+      if (moreRequest.current === controller) { moreRequest.current = null; setMore(false); }
     }
-  }
+  }, [data, extra, key, sessionId, source, workspaceId, visitedPairs]);
+  const historyPending = Boolean(data?.nextCursor || data?.turnsNextCursor);
+  useEffect(() => {
+    if (visibleView === "conversation" || !historyPending || more || moreError || data?.turnsError || visitedPairs.values.size >= MAX_TURN_PAGES) return;
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled) void loadMore(); });
+    return () => { cancelled = true; };
+  }, [visibleView, historyPending, more, moreError, data?.turnsError, visitedPairs, loadMore]);
 
   function jumpToNextActivity() {
     // The shell's content region scrolls, below the topbar.
@@ -485,6 +528,7 @@ export function SessionView({
                 </div>
               </div>
               <div className="flex items-start gap-2">
+                {visualizations && <ButtonLink variant="ghost" size="sm" href={graphHref(workspaceId, { sessionId, source })} onClick={onLinkClick}><Network data-icon="inline-start" /> Work graph</ButtonLink>}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -499,6 +543,17 @@ export function SessionView({
               </div>
             </div>
           </header>
+          {visualizations && <div className="mx-5 my-3 md:mx-9"><ToggleGroup value={visibleView} onValueChange={(value) => {
+            if (value !== "conversation" && event) {
+              window.history.replaceState(null, "", sessionHref(sessionId, source, null, from, workspaceId));
+              window.dispatchEvent(new PopStateEvent("popstate"));
+            }
+            setSelectedView(value as typeof selectedView);
+          }} aria-label="Session view">
+            <ToggleGroupItem value="timeline"><ChartGantt data-icon="inline-start" /> Timeline</ToggleGroupItem>
+            <ToggleGroupItem value="decisions"><GitBranch data-icon="inline-start" /> Decision tree</ToggleGroupItem>
+            <ToggleGroupItem value="conversation"><MessageSquare data-icon="inline-start" /> Conversation</ToggleGroupItem>
+          </ToggleGroup></div>}
           <div className="flex min-w-0 flex-col xl:flex-row">
             <aside
               id="session-details"
@@ -515,7 +570,7 @@ export function SessionView({
                   {data.catalog.parents.map((edge) => (
                     <a
                       key={`p:${edge.parentSessionId}`}
-                      href={sessionHref(edge.parentSessionId, source)}
+                      href={sessionHref(edge.parentSessionId, source, null, null, workspaceId)}
                       onClick={onLinkClick}
                     >
                       ↑ Parent session
@@ -528,7 +583,7 @@ export function SessionView({
                         {data.catalog.children.map((edge) => (
                           <li key={`c:${edge.childSessionId}`}>
                             <a
-                              href={sessionHref(edge.childSessionId, source)}
+                              href={sessionHref(edge.childSessionId, source, null, null, workspaceId)}
                               onClick={onLinkClick}
                             >
                               {edge.childAgentName ||
@@ -555,6 +610,10 @@ export function SessionView({
                 </section>
               ) : null}
             </aside>
+            {visibleView !== "conversation" ? <section className="min-w-0 flex-1 px-5 py-5 md:px-9" aria-label={visibleView === "timeline" ? "Timeline" : "Decision tree"}>
+              {visibleView === "timeline" ? <TraceWaterfall historyLoading={historyPending && !moreError && !data.turnsError && visitedPairs.values.size < MAX_TURN_PAGES} events={replay} transcript={cells} source={source} owners={data.members} partial={Boolean(historyPending || data.turnsError || moreError)} onOpenTranscript={openTranscript} /> : <SessionDecisionTree events={replay} transcript={cells} source={source} owners={data.members} partial={Boolean(historyPending || data.turnsError || moreError)} onOpenTranscript={openTranscript} />}
+              {(historyPending || data.turnsError) && <Button variant="ghost" size="sm" onClick={() => void loadMore()} disabled={more}>{more ? "Loading…" : moreError || data.turnsError ? "Retry loading history" : "Load later events"}</Button>}
+            </section> : (
             <section
               aria-label="Conversation"
               data-session-messages
@@ -588,7 +647,7 @@ export function SessionView({
                   onCite={(anchor) => void cite(anchor)}
                 />
                 )}
-                {data.nextCursor && (
+                {(historyPending || data.turnsError) && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -596,11 +655,11 @@ export function SessionView({
                     onClick={() => void loadMore()}
                     disabled={more}
                   >
-                    {more ? "Loading…" : "Load later events"}
+                    {more ? "Loading…" : moreError || data.turnsError ? "Retry loading history" : "Load later events"}
                   </Button>
                 )}
               </div>
-            </section>
+            </section>)}
           </div>
         </>
       )}

@@ -18,6 +18,7 @@ export type ReplayEvent = {
   content: string | null;
   contentTruncated: boolean;
   taskTitle: string | null;
+  taskStatus?: string | null;
   projectPath: string | null;
   nativeResumeId: string | null;
   toolUseId: string | null;
@@ -73,6 +74,7 @@ export function toReplayEvent(value: unknown): ReplayEvent | null {
     content: str(value.content),
     contentTruncated: value.contentTruncated === true,
     taskTitle: str(value.taskTitle),
+    taskStatus: str(value.taskStatus),
     projectPath:
       filesystemPath(value.projectPath) ?? filesystemPath(value.projectId),
     nativeResumeId: null,

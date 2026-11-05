@@ -88,3 +88,11 @@ own origin when that origin qualifies; a dashboard served over plain `http`
 Desktop links here.
 
 `npm run check` runs lint, tests and the production build. Apache-2.0.
+
+### Session visualizations
+
+The Timeline, Decision tree and Work graph views are ported from Cloud. They are off by default. Set `DASHBOARD_SESSION_VISUALIZATIONS_ENABLED=true` in the container to emit the strict boolean `sessionVisualizations` in the existing runtime config. Static-host configurations can supply that boolean directly. Missing, false or malformed values retain Conversation and never mount graph reads.
+
+Work graph requires the relaycontrol catalog identity contract (`sessionId`, `source`, `workspaceId`, `found`). Every request uses the existing `/cloud/api` cookie and workspace routes; the dashboard does not contact History directly. Explicit workspace links must match the signed-in workspace. Links to another workspace show a mismatch message without issuing session reads; relaycontrol has no workspace-switch endpoint.
+
+Discovery uses exact recorded catalog/replay identities, at most 80 additional related sessions, four concurrent sessions and ten event/turn pages per session. It does not infer causality from a shared PR or nearby timestamps. Failed/partial evidence is visible and can be retried. Hosted Cloud SQL-only PR attribution is not invented when the server does not supply it.

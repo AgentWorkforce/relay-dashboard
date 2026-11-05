@@ -1,3 +1,4 @@
+import { sessionVisualizationsEnabled } from "../app-path";
 // Sessions list, transcript search, and team activity, following the hosted
 // dashboard: free text goes to RelayHistory; `harness:`, `project:`, `is:`,
 // `person:`, `updated:`, and `created:` tokens filter rows (hosted applies
@@ -19,6 +20,7 @@ import {
   CirclePause,
   FolderGit2,
   Inbox,
+  Network,
   RefreshCw,
   Search,
   Terminal,
@@ -63,6 +65,7 @@ import {
 } from "./query";
 import {
   citationHref,
+  graphHref,
   listHref,
   listState,
   onLinkClick,
@@ -195,6 +198,7 @@ export function SessionsPage({
           className="flex items-center gap-1"
           aria-label="Sessions views"
         >
+          {sessionVisualizationsEnabled() && <a href={graphHref(workspaceId)} onClick={onLinkClick} className={buttonClass("ghost", "sm")}><Network data-icon="inline-start" /> Work graph</a>}
           {(["sessions", "search"] as const).map((name) => (
             <a
               key={name}
