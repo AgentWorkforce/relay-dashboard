@@ -15,6 +15,19 @@ it("uses recorded options, consequences and an exact recorded choice", () => {
   ]);
 });
 
+it("uses only the matching identified question copy when native calls share a message", () => {
+  const command = event("command", 1, "tool_call", { messageId: "shared", toolUseId: "command", toolName: "exec_command" });
+  const question = event("question", 1, "tool_call", { messageId: "shared", toolUseId: "choice", toolName: "functions.request_user_input" });
+  const anonymous = event("anonymous", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'functions.request_user_input {"questions":[{"id":"wrong","question":"Unattributed question?","options":["Yes","No"]}]}' });
+  const questionCopy = event("question-copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", toolUseId: "choice", content: ask.content });
+  const commandCopy = event("command-copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", toolUseId: "command", content: 'exec_command {"cmd":"npm test"}' });
+  const cards = buildDecisionTree([request, questionCopy, commandCopy, anonymous, command, question, answer]).cards;
+  const choices = cards.filter((card) => card.kind === "choice");
+  expect(choices.map((card) => card.question)).toEqual(["How should we ship?"]);
+  expect(choices[0]?.branches).toMatchObject([{ label: "Wait for tests", chosen: true }, { label: "Ship now", chosen: false }]);
+  expect(cards.filter((card) => card.kind === "activity").flatMap((card) => card.branches.flatMap((branch) => branch.effects))).toContain("Run tests");
+});
+
 it("does not infer a user's choice from an unstructured result", () => {
   const card = buildDecisionTree([request, ask, { ...answer, content: "The agent recommends Wait for tests" }]).cards[0]!;
   expect(card.branches.some((branch) => branch.chosen)).toBe(false);

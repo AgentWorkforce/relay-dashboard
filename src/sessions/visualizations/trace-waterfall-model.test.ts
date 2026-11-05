@@ -96,6 +96,28 @@ describe("recorded trace waterfall", () => {
     },
   );
 
+  it.each(["content", "toolCalls", "top-level"].flatMap((identity) => [true, false].map((copyFirst) => ({ identity, copyFirst }))))(
+    "enriches parallel names-only native calls from their own identified copies: %j",
+    ({ identity, copyFirst }) => {
+      const copy = (id: string, cmd: string) => event(`copy-${id}`, 1, "assistant", {
+        actorRole: "assistant", messageId: "shared", content: `exec_command ${JSON.stringify({ cmd, ...(identity === "content" ? { call_id: id } : {}) })}`,
+        ...(identity === "toolCalls" ? { toolCalls: [{ id }] } : identity === "top-level" ? { toolUseId: id } : {}),
+      });
+      const copies = [copy("two", "npm run build"), copy("one", "npm test")];
+      const natives = ["one", "two"].map((id) => event(id, 1, "tool_call", { toolUseId: id, messageId: "shared", toolName: "exec_command" }));
+      const data = buildTraceWaterfall([
+        event("request", 0, "prompt", { content: "Run checks" }),
+        ...(copyFirst ? [...copies, ...natives] : [...natives, ...copies]),
+        event("first-result", 2, "tool_result", { toolUseId: "one", content: "test output" }),
+        event("second-result", 3, "tool_result", { toolUseId: "two", content: "build failed", toolStatus: "failed" }),
+      ]);
+      const tools = data.exchanges[0]!.steps.filter((step) => step.kind === "tool");
+      expect(tools).toHaveLength(2);
+      expect(tools[0]).toMatchObject({ id: "one", label: "Run tests", toolCall: { args: { cmd: "npm test" } }, output: "test output", end: Date.parse(at(2)), failed: false });
+      expect(tools[1]).toMatchObject({ id: "two", toolCall: { args: { cmd: "npm run build" } }, output: "build failed", end: Date.parse(at(3)), failed: true });
+    },
+  );
+
   it("removes every display copy of one native invocation", () => {
     const data = buildTraceWaterfall([
       event("copy-a", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),

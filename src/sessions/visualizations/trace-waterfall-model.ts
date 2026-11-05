@@ -1,4 +1,4 @@
-// Ported from Cloud session visualizations, with native/display-copy repair ca5286325.
+// Ported from Cloud session visualizations, with native/display-copy repairs through 4f08c6613.
 import { isNativeToolUseEvent, isToolActivity, isToolUseEvent, pairToolSteps, toolCorrelationId } from "../model/activity-summary";
 import { isRecord, messageRole, type ReplayEvent } from "../model/replay-model";
 import { isCodexAutoReview } from "./session-auto-review";
@@ -135,7 +135,19 @@ export function buildTraceWaterfall(events: ReplayEvent[], transcript?: Transcri
   // IDs on a display copy identify the native invocation they mirror. A
   // different ID still represents a distinct serialized assistant tool call.
   const displayCopies = events.filter((event) => event.messageId && !isNativeToolUseEvent(event) && (!toolCorrelationId(event) || isIdentifiedCopy(event)) && event.actorRole === "assistant" && isToolUseEvent(event) && nativeMessageIds.has(event.messageId));
-  const transcriptCopies = new Map(displayCopies.map((event) => [event.messageId, event]));
+  const transcriptCopies = new Map<string, ReplayEvent>();
+  const identifiedCopies = new Map<string, Map<string, ReplayEvent>>();
+  for (const copy of displayCopies) {
+    const messageId = copy.messageId!;
+    const id = toolCorrelationId(copy);
+    if (id) {
+      const copies = identifiedCopies.get(messageId) ?? new Map<string, ReplayEvent>();
+      copies.set(id, copy);
+      identifiedCopies.set(messageId, copies);
+    } else {
+      transcriptCopies.set(messageId, copy);
+    }
+  }
   const copyEvents = new Set(displayCopies);
   const sorted = events.filter((event) => Number.isFinite(Date.parse(event.ts)) && !copyEvents.has(event))
     .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
@@ -190,10 +202,13 @@ export function buildTraceWaterfall(events: ReplayEvent[], transcript?: Transcri
     if (isToolUseEvent(event)) {
       const result = paired.get(event);
       const end = result ? Date.parse(result.ts) : NaN;
-      // A message can contain several calls. Its display copy cannot identify
-      // which call owns the arguments, so retain each native call in that case.
-      const displayEvent = event.messageId && nativeMessageCounts.get(event.messageId) === 1
-        ? transcriptCopies.get(event.messageId) ?? event : event;
+      // Identified copies enrich only their matching native invocation. An
+      // anonymous copy is safe only when the message contains a single call.
+      const id = toolCorrelationId(event);
+      const identifiedCopy = event.messageId && id ? identifiedCopies.get(event.messageId)?.get(id) : undefined;
+      const anonymousCopy = event.messageId && nativeMessageCounts.get(event.messageId) === 1
+        ? transcriptCopies.get(event.messageId) : undefined;
+      const displayEvent = identifiedCopy ?? anonymousCopy ?? event;
       const cells = toolCells({ call: displayEvent, result: result ?? null });
       const failed = [event.toolStatus, result?.toolStatus].some((status) => Boolean(status && /fail|error/i.test(status))) || cells.some((cell) => "failed" in cell && cell.failed);
       const ownAnchor = `cell-${event.eventId}:0`;
