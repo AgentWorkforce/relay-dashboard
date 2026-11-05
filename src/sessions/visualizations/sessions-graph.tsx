@@ -1,3 +1,4 @@
+// Graph label-spacing repair ported from Cloud fa7fec58a.
 // Ported from Cloud session visualizations, head55bfc58fb.
 "use client";
 
@@ -1340,7 +1341,13 @@ export function SessionsGraph({
                         const x = sameColumn
                           ? from.x + GRAPH_CARD_WIDTH + 7
                           : (from.x + to.x + GRAPH_CARD_WIDTH) / 2 - 26;
-                        const y = (from.y + to.y + GRAPH_CARD_HEIGHT) / 2 - 10;
+                        const sharedRelationship = !sameColumn && focusedGroup.edges.some(
+                          (edge) => (edge.from === handoff.from && edge.to === handoff.to)
+                            || (edge.from === handoff.to && edge.to === handoff.from),
+                        );
+                        // Relationship text sits above this shared midpoint;
+                        // keep the interactive message badge below it.
+                        const y = (from.y + to.y + GRAPH_CARD_HEIGHT) / 2 + (sharedRelationship ? 10 : -10);
                         return (
                           <button
                             type="button"
