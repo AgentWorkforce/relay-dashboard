@@ -1,4 +1,4 @@
-// Ported from Cloud session visualizations, with native/display-copy repairs through 4f08c6613.
+// Ported from Cloud session visualizations, including anonymous-call repair 91debaf40.
 import { isNativeToolUseEvent, isToolActivity, isToolUseEvent, pairToolSteps, toolCorrelationId } from "../model/activity-summary";
 import { isRecord, messageRole, type ReplayEvent } from "../model/replay-model";
 import { isCodexAutoReview } from "./session-auto-review";
@@ -109,12 +109,27 @@ function toolLabel(call: ReplayEvent, cells: ReturnType<typeof toolCells>): stri
   }
 }
 
+/** Compare recorded JSON without depending on object-key order. */
+function sameRecordedValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b))
+    return a.length === b.length && a.every((value, index) => sameRecordedValue(value, b[index]));
+  if (!isRecord(a) || !isRecord(b)) return false;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) =>
+    Object.prototype.hasOwnProperty.call(b, key) && sameRecordedValue(a[key], b[key]));
+}
+
 /** The waterfall only uses recorded instants. A result closes a tool interval;
  * a lone call remains a point even when later events exist. */
 export function buildTraceWaterfall(events: ReplayEvent[], transcript?: TranscriptCell[]): TraceWaterfallData {
   const nativeToolIds = new Map<string, Set<string>>();
+  const nativesByMessage = new Map<string, ReplayEvent[]>();
   for (const event of events) {
     if (!event.messageId || !isNativeToolUseEvent(event)) continue;
+    const natives = nativesByMessage.get(event.messageId) ?? [];
+    natives.push(event);
+    nativesByMessage.set(event.messageId, natives);
     const id = toolCorrelationId(event);
     if (!id) continue;
     const ids = nativeToolIds.get(event.messageId) ?? new Set<string>();
@@ -126,29 +141,54 @@ export function buildTraceWaterfall(events: ReplayEvent[], transcript?: Transcri
     const id = toolCorrelationId(event);
     return id !== null && nativeToolIds.get(event.messageId)?.has(id) === true;
   };
-  const nativeMessageCounts = new Map<string, number>();
-  for (const event of events) {
-    if (event.messageId && isToolUseEvent(event) && (isNativeToolUseEvent(event) || toolCorrelationId(event)) && !isIdentifiedCopy(event))
-      nativeMessageCounts.set(event.messageId, (nativeMessageCounts.get(event.messageId) ?? 0) + 1);
-  }
-  const nativeMessageIds = new Set(nativeMessageCounts.keys());
-  // IDs on a display copy identify the native invocation they mirror. A
-  // different ID still represents a distinct serialized assistant tool call.
-  const displayCopies = events.filter((event) => event.messageId && !isNativeToolUseEvent(event) && (!toolCorrelationId(event) || isIdentifiedCopy(event)) && event.actorRole === "assistant" && isToolUseEvent(event) && nativeMessageIds.has(event.messageId));
-  const transcriptCopies = new Map<string, ReplayEvent>();
+  // A matching ID establishes copy identity, including repeated copies.
+  const displayCopies = events.filter((event) => isIdentifiedCopy(event) && isToolUseEvent(event));
   const identifiedCopies = new Map<string, Map<string, ReplayEvent>>();
   for (const copy of displayCopies) {
-    const messageId = copy.messageId!;
-    const id = toolCorrelationId(copy);
-    if (id) {
-      const copies = identifiedCopies.get(messageId) ?? new Map<string, ReplayEvent>();
-      copies.set(id, copy);
-      identifiedCopies.set(messageId, copies);
-    } else {
-      transcriptCopies.set(messageId, copy);
+    const copies = identifiedCopies.get(copy.messageId!) ?? new Map<string, ReplayEvent>();
+    copies.set(toolCorrelationId(copy)!, copy);
+    identifiedCopies.set(copy.messageId!, copies);
+  }
+  const identifiedCopyFor = (event: ReplayEvent): ReplayEvent | undefined => {
+    const id = toolCorrelationId(event);
+    return event.messageId && id ? identifiedCopies.get(event.messageId)?.get(id) : undefined;
+  };
+  const anonymousByMessage = new Map<string, ReplayEvent[]>();
+  for (const event of events) {
+    if (!event.messageId || isNativeToolUseEvent(event) || toolCorrelationId(event) || event.actorRole !== "assistant" || !isToolUseEvent(event)) continue;
+    const calls = anonymousByMessage.get(event.messageId) ?? [];
+    calls.push(event);
+    anonymousByMessage.set(event.messageId, calls);
+  }
+  const anonymousCopies = new Map<ReplayEvent, ReplayEvent>();
+  const copyEvents = new Set(displayCopies);
+  for (const [messageId, natives] of nativesByMessage) {
+    const anonymous = anonymousByMessage.get(messageId) ?? [];
+    const profiles = new Map(natives.map((native) => {
+      const call = parseToolCall(native);
+      const identified = identifiedCopyFor(native);
+      return [native, !call.args && !call.target && identified ? parseToolCall(identified) : call];
+    }));
+    const matches = new Map(anonymous.map((copy) => {
+      const call = parseToolCall(copy);
+      const name = call.name.replace(/^functions\./, "");
+      return [copy, natives.filter((native) => {
+        const recorded = profiles.get(native)!;
+        if (!name || name !== recorded.name.replace(/^functions\./, "")) return false;
+        if (recorded.args) return sameRecordedValue(recorded.args, call.args);
+        return !recorded.target || recorded.target === call.target;
+      })];
+    }));
+    for (const native of natives) {
+      const candidates = anonymous.filter((copy) => matches.get(copy)?.length === 1 && matches.get(copy)?.[0] === native);
+      const recorded = profiles.get(native)!;
+      // A name-only native call needs one unambiguous copy. With recorded
+      // arguments, consume at most one exact copy and retain unproven repeats.
+      if (!candidates.length || (!recorded.args && !recorded.target && candidates.length !== 1)) continue;
+      anonymousCopies.set(native, candidates[0]!);
+      copyEvents.add(candidates[0]!);
     }
   }
-  const copyEvents = new Set(displayCopies);
   const sorted = events.filter((event) => Number.isFinite(Date.parse(event.ts)) && !copyEvents.has(event))
     .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
   const transcriptCells = transcript ?? buildTranscript(sorted);
@@ -202,13 +242,9 @@ export function buildTraceWaterfall(events: ReplayEvent[], transcript?: Transcri
     if (isToolUseEvent(event)) {
       const result = paired.get(event);
       const end = result ? Date.parse(result.ts) : NaN;
-      // Identified copies enrich only their matching native invocation. An
-      // anonymous copy is safe only when the message contains a single call.
-      const id = toolCorrelationId(event);
-      const identifiedCopy = event.messageId && id ? identifiedCopies.get(event.messageId)?.get(id) : undefined;
-      const anonymousCopy = event.messageId && nativeMessageCounts.get(event.messageId) === 1
-        ? transcriptCopies.get(event.messageId) : undefined;
-      const displayEvent = identifiedCopy ?? anonymousCopy ?? event;
+      // Copy selection is per invocation; unmatched anonymous calls stay
+      // recorded activity instead of being discarded by message identity.
+      const displayEvent = identifiedCopyFor(event) ?? anonymousCopies.get(event) ?? event;
       const cells = toolCells({ call: displayEvent, result: result ?? null });
       const failed = [event.toolStatus, result?.toolStatus].some((status) => Boolean(status && /fail|error/i.test(status))) || cells.some((cell) => "failed" in cell && cell.failed);
       const ownAnchor = `cell-${event.eventId}:0`;

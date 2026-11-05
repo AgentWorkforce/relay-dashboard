@@ -23,9 +23,22 @@ it("uses only the matching identified question copy when native calls share a me
   const commandCopy = event("command-copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", toolUseId: "command", content: 'exec_command {"cmd":"npm test"}' });
   const cards = buildDecisionTree([request, questionCopy, commandCopy, anonymous, command, question, answer]).cards;
   const choices = cards.filter((card) => card.kind === "choice");
-  expect(choices.map((card) => card.question)).toEqual(["How should we ship?"]);
-  expect(choices[0]?.branches).toMatchObject([{ label: "Wait for tests", chosen: true }, { label: "Ship now", chosen: false }]);
+  expect(choices.map((card) => [card.id, card.question])).toEqual([["anonymous:0", "Unattributed question?"], ["question:0", "How should we ship?"]]);
+  expect(choices[0]?.branches.every((branch) => !branch.chosen)).toBe(true);
+  expect(choices[1]?.branches).toMatchObject([{ label: "Wait for tests", chosen: true }, { label: "Ship now", chosen: false }]);
   expect(cards.filter((card) => card.kind === "activity").flatMap((card) => card.branches.flatMap((branch) => branch.effects))).toContain("Run tests");
+});
+
+it("keeps a distinct anonymous command while showing one matched native question", () => {
+  const command = event("distinct-command", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' });
+  const copy = event("question-copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: ask.content });
+  const question = event("native-question", 1, "tool_call", { messageId: "shared", toolUseId: "choice", toolName: "functions.request_user_input" });
+  const cards = buildDecisionTree([request, command, copy, question, answer]).cards;
+  const choices = cards.filter((card) => card.kind === "choice");
+  expect(choices.map((card) => [card.id, card.question])).toEqual([["native-question:0", "How should we ship?"]]);
+  expect(choices[0]?.branches[0]).toMatchObject({ label: "Wait for tests", chosen: true });
+  const activity = cards.filter((card) => card.kind === "activity").flatMap((card) => card.branches.flatMap((branch) => branch.steps));
+  expect(activity).toMatchObject([{ id: "distinct-command", label: "Run tests", output: null, end: null }]);
 });
 
 it("does not infer a user's choice from an unstructured result", () => {
@@ -72,9 +85,11 @@ it.each(["structured", "native-copy"])("retains recorded choices from %s questio
   expect(cards[0]!.branches[0]).toMatchObject({ chosen: true, steps: [expect.objectContaining({ id: "native" })] });
 });
 
- it("does not substitute one message-level question into several native calls", () => {
-  const copy = event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'functions.request_user_input {"questions":[{"question":"Which release?","options":["Stable","Canary"]}]}' });
+ it("retains an unmatched question without substituting it into native calls", () => {
+  const text = 'functions.request_user_input {"questions":[{"id":"release","question":"Which release?","options":["Stable","Canary"]}]}';
+  const copy = event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: text });
   const command = event("command", 1, "tool_call", { messageId: "shared", toolUseId: "command", content: 'exec_command {"cmd":"npm test"}' });
-  const question = event("question", 1, "tool_call", { messageId: "shared", toolUseId: "question", content: 'functions.request_user_input {"questions":[{"question":"How should we ship?","options":["Wait","Ship"]}]}' });
-  expect(buildDecisionTree([request, copy, command, question]).cards.filter(card => card.kind === "choice").map(card => card.question)).toEqual(["How should we ship?"]);
+  const question = event("question", 1, "tool_call", { messageId: "shared", toolUseId: "question", content: ask.content });
+  const cards = buildDecisionTree([request, copy, command, question]).cards;
+  expect(cards.filter((card) => card.kind === "choice").map((card) => [card.id, card.question])).toEqual([["copy:0", "Which release?"], ["question:0", "How should we ship?"]]);
 });

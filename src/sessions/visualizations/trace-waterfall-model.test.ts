@@ -118,14 +118,29 @@ describe("recorded trace waterfall", () => {
     },
   );
 
-  it("removes every display copy of one native invocation", () => {
+  it.each([false, true])("retains a distinct anonymous command beside a native question (native arguments: %s)", (nativeArguments) => {
+    const question = 'functions.request_user_input {"questions":[{"id":"ship","question":"Ship now?","options":["Wait","Ship"]}]}';
+    const data = buildTraceWaterfall([
+      event("request", 0, "prompt", { content: "Run checks and ask" }),
+      event("distinct-command", 1, "assistant", { actorRole: "assistant", messageId: "mixed", content: 'exec_command {"cmd":"npm test"}' }),
+      event("question-copy", 1, "assistant", { actorRole: "assistant", messageId: "mixed", content: question }),
+      event("native-question", 1, "tool_call", { messageId: "mixed", toolUseId: "question", toolName: "functions.request_user_input", ...(nativeArguments ? { content: question } : {}) }),
+      event("answer", 3, "tool_result", { toolUseId: "question", content: '{"answers":{"ship":{"answers":["Wait"]}}}' }),
+    ]);
+    const tools = data.exchanges[0]!.steps.filter((step) => step.kind === "tool");
+    expect(tools.map((step) => step.id)).toEqual(["distinct-command", "native-question"]);
+    expect(tools[0]).toMatchObject({ label: "Run tests", toolCall: { args: { cmd: "npm test" } }, end: null, output: null });
+    expect(tools[1]).toMatchObject({ toolCall: { args: { questions: [{ question: "Ship now?" }] } }, end: Date.parse(at(3)) });
+  });
+
+  it.each([false, true])("consumes one anonymous copy and removes only proven repeats (identified repeat: %s)", (identifiedRepeat) => {
     const data = buildTraceWaterfall([
       event("copy-a", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),
       event("native", 1, "tool_call", { messageId: "shared", toolUseId: "check", content: 'exec_command {"cmd":"npm test"}' }),
-      event("copy-b", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),
+      event("copy-b", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}', ...(identifiedRepeat ? { toolUseId: "check" } : {}) }),
       event("result", 3, "tool_result", { toolUseId: "check", content: "test output" }),
     ]);
-    expect(data.exchanges[0]!.steps.filter((step) => step.kind === "tool").map((step) => [step.id, step.output])).toEqual([["native", "test output"]]);
+    expect(data.exchanges[0]!.steps.filter((step) => step.kind === "tool").map((step) => [step.id, step.output])).toEqual(identifiedRepeat ? [["native", "test output"]] : [["native", "test output"], ["copy-b", null]]);
   });
 
   it("keeps each native call's arguments and result when several calls share a message", () => {
@@ -138,9 +153,10 @@ describe("recorded trace waterfall", () => {
       event("second-result", 3, "tool_result", { toolUseId: "two", content: "build failed", toolStatus: "failed" }),
     ]);
     const tools = data.exchanges[0]!.steps.filter((step) => step.kind === "tool");
-    expect(tools).toHaveLength(2);
-    expect(tools[0]).toMatchObject({ id: "first", toolCall: { args: { cmd: "npm run lint" } }, output: "lint output", failed: false });
-    expect(tools[1]).toMatchObject({ id: "second", toolCall: { args: { cmd: "npm run build" } }, output: "build failed", failed: true });
+    expect(tools).toHaveLength(3);
+    expect(tools[0]).toMatchObject({ id: "copy", toolCall: { args: { cmd: "npm test" } }, output: null, end: null });
+    expect(tools[1]).toMatchObject({ id: "first", toolCall: { args: { cmd: "npm run lint" } }, output: "lint output", failed: false });
+    expect(tools[2]).toMatchObject({ id: "second", toolCall: { args: { cmd: "npm run build" } }, output: "build failed", failed: true });
   });
 
   it.each([
@@ -156,8 +172,42 @@ describe("recorded trace waterfall", () => {
       event("second", 1, "tool_call", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm run build"}', ...extra }),
     ]);
     const tools = data.exchanges[0]!.steps.filter((step) => step.kind === "tool");
-    expect(tools.map((step) => step.id)).toEqual(["first", "second"]);
-    expect(tools.map((step) => step.toolCall?.args?.cmd)).toEqual(["npm run lint", "npm run build"]);
+    expect(tools.map((step) => step.id)).toEqual(["copy", "first", "second"]);
+    expect(tools.map((step) => step.toolCall?.args?.cmd)).toEqual(["npm test", "npm run lint", "npm run build"]);
+  });
+
+  it.each([false, true])("matches nested arguments independently of key order but preserves array order (same array: %s)", (sameArray) => {
+    const data = buildTraceWaterfall([
+      event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: `exec_command ${JSON.stringify({ env: { B: "2", A: "1" }, flags: sameArray ? ["a", "b"] : ["b", "a"], cmd: "npm test" })}` }),
+      event("native", 1, "tool_call", { messageId: "shared", toolUseId: "run", content: 'exec_command {"cmd":"npm test","flags":["a","b"],"env":{"A":"1","B":"2"}}' }),
+    ]);
+    expect(data.exchanges[0]!.steps.map((step) => step.id)).toEqual(sameArray ? ["native"] : ["copy", "native"]);
+  });
+
+  it("keeps ambiguous anonymous arguments beside a name-only native call", () => {
+    const data = buildTraceWaterfall([
+      event("copy-one", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),
+      event("copy-two", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm run build"}' }),
+      event("native", 1, "tool_call", { messageId: "shared", toolUseId: "run", toolName: "exec_command" }),
+    ]);
+    expect(data.exchanges[0]!.steps.map((step) => step.id)).toEqual(["copy-one", "copy-two", "native"]);
+    expect(data.exchanges[0]!.steps[2]?.toolCall?.args).toBeNull();
+  });
+
+  it.each([false, true])("retains a copy that could belong to either native invocation (native arguments: %s)", (nativeArguments) => {
+    const data = buildTraceWaterfall([
+      event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),
+      ...["one", "two"].map((id) => event(id, 1, "tool_call", { messageId: "shared", toolUseId: id, toolName: "exec_command", ...(nativeArguments ? { content: 'exec_command {"cmd":"npm test"}' } : {}) })),
+    ]);
+    expect(data.exchanges[0]!.steps.map((step) => step.id)).toEqual(["copy", "one", "two"]);
+  });
+
+  it.each(["functions.exec_command", "other.exec_command"])("does not collapse unrelated tool namespaces: %s", (name) => {
+    const data = buildTraceWaterfall([
+      event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: `${name} {"cmd":"npm test"}` }),
+      event("native", 1, "tool_call", { messageId: "shared", toolUseId: "run", content: 'exec_command {"cmd":"npm test"}' }),
+    ]);
+    expect(data.exchanges[0]!.steps.map((step) => step.id)).toEqual(name === "functions.exec_command" ? ["native"] : ["copy", "native"]);
   });
 
   it("enriches a single typed native call without an ID from its display copy", () => {
