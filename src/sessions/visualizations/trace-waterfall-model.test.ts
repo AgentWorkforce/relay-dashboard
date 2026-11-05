@@ -76,6 +76,36 @@ describe("recorded trace waterfall", () => {
     expect(tools[0]).toMatchObject({ id: "native", label: "Run tests", end: Date.parse(at(3)) });
   });
 
+  it.each([
+    { toolCalls: [{ id: "check" }] },
+    { content: 'exec_command {"cmd":"npm test","toolCall":{"call_id":"check"}}' },
+    { toolUseId: "check" },
+  ].flatMap((identity) => [true, false].map((copyFirst) => ({ identity, copyFirst }))))(
+    "pairs the native invocation once when its display copy also carries an ID: %j",
+    ({ identity, copyFirst }) => {
+      const native = event("native", 1, "tool_call", { actorRole: "assistant", messageId: "shared", toolUseId: "check", content: 'exec_command {"cmd":"npm test"}' });
+      const copy = event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}', ...identity });
+      const data = buildTraceWaterfall([
+        event("request", 0, "prompt", { content: "Run checks" }),
+        ...(copyFirst ? [copy, native] : [native, copy]),
+        event("result", 3, "tool_result", { toolUseId: "check", content: "test output" }),
+      ]);
+      const tools = data.exchanges[0]!.steps.filter((step) => step.kind === "tool");
+      expect(tools).toHaveLength(1);
+      expect(tools[0]).toMatchObject({ id: "native", toolCall: { args: { cmd: "npm test" } }, output: "test output", end: Date.parse(at(3)) });
+    },
+  );
+
+  it("removes every display copy of one native invocation", () => {
+    const data = buildTraceWaterfall([
+      event("copy-a", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),
+      event("native", 1, "tool_call", { messageId: "shared", toolUseId: "check", content: 'exec_command {"cmd":"npm test"}' }),
+      event("copy-b", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),
+      event("result", 3, "tool_result", { toolUseId: "check", content: "test output" }),
+    ]);
+    expect(data.exchanges[0]!.steps.filter((step) => step.kind === "tool").map((step) => [step.id, step.output])).toEqual([["native", "test output"]]);
+  });
+
   it("keeps each native call's arguments and result when several calls share a message", () => {
     const data = buildTraceWaterfall([
       event("request", 0, "prompt", { content: "Run checks" }),
