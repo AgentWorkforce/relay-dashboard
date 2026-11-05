@@ -1003,7 +1003,7 @@ function SessionList({
                         )}
                         onClick={onLinkClick}
                         title={title}
-                        aria-label={title}
+                        aria-label={row.shortSummary ? `${title}. ${row.shortSummary}` : title}
                         className={`${styles.sessionLink} flex min-w-0 items-center gap-2 font-medium`}
                       >
                         <span className={styles.sessionTitle}>
