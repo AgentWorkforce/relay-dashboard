@@ -91,6 +91,35 @@ describe("recorded trace waterfall", () => {
     expect(tools[1]).toMatchObject({ id: "second", toolCall: { args: { cmd: "npm run build" } }, output: "build failed", failed: true });
   });
 
+  it.each([
+    {},
+    { metadata: { toolCall: { call_id: "second" } } },
+    { toolCalls: [{ id: "second", name: "exec_command", arguments: { cmd: "npm run build" } }] },
+    { kind: "assistant", toolCalls: [{ id: "second", name: "exec_command", arguments: { cmd: "npm run build" } }] },
+  ])("retains a typed native call without a top-level ID instead of treating it as display text: %j", (extra) => {
+    const data = buildTraceWaterfall([
+      event("request", 0, "prompt", { content: "Run checks" }),
+      event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),
+      event("first", 1, "tool_call", { actorRole: "assistant", toolUseId: "one", messageId: "shared", content: 'exec_command {"cmd":"npm run lint"}' }),
+      event("second", 1, "tool_call", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm run build"}', ...extra }),
+    ]);
+    const tools = data.exchanges[0]!.steps.filter((step) => step.kind === "tool");
+    expect(tools.map((step) => step.id)).toEqual(["first", "second"]);
+    expect(tools.map((step) => step.toolCall?.args?.cmd)).toEqual(["npm run lint", "npm run build"]);
+  });
+
+  it("enriches a single typed native call without an ID from its display copy", () => {
+    const data = buildTraceWaterfall([
+      event("request", 0, "prompt", { content: "Run checks" }),
+      event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),
+      event("native", 1, "tool_call", { actorRole: "assistant", messageId: "shared", toolName: "exec_command" }),
+      event("result", 3, "tool_result", { content: "test output" }),
+    ]);
+    const tools = data.exchanges[0]!.steps.filter((step) => step.kind === "tool");
+    expect(tools).toHaveLength(1);
+    expect(tools[0]).toMatchObject({ id: "native", toolCall: { args: { cmd: "npm test" } }, output: "test output", end: Date.parse(at(3)) });
+  });
+
   it("does not attach an uncorrelated result after a new request to an earlier call", () => {
     const data = buildTraceWaterfall([
       event("request-a", 0, "prompt", { content: "First" }),
