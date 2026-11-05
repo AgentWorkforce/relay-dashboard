@@ -70,11 +70,6 @@ const CORRELATION_KEYS = [
   "tool_call_id",
 ] as const;
 
-const CORRELATION_CONTAINERS = [
-  "toolCall", "tool_call", "functionCall", "function_call",
-  "output", "result", "item", "params",
-] as const;
-
 function correlationIdFromValue(
   value: unknown,
   allowPlainId = false,
@@ -97,7 +92,16 @@ function correlationIdFromValue(
     const id = stringValue(value.id);
     if (id) return id;
   }
-  for (const key of CORRELATION_CONTAINERS) {
+  for (const key of [
+    "toolCall",
+    "tool_call",
+    "functionCall",
+    "function_call",
+    "output",
+    "result",
+    "item",
+    "params",
+  ]) {
     const id = correlationIdFromValue(value[key], false, depth + 1);
     if (id) return id;
   }
@@ -123,46 +127,6 @@ export function toolCorrelationId(event: ReplayEvent): string | null {
     correlationIdFromValue(event.toolCalls, true) ??
     correlationIdFromValue(parsedContent(event))
   );
-}
-
-/** Comparison only: omit the selected call ID along the same metadata paths
- * used by toolCorrelationId. Preserve other IDs and every command input. */
-export function toolArgumentsForComparison(event: ReplayEvent, args: Record<string, unknown>): Record<string, unknown> {
-  // Structured argument payloads describe actual inputs, even when an input
-  // happens to have a correlation-like name. Only normalize content envelopes.
-  const metadata = Array.isArray(event.toolCalls) ? event.toolCalls.find(isRecord) : event.toolCalls;
-  if (isRecord(metadata)) {
-    const raw = metadata.args ?? metadata.arguments ?? metadata.input ?? metadata.parameters;
-    if (isRecord(raw)) return args;
-    if (typeof raw === "string") {
-      try { if (isRecord(JSON.parse(raw))) return args; } catch { /* Display-text fallback. */ }
-    }
-  }
-  const id = toolCorrelationId(event);
-  if (!id) return args;
-  type ComparedValue = { value: unknown; metadataOnly: boolean };
-  const omitId = (value: unknown, allowPlainId = false, depth = 0): ComparedValue => {
-    if (depth > 4) return { value, metadataOnly: false };
-    if (Array.isArray(value)) {
-      const items = value.map((item) => omitId(item, true, depth + 1));
-      return { value: items.map((item) => item.value), metadataOnly: items.length > 0 && items.every((item) => item.metadataOnly) };
-    }
-    if (!isRecord(value)) return { value, metadataOnly: false };
-    const result = { ...value };
-    let removed = false;
-    for (const key of CORRELATION_KEYS) if (result[key] === id) { delete result[key]; removed = true; }
-    if (allowPlainId && result.id === id) { delete result.id; removed = true; }
-    for (const key of CORRELATION_CONTAINERS) {
-      if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
-      const child = omitId(value[key], false, depth + 1);
-      // Drop only containers consisting entirely of selected-ID metadata.
-      // Explicit empties, mixed arrays and other input values remain distinct.
-      if (child.metadataOnly) { delete result[key]; removed = true; }
-      else result[key] = child.value;
-    }
-    return { value: result, metadataOnly: removed && Object.keys(result).length === 0 };
-  };
-  return omitId(args).value as Record<string, unknown>;
 }
 
 
