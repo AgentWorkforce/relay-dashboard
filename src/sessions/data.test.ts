@@ -7,6 +7,14 @@ import {
   shortProject,
 } from "./data";
 
+it("preserves only recorded short summaries without using prompt text as a substitute", () => {
+  const base = { sessionId: "s", source: "codex", summary: "A prompt, not a generated summary" };
+  expect(sessionRow({ ...base, shortSummary: "  Fixed the loader.  " }).shortSummary).toBe("Fixed the loader.");
+  for (const shortSummary of [undefined, null, "", "  ", { text: "invalid" }]) {
+    expect(sessionRow({ ...base, shortSummary }).shortSummary).toBeNull();
+  }
+});
+
 it("titles skip injected wrappers and use the first real sentence", () => {
   expect(
     promptLabel(

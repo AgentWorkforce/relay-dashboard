@@ -17,6 +17,7 @@ export type SessionRow = {
   source: string;
   title: string | null;
   summary: string | null;
+  shortSummary: string | null;
   taskTitle: string | null;
   projectId: string | null;
   projectKey: string | null;
@@ -99,6 +100,7 @@ export function sessionRow(value: Record<string, unknown>): SessionRow {
     source: String(value.source),
     title: text(catalog.title) ?? text(value.title),
     summary: text(value.summary),
+    shortSummary: text(value.shortSummary),
     taskTitle: text(value.taskTitle),
     projectId: text(value.projectId),
     projectKey:

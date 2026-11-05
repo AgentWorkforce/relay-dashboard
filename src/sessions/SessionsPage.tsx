@@ -1008,6 +1008,11 @@ function SessionList({
                       >
                         <span className={styles.sessionTitle}>
                           <span className="truncate">{title}</span>
+                          {row.shortSummary && (
+                            <span className="block truncate text-xs font-normal text-muted-foreground" title={row.shortSummary}>
+                              {row.shortSummary}
+                            </span>
+                          )}
                           <span className={styles.executionDetails}>
                             {[harnessName(row.source), row.models[0]]
                               .filter(Boolean)
