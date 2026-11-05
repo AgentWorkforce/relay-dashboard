@@ -58,3 +58,10 @@ it.each(["structured", "native-copy"])("retains recorded choices from %s questio
   expect(cards[0]).toMatchObject({ kind: "choice", question: "How should we ship?" });
   expect(cards[0]!.branches[0]).toMatchObject({ chosen: true, steps: [expect.objectContaining({ id: "native" })] });
 });
+
+ it("does not substitute one message-level question into several native calls", () => {
+  const copy = event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'functions.request_user_input {"questions":[{"question":"Which release?","options":["Stable","Canary"]}]}' });
+  const command = event("command", 1, "tool_call", { messageId: "shared", toolUseId: "command", content: 'exec_command {"cmd":"npm test"}' });
+  const question = event("question", 1, "tool_call", { messageId: "shared", toolUseId: "question", content: 'functions.request_user_input {"questions":[{"question":"How should we ship?","options":["Wait","Ship"]}]}' });
+  expect(buildDecisionTree([request, copy, command, question]).cards.filter(card => card.kind === "choice").map(card => card.question)).toEqual(["How should we ship?"]);
+});

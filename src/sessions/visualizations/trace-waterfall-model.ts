@@ -1,4 +1,4 @@
-// Ported from Cloud session visualizations, head55bfc58fb.
+// Ported from Cloud session visualizations, with tool-provenance repair183c4f35f.
 import { isToolActivity, isToolUseEvent, pairToolSteps } from "../model/activity-summary";
 import { isRecord, messageRole, type ReplayEvent } from "../model/replay-model";
 import { isCodexAutoReview } from "./session-auto-review";
@@ -112,7 +112,12 @@ function toolLabel(call: ReplayEvent, cells: ReturnType<typeof toolCells>): stri
 /** The waterfall only uses recorded instants. A result closes a tool interval;
  * a lone call remains a point even when later events exist. */
 export function buildTraceWaterfall(events: ReplayEvent[], transcript?: TranscriptCell[]): TraceWaterfallData {
-  const nativeMessageIds = new Set(events.filter((event) => event.messageId && event.toolUseId && isToolUseEvent(event)).map((event) => event.messageId));
+  const nativeMessageCounts = new Map<string, number>();
+  for (const event of events) {
+    if (event.messageId && event.toolUseId && isToolUseEvent(event))
+      nativeMessageCounts.set(event.messageId, (nativeMessageCounts.get(event.messageId) ?? 0) + 1);
+  }
+  const nativeMessageIds = new Set(nativeMessageCounts.keys());
   const transcriptCopies = new Map(events.filter((event) => event.messageId && !event.toolUseId && event.actorRole === "assistant" && isToolUseEvent(event) && nativeMessageIds.has(event.messageId)).map((event) => [event.messageId, event]));
   const sorted = events.filter((event) => Number.isFinite(Date.parse(event.ts)) && transcriptCopies.get(event.messageId) !== event)
     .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
@@ -167,7 +172,10 @@ export function buildTraceWaterfall(events: ReplayEvent[], transcript?: Transcri
     if (isToolUseEvent(event)) {
       const result = paired.get(event);
       const end = result ? Date.parse(result.ts) : NaN;
-      const displayEvent = transcriptCopies.get(event.messageId) ?? event;
+      // A message can contain several calls. Its display copy cannot identify
+      // which call owns the arguments, so retain each native call in that case.
+      const displayEvent = event.messageId && nativeMessageCounts.get(event.messageId) === 1
+        ? transcriptCopies.get(event.messageId) ?? event : event;
       const cells = toolCells({ call: displayEvent, result: result ?? null });
       const failed = [event.toolStatus, result?.toolStatus].some((status) => Boolean(status && /fail|error/i.test(status))) || cells.some((cell) => "failed" in cell && cell.failed);
       const ownAnchor = `cell-${event.eventId}:0`;

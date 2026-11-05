@@ -818,6 +818,20 @@ it("opens the gated trace and recorded decision tree without losing transcript n
   expect(new URL(graph.getAttribute("href")!, "https://relay.test").searchParams.get("workspace")).toBe(W);
 });
 
+it("keeps conversation selected when visualizations become available after mount", async () => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: undefined };
+  window.history.replaceState(null, "", "/?session=s%2F1&source=codex&workspace=w%2F1");
+  const page = render(<Dashboard />);
+  expect(await screen.findByRole("region", { name: "Conversation" })).toBeInTheDocument();
+  const streamReads = () => calls.filter(url => /\/(events|turns)$/.test(url.pathname)).length;
+  const before = streamReads();
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
+  page.rerender(<Dashboard />);
+  expect(await screen.findByRole("button", { name: "Conversation", pressed: true })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Conversation" })).toBeInTheDocument();
+  expect(streamReads()).toBe(before);
+});
+
 it("follows recorded graph relationships and keeps the workspace in Open session", async () => {
   window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
   window.history.replaceState(null, "", "/?view=graph&workspace=w%2F1");

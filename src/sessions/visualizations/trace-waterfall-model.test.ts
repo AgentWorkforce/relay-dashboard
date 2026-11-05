@@ -76,6 +76,21 @@ describe("recorded trace waterfall", () => {
     expect(tools[0]).toMatchObject({ id: "native", label: "Run tests", end: Date.parse(at(3)) });
   });
 
+  it("keeps each native call's arguments and result when several calls share a message", () => {
+    const data = buildTraceWaterfall([
+      event("request", 0, "prompt", { content: "Run checks" }),
+      event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),
+      event("first", 1, "tool_call", { toolUseId: "one", messageId: "shared", content: 'exec_command {"cmd":"npm run lint"}' }),
+      event("second", 1, "tool_call", { toolUseId: "two", messageId: "shared", content: 'exec_command {"cmd":"npm run build"}' }),
+      event("first-result", 2, "tool_result", { toolUseId: "one", content: "lint output" }),
+      event("second-result", 3, "tool_result", { toolUseId: "two", content: "build failed", toolStatus: "failed" }),
+    ]);
+    const tools = data.exchanges[0]!.steps.filter((step) => step.kind === "tool");
+    expect(tools).toHaveLength(2);
+    expect(tools[0]).toMatchObject({ id: "first", toolCall: { args: { cmd: "npm run lint" } }, output: "lint output", failed: false });
+    expect(tools[1]).toMatchObject({ id: "second", toolCall: { args: { cmd: "npm run build" } }, output: "build failed", failed: true });
+  });
+
   it("does not attach an uncorrelated result after a new request to an earlier call", () => {
     const data = buildTraceWaterfall([
       event("request-a", 0, "prompt", { content: "First" }),
