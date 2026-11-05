@@ -1,5 +1,5 @@
-// Ported from Cloud session visualizations, including copy/anchor repairs through ca18dca90.
-import { isNativeToolUseEvent, isToolActivity, isToolUseEvent, pairToolSteps, toolCorrelationId } from "../model/activity-summary";
+// Ported from Cloud session visualizations, including copy/anchor and embedded-ID repairs through de79917c3.
+import { isNativeToolUseEvent, isToolActivity, isToolUseEvent, pairToolSteps, toolArgumentsForComparison, toolCorrelationId } from "../model/activity-summary";
 import { isRecord, messageRole, type ReplayEvent } from "../model/replay-model";
 import { isCodexAutoReview } from "./session-auto-review";
 import { commandLabel, messageLabel, namedFiles, toolActionLabel } from "./trace-labels";
@@ -171,7 +171,9 @@ export function buildTraceWaterfall(events: ReplayEvent[], transcript?: Transcri
     const profiles = new Map(natives.map((native) => {
       const call = parseToolCall(native);
       const identified = identifiedCopyFor(native);
-      return [native, !call.args && !call.target && identified ? parseToolCall(identified) : call];
+      const recordedEvent = !call.args && !call.target && identified ? identified : native;
+      const recorded = recordedEvent === native ? call : parseToolCall(recordedEvent);
+      return [native, { ...recorded, args: recorded.args ? toolArgumentsForComparison(recordedEvent, recorded.args) : null }];
     }));
     const matches = new Map(anonymous.map((copy) => {
       const call = parseToolCall(copy);

@@ -70,6 +70,11 @@ const CORRELATION_KEYS = [
   "tool_call_id",
 ] as const;
 
+const CORRELATION_CONTAINERS = [
+  "toolCall", "tool_call", "functionCall", "function_call",
+  "output", "result", "item", "params",
+] as const;
+
 function correlationIdFromValue(
   value: unknown,
   allowPlainId = false,
@@ -92,16 +97,7 @@ function correlationIdFromValue(
     const id = stringValue(value.id);
     if (id) return id;
   }
-  for (const key of [
-    "toolCall",
-    "tool_call",
-    "functionCall",
-    "function_call",
-    "output",
-    "result",
-    "item",
-    "params",
-  ]) {
+  for (const key of CORRELATION_CONTAINERS) {
     const id = correlationIdFromValue(value[key], false, depth + 1);
     if (id) return id;
   }
@@ -127,6 +123,41 @@ export function toolCorrelationId(event: ReplayEvent): string | null {
     correlationIdFromValue(event.toolCalls, true) ??
     correlationIdFromValue(parsedContent(event))
   );
+}
+
+/** Comparison only: omit the selected call ID along the same metadata paths
+ * used by toolCorrelationId. Preserve other IDs and every command input. */
+export function toolArgumentsForComparison(event: ReplayEvent, args: Record<string, unknown>): Record<string, unknown> {
+  // Structured argument payloads describe actual inputs, even when an input
+  // happens to have a correlation-like name. Only normalize content envelopes.
+  const metadata = Array.isArray(event.toolCalls) ? event.toolCalls.find(isRecord) : event.toolCalls;
+  if (isRecord(metadata)) {
+    const raw = metadata.args ?? metadata.arguments ?? metadata.input ?? metadata.parameters;
+    if (isRecord(raw)) return args;
+    if (typeof raw === "string") {
+      try { if (isRecord(JSON.parse(raw))) return args; } catch { /* Display-text fallback. */ }
+    }
+  }
+  const id = toolCorrelationId(event);
+  if (!id) return args;
+  const omitId = (value: unknown, allowPlainId = false, depth = 0): unknown => {
+    if (depth > 4) return value;
+    if (Array.isArray(value)) return value.map((item) => omitId(item, true, depth + 1));
+    if (!isRecord(value)) return value;
+    const result = { ...value };
+    for (const key of CORRELATION_KEYS) if (result[key] === id) delete result[key];
+    if (allowPlainId && result.id === id) delete result.id;
+    for (const key of CORRELATION_CONTAINERS) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+      const child = omitId(value[key], false, depth + 1);
+      // Drop only containers emptied by removing metadata; an explicitly
+      // recorded empty object remains an input to the comparison.
+      if (isRecord(value[key]) && Object.keys(value[key]).length && isRecord(child) && !Object.keys(child).length) delete result[key];
+      else result[key] = child;
+    }
+    return result;
+  };
+  return omitId(args) as Record<string, unknown>;
 }
 
 

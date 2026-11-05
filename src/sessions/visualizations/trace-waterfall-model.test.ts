@@ -97,6 +97,79 @@ describe("recorded trace waterfall", () => {
     },
   );
 
+  it.each([true, false])("matches an anonymous copy when native content embeds correlation metadata (copy first: %s)", (copyFirst) => {
+    const native = event("native", 1, "tool_call", { messageId: "shared", content: 'exec_command {"cmd":"npm test","toolCall":{"call_id":"check"}}' });
+    const copy = event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' });
+    const data = buildTraceWaterfall([
+      ...(copyFirst ? [copy, native] : [native, copy]),
+      event("result", 3, "tool_result", { toolUseId: "check", content: "test output" }),
+    ]);
+    const tools = data.exchanges[0]!.steps.filter((step) => step.kind === "tool");
+    expect(tools).toHaveLength(1);
+    expect(tools[0]).toMatchObject({ id: "native", toolCall: { args: { cmd: "npm test" } }, output: "test output", end: Date.parse(at(3)) });
+  });
+
+  it.each([
+    { call_id: "check" }, { callId: "check" }, { toolUseId: "check" },
+    { tool_use_id: "check" }, { toolCallId: "check" }, { tool_call_id: "check" },
+    { tool_call: { call_id: "check" } }, { functionCall: { callId: "check" } },
+    { function_call: { tool_use_id: "check" } }, { params: { item: { call_id: "check" } } },
+  ])("matches content-envelope correlation metadata without changing recorded arguments: %j", (metadata) => {
+    const content = `exec_command ${JSON.stringify({ cmd: "npm test", ...metadata })}`;
+    const native = event("native", 1, "tool_call", { messageId: "shared", content });
+    const original = JSON.stringify(native);
+    const tools = buildTraceWaterfall([
+      native,
+      event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),
+      event("result", 3, "tool_result", { toolUseId: "check", content: "test output" }),
+    ]).exchanges[0]!.steps;
+    expect(tools.map((step) => step.id)).toEqual(["native"]);
+    expect(tools[0]).toMatchObject({ detail: 'exec_command {"cmd":"npm test"}', output: "test output", end: Date.parse(at(3)) });
+    expect(JSON.stringify(native)).toBe(original);
+  });
+
+  it.each([
+    { cmd: "npm run build", toolCall: { call_id: "check" } },
+    { cmd: "npm test", toolCall: { call_id: "check", timeout: 20 } },
+    { cmd: "npm test", toolCall: { call_id: "different" } },
+    { cmd: "npm test", payload: { call_id: "check" } },
+    { cmd: "npm test", id: "check" },
+    { cmd: "npm test", toolCall: {} },
+  ])("retains a command with different real inputs or unrelated IDs: %j", (args) => {
+    const content = `exec_command ${JSON.stringify(args)}`;
+    const tools = buildTraceWaterfall([
+      event("native", 1, "tool_call", { messageId: "shared", toolUseId: "check", content }),
+      event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),
+      event("result", 3, "tool_result", { toolUseId: "check", content: "native output" }),
+    ]).exchanges[0]!.steps;
+    expect(tools.map((step) => [step.id, step.output])).toEqual([["native", "native output"], ["copy", null]]);
+    expect(tools[0]?.detail).toBe(content);
+    expect(tools[0]?.toolCall?.args).toEqual(args);
+  });
+
+  it.each(["args", "arguments", "input", "parameters"].flatMap((key) => [false, true].map((serialized) => ({ key, serialized }))))(
+    "preserves correlation-like fields in explicit structured tool arguments: %j", ({ key, serialized }) => {
+      const args = { cmd: "npm test", toolCall: { call_id: "check" } };
+      const tools = buildTraceWaterfall([
+        event("native", 1, "tool_call", { messageId: "shared", toolCalls: [{ id: "check", name: "exec_command", [key]: serialized ? JSON.stringify(args) : args }] }),
+        event("copy", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),
+      ]).exchanges[0]!.steps;
+      expect(tools.map((step) => step.id)).toEqual(["native", "copy"]);
+      expect(tools[0]?.toolCall?.args).toEqual(args);
+    },
+  );
+
+  it.each([false, true])("preserves structured inputs supplied by an identified copy of a name-only native call (serialized: %s)", (serialized) => {
+    const args = { cmd: "npm test", toolCall: { call_id: "check" } };
+    const tools = buildTraceWaterfall([
+      event("native", 1, "tool_call", { messageId: "shared", toolUseId: "check", toolName: "exec_command" }),
+      event("identified", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}', toolCalls: [{ id: "check", arguments: serialized ? JSON.stringify(args) : args }] }),
+      event("anonymous", 1, "assistant", { actorRole: "assistant", messageId: "shared", content: 'exec_command {"cmd":"npm test"}' }),
+    ]).exchanges[0]!.steps;
+    expect(tools.map((step) => step.id)).toEqual(["native", "anonymous"]);
+    expect(tools[0]?.toolCall?.args).toEqual(args);
+  });
+
   it.each([true, false].flatMap((identified) => [true, false].map((copyFirst) => ({ identified, copyFirst }))))("keeps the surviving Conversation anchor: %j", ({ identified, copyFirst }) => {
     const native = event("native", 1, "tool_call", { actorRole: "assistant", source: "codex", messageId: "shared", toolUseId: "check", content: 'exec_command {"cmd":"npm test"}' });
     const copy = event("copy", 1, "assistant", { actorRole: "assistant", source: "codex", messageId: "shared", ...(identified ? { toolUseId: "check" } : {}), content: native.content });
