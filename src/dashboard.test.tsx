@@ -927,19 +927,24 @@ it("bounds automatic graph discovery to 80 off-page identities and reports the r
   expect(calls.some((url) => url.pathname.endsWith("/child-80/catalog"))).toBe(false);
 });
 
-it("opens a trace tool in its original collapsed conversation group", async () => {
+it.each([false, true])("opens a trace tool in its original collapsed conversation group (identified copy: %s)", async (identifiedCopy) => {
   const scroll = vi.fn();
   Element.prototype.scrollIntoView = scroll;
   vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("prefers-reduced-motion") }));
   window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
   window.history.replaceState(null, "", "/?session=s%2F1&source=codex");
+  if (identifiedCopy) {
+    const native = { ...transcript[1]!, actorRole: "assistant", messageId: "shared" };
+    const copy = { ...native, eventId: "e2-copy", type: "assistant" };
+    respond(/\/sessions\/s%2F1\/events$/, () => ({ events: [transcript[0], copy, native, ...transcript.slice(2)], members, nextCursor: null }));
+  }
   render(<Dashboard />);
   const step = await screen.findByRole("treeitem", { name: /Run tests/ });
   fireEvent.click(step);
   expect(await screen.findByRole("dialog", { name: "Trace event details" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /View in conversation/ }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Conversation", pressed: true })).toBeInTheDocument());
-  await waitFor(() => expect(window.location.hash).toContain("cell-e2"));
+  await waitFor(() => expect(window.location.hash).toContain(identifiedCopy ? "cell-e2-copy:0" : "cell-e2:0"));
   await waitFor(() => expect(scroll).toHaveBeenCalledWith({ block: "start" }));
   await waitFor(() => expect(screen.getByRole("region", { name: "Conversation" }).querySelector(".activity-group .disclosure[open]")).toBeTruthy());
 });

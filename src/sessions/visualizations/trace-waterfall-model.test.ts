@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildTraceWaterfall } from "./trace-waterfall-model";
 import { toReplayEvent } from "../model/replay-model";
+import { buildTranscript, transcriptCellAnchor } from "../model/transcript-cells";
 
 const at = (seconds: number) => new Date(Date.parse("2026-10-22T12:00:00Z") + seconds * 1000).toISOString();
 const event = (eventId: string, seconds: number, kind: string, extra: Record<string, unknown> = {}) => toReplayEvent({ eventId, ts: at(seconds), kind, ...extra })!;
@@ -95,6 +96,34 @@ describe("recorded trace waterfall", () => {
       expect(tools[0]).toMatchObject({ id: "native", toolCall: { args: { cmd: "npm test" } }, output: "test output", end: Date.parse(at(3)) });
     },
   );
+
+  it.each([true, false].flatMap((identified) => [true, false].map((copyFirst) => ({ identified, copyFirst }))))("keeps the surviving Conversation anchor: %j", ({ identified, copyFirst }) => {
+    const native = event("native", 1, "tool_call", { actorRole: "assistant", source: "codex", messageId: "shared", toolUseId: "check", content: 'exec_command {"cmd":"npm test"}' });
+    const copy = event("copy", 1, "assistant", { actorRole: "assistant", source: "codex", messageId: "shared", ...(identified ? { toolUseId: "check" } : {}), content: native.content });
+    const events = [event("request", 0, "prompt", { content: "Run checks" }), ...(copyFirst ? [copy, native] : [native, copy]), event("result", 3, "tool_result", { toolUseId: "check", content: "test output" })];
+    const transcript = buildTranscript(events);
+    const anchor = `cell-${copyFirst ? "copy" : "native"}:0`;
+    expect(transcript.map(transcriptCellAnchor)).toContain(anchor);
+    const tools = buildTraceWaterfall(events, transcript).exchanges[0]!.steps.filter((step) => step.kind === "tool");
+    expect(tools).toHaveLength(1);
+    expect(tools[0]).toMatchObject({ id: "native", anchor, output: "test output", end: Date.parse(at(3)) });
+  });
+
+  it("finds an earlier identified copy's anchor when the latest copy did not survive the transcript", () => {
+    const content = 'exec_command {"cmd":"npm test"}';
+    const common = { actorRole: "assistant", source: "codex", messageId: "shared", toolUseId: "check", content };
+    const events = [event("copy-first", 1, "assistant", common), event("native", 1, "tool_call", common), event("copy-latest", 1, "history", { ...common, type: "assistant" })];
+    const transcript = buildTranscript(events);
+    expect(transcript.map(transcriptCellAnchor)).toContain("cell-copy-first:0");
+    expect(transcript.map(transcriptCellAnchor)).not.toContain("cell-copy-latest:0");
+    expect(buildTraceWaterfall(events, transcript).exchanges[0]!.steps[0]).toMatchObject({ id: "native", anchor: "cell-copy-first:0" });
+  });
+
+  it("does not invent a Conversation link when no matched representation has an anchor", () => {
+    const common = { actorRole: "assistant", source: "codex", messageId: "shared", toolUseId: "check", content: 'exec_command {"cmd":"npm test"}' };
+    const events = [event("copy", 1, "assistant", common), event("native", 1, "tool_call", common)];
+    expect(buildTraceWaterfall(events, []).exchanges[0]!.steps[0]).toMatchObject({ id: "native", anchor: null });
+  });
 
   it.each(["content", "toolCalls", "top-level"].flatMap((identity) => [true, false].map((copyFirst) => ({ identity, copyFirst }))))(
     "enriches parallel names-only native calls from their own identified copies: %j",

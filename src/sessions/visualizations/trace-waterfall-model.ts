@@ -1,4 +1,4 @@
-// Ported from Cloud session visualizations, including anonymous-call repair 91debaf40.
+// Ported from Cloud session visualizations, including copy/anchor repairs through ca18dca90.
 import { isNativeToolUseEvent, isToolActivity, isToolUseEvent, pairToolSteps, toolCorrelationId } from "../model/activity-summary";
 import { isRecord, messageRole, type ReplayEvent } from "../model/replay-model";
 import { isCodexAutoReview } from "./session-auto-review";
@@ -143,16 +143,20 @@ export function buildTraceWaterfall(events: ReplayEvent[], transcript?: Transcri
   };
   // A matching ID establishes copy identity, including repeated copies.
   const displayCopies = events.filter((event) => isIdentifiedCopy(event) && isToolUseEvent(event));
-  const identifiedCopies = new Map<string, Map<string, ReplayEvent>>();
+  const identifiedCopies = new Map<string, Map<string, ReplayEvent[]>>();
   for (const copy of displayCopies) {
-    const copies = identifiedCopies.get(copy.messageId!) ?? new Map<string, ReplayEvent>();
-    copies.set(toolCorrelationId(copy)!, copy);
+    const copies = identifiedCopies.get(copy.messageId!) ?? new Map<string, ReplayEvent[]>();
+    const id = toolCorrelationId(copy)!;
+    const records = copies.get(id) ?? [];
+    records.push(copy);
+    copies.set(id, records);
     identifiedCopies.set(copy.messageId!, copies);
   }
-  const identifiedCopyFor = (event: ReplayEvent): ReplayEvent | undefined => {
+  const identifiedCopiesFor = (event: ReplayEvent): ReplayEvent[] => {
     const id = toolCorrelationId(event);
-    return event.messageId && id ? identifiedCopies.get(event.messageId)?.get(id) : undefined;
+    return event.messageId && id ? identifiedCopies.get(event.messageId)?.get(id) ?? [] : [];
   };
+  const identifiedCopyFor = (event: ReplayEvent): ReplayEvent | undefined => identifiedCopiesFor(event).at(-1);
   const anonymousByMessage = new Map<string, ReplayEvent[]>();
   for (const event of events) {
     if (!event.messageId || isNativeToolUseEvent(event) || toolCorrelationId(event) || event.actorRole !== "assistant" || !isToolUseEvent(event)) continue;
@@ -244,12 +248,17 @@ export function buildTraceWaterfall(events: ReplayEvent[], transcript?: Transcri
       const end = result ? Date.parse(result.ts) : NaN;
       // Copy selection is per invocation; unmatched anonymous calls stay
       // recorded activity instead of being discarded by message identity.
-      const displayEvent = identifiedCopyFor(event) ?? anonymousCopies.get(event) ?? event;
+      const anonymousCopy = anonymousCopies.get(event);
+      const displayEvent = identifiedCopyFor(event) ?? anonymousCopy ?? event;
       const cells = toolCells({ call: displayEvent, result: result ?? null });
       const failed = [event.toolStatus, result?.toolStatus].some((status) => Boolean(status && /fail|error/i.test(status))) || cells.some((cell) => "failed" in cell && cell.failed);
       const ownAnchor = `cell-${event.eventId}:0`;
       const firstIsExplored = cells[0]?.kind === "explored";
-      const anchor: string | null = transcriptAnchors.has(ownAnchor) ? ownAnchor : firstIsExplored ? lastExploredAnchor : null;
+      // The supplied Conversation transcript may have kept a different
+      // representation of this invocation. Link only to an anchor it retained.
+      const copies = [...identifiedCopiesFor(event), ...(anonymousCopy ? [anonymousCopy] : [])];
+      const copyAnchor = copies.map((copy) => `cell-${copy.eventId}:0`).find((candidate) => transcriptAnchors.has(candidate));
+      const anchor: string | null = transcriptAnchors.has(ownAnchor) ? ownAnchor : copyAnchor ?? (firstIsExplored ? lastExploredAnchor : null);
       lastExploredAnchor = cells.at(-1)?.kind === "explored" ? anchor : null;
       step = {
         id: event.eventId, kind: "tool", source: event.source, label: excerpt(toolLabel(displayEvent, cells), "Tool call"),
