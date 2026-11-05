@@ -96,3 +96,10 @@ The Timeline, Decision tree and Work graph views are ported from Cloud. They are
 Work graph requires the relaycontrol catalog identity contract (`sessionId`, `source`, `workspaceId`, `found`). Every request uses the existing `/cloud/api` cookie and workspace routes; the dashboard does not contact History directly. Explicit workspace links must match the signed-in workspace. Links to another workspace show a mismatch message without issuing session reads; relaycontrol has no workspace-switch endpoint.
 
 Discovery uses exact recorded catalog/replay identities, at most 80 additional related sessions, four concurrent sessions and ten event/turn pages per session. It does not infer causality from a shared PR or nearby timestamps. Failed/partial evidence is visible and can be retried. Hosted Cloud SQL-only PR attribution is not invented when the server does not supply it.
+
+Session details also read a recorded model summary through relaycontrol's
+workspace-scoped `/sessions/:sessionId/summary` route, matching Cloud #6011.
+The summary loads independently of the transcript and overview. Missing History
+support renders no summary block; an empty stored result says “No summary yet”.
+A failed read cannot delay the transcript or invent a summary. This requires
+the companion relaycontrol summary route; existing login and cookies are reused.

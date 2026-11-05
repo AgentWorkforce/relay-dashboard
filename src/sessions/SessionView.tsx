@@ -53,6 +53,8 @@ import { SessionDecisionTree } from "./visualizations/decision-tree";
 import { ToggleGroup, ToggleGroupItem } from "./visualizations/view-toggle";
 import { ChartGantt, Network } from "lucide-react";
 
+import { SessionModelSummary, sessionModelSummary } from "./model-summary";
+
 type Loaded = {
   events: Record<string, unknown>[];
   turns: Record<string, unknown>[];
@@ -110,6 +112,11 @@ export function SessionView({
   } | null>(null);
   const key = JSON.stringify([workspaceId, sessionId, source, event, attempt]);
   const visitedPairs = useMemo(() => ({ key, values: new Set<string>() }), [key]);
+
+  // Optional summaries must not hold the transcript or existing overview back.
+  // useLoad aborts old workspace/session reads and never displays their result.
+  const modelSummary = useLoad(source ? JSON.stringify([workspaceId, sessionId, source, attempt]) : null,
+    (signal) => sessionModelSummary(workspaceId, { sessionId, source }, signal));
   useEffect(() => () => moreRequest.current?.abort(), [key]);
   const loaded = useLoad<Loaded>(key, async (signal) => {
     const session = { sessionId, source };
@@ -201,8 +208,8 @@ export function SessionView({
   const moreError = moreFailure?.key === key ? moreFailure.error : null;
   const error = loaded.error ?? moreError;
   useEffect(() => {
-    if (error instanceof SignedOut) onSignedOut?.();
-  }, [error, onSignedOut]);
+    if (error instanceof SignedOut || modelSummary.error instanceof SignedOut) onSignedOut?.();
+  }, [error, modelSummary.error, onSignedOut]);
 
   const replay = useMemo(
     () => (data ? mergeReplay(data.events, data.turns) : []),
@@ -564,6 +571,7 @@ export function SessionView({
               <h2 className="text-xs font-medium text-muted-foreground">
                 Session overview
               </h2>
+              <SessionModelSummary summary={modelSummary.error ? { status: "unavailable" } : modelSummary.data} />
               {overviewList}
               {data.catalog?.parents.length || data.catalog?.children.length ? (
                 <section className="subagents" aria-label="Related sessions">
