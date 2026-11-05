@@ -112,6 +112,7 @@ describe("recorded trace waterfall", () => {
   it.each([
     { call_id: "check" }, { callId: "check" }, { toolUseId: "check" },
     { tool_use_id: "check" }, { toolCallId: "check" }, { tool_call_id: "check" },
+    { toolCall: [{ call_id: "check" }] }, { toolCall: [{ id: "check" }] },
     { tool_call: { call_id: "check" } }, { functionCall: { callId: "check" } },
     { function_call: { tool_use_id: "check" } }, { params: { item: { call_id: "check" } } },
   ])("matches content-envelope correlation metadata without changing recorded arguments: %j", (metadata) => {
@@ -135,6 +136,9 @@ describe("recorded trace waterfall", () => {
     { cmd: "npm test", payload: { call_id: "check" } },
     { cmd: "npm test", id: "check" },
     { cmd: "npm test", toolCall: {} },
+    { cmd: "npm test", toolCall: [] },
+    { cmd: "npm test", toolCall: [{ call_id: "check" }, { timeout: 20 }] },
+    { cmd: "npm test", flags: [{ call_id: "check" }] },
   ])("retains a command with different real inputs or unrelated IDs: %j", (args) => {
     const content = `exec_command ${JSON.stringify(args)}`;
     const tools = buildTraceWaterfall([

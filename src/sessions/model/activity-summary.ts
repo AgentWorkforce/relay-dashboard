@@ -140,24 +140,29 @@ export function toolArgumentsForComparison(event: ReplayEvent, args: Record<stri
   }
   const id = toolCorrelationId(event);
   if (!id) return args;
-  const omitId = (value: unknown, allowPlainId = false, depth = 0): unknown => {
-    if (depth > 4) return value;
-    if (Array.isArray(value)) return value.map((item) => omitId(item, true, depth + 1));
-    if (!isRecord(value)) return value;
+  type ComparedValue = { value: unknown; metadataOnly: boolean };
+  const omitId = (value: unknown, allowPlainId = false, depth = 0): ComparedValue => {
+    if (depth > 4) return { value, metadataOnly: false };
+    if (Array.isArray(value)) {
+      const items = value.map((item) => omitId(item, true, depth + 1));
+      return { value: items.map((item) => item.value), metadataOnly: items.length > 0 && items.every((item) => item.metadataOnly) };
+    }
+    if (!isRecord(value)) return { value, metadataOnly: false };
     const result = { ...value };
-    for (const key of CORRELATION_KEYS) if (result[key] === id) delete result[key];
-    if (allowPlainId && result.id === id) delete result.id;
+    let removed = false;
+    for (const key of CORRELATION_KEYS) if (result[key] === id) { delete result[key]; removed = true; }
+    if (allowPlainId && result.id === id) { delete result.id; removed = true; }
     for (const key of CORRELATION_CONTAINERS) {
       if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
       const child = omitId(value[key], false, depth + 1);
-      // Drop only containers emptied by removing metadata; an explicitly
-      // recorded empty object remains an input to the comparison.
-      if (isRecord(value[key]) && Object.keys(value[key]).length && isRecord(child) && !Object.keys(child).length) delete result[key];
-      else result[key] = child;
+      // Drop only containers consisting entirely of selected-ID metadata.
+      // Explicit empties, mixed arrays and other input values remain distinct.
+      if (child.metadataOnly) { delete result[key]; removed = true; }
+      else result[key] = child.value;
     }
-    return result;
+    return { value: result, metadataOnly: removed && Object.keys(result).length === 0 };
   };
-  return omitId(args) as Record<string, unknown>;
+  return omitId(args).value as Record<string, unknown>;
 }
 
 

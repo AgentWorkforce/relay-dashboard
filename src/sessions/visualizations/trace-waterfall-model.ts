@@ -1,4 +1,4 @@
-// Ported from Cloud session visualizations, including copy/anchor and embedded-ID repairs through de79917c3.
+// Ported from Cloud session visualizations, including copy/anchor and embedded-ID repairs through 86cdde923.
 import { isNativeToolUseEvent, isToolActivity, isToolUseEvent, pairToolSteps, toolArgumentsForComparison, toolCorrelationId } from "../model/activity-summary";
 import { isRecord, messageRole, type ReplayEvent } from "../model/replay-model";
 import { isCodexAutoReview } from "./session-auto-review";
