@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { appPath, loginHref } from "./app-path";
+import { appPath, loginHref, sessionVisualizationsEnabled } from "./app-path";
 
 afterEach(() => {
   delete window.__AGENT_RELAY_DASHBOARD_CONFIG__;
@@ -20,4 +20,13 @@ it("rejects protocol-relative and absolute configured paths", () => {
     expect(appPath()).toBe(import.meta.env.BASE_URL);
     expect(loginHref("/x")).toBe("/login?next=%2Fx");
   }
+});
+
+it.each([undefined, false, null, "true", 1])("requires an explicit boolean visualization flag (%s)", (value) => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: value };
+  expect(sessionVisualizationsEnabled()).toBe(false);
+});
+it("enables visualization views only for the explicit runtime boolean", () => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
+  expect(sessionVisualizationsEnabled()).toBe(true);
 });

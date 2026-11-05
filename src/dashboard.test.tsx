@@ -122,6 +122,7 @@ const transcript = [
 ];
 
 beforeEach(() => {
+  delete window.__AGENT_RELAY_DASHBOARD_CONFIG__;
   routes = [];
   calls.length = 0;
   window.history.replaceState(null, "", "/dashboard/");
@@ -435,7 +436,7 @@ it("renders the transcript with tool calls, results, diffs, timing, and subagent
   fireEvent.click(screen.getByRole("button", { name: "Details" }));
   expect(screen.getByRole("link", { name: "reviewer" })).toHaveAttribute(
     "href",
-    "/?session=child-1&source=codex",
+    "/?session=child-1&source=codex&workspace=w%2F1",
   );
   const resume = screen.getByRole("button", {
     name: "Resume session: copy terminal command",
@@ -783,4 +784,167 @@ it("sends a citation to a collapsed history copy to the surviving prompt", async
   await vi.waitFor(() => expect(scroll).toHaveBeenCalled());
   expect(scroll.mock.contexts[0]).toBe(document.getElementById("message-e1"));
   expect(window.location.hash).toBe("");
+});
+
+it.each([undefined, false, "true"])("does not mount graph reads with disabled or malformed runtime gate %s", async (flag) => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: flag };
+  window.history.replaceState(null, "", "/?view=graph&workspace=w%2F1");
+  render(<Dashboard />);
+  expect(await screen.findByText("Session visualizations are not enabled.")).toBeInTheDocument();
+  expect(calls.filter((url) => url.pathname.includes("/sessions"))).toEqual([]);
+});
+
+it.each(["graph", "session"])("does not read a foreign explicit workspace through the %s route", async (view) => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
+  window.history.replaceState(null, "", `/?${view === "graph" ? "view=graph&" : ""}workspace=other&session=s%2F1&source=codex`);
+  render(<Dashboard />);
+  expect(await screen.findByText("This link belongs to a different workspace.")).toBeInTheDocument();
+  expect(calls.filter((url) => url.pathname.includes("/sessions"))).toEqual([]);
+});
+
+it("opens the gated trace and recorded decision tree without losing transcript navigation", async () => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
+  window.history.replaceState(null, "", "/?session=s%2F1&source=codex&workspace=w%2F1");
+  render(<Dashboard />);
+  expect(await screen.findByRole("group", { name: "Session view" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Timeline", pressed: true })).toBeInTheDocument();
+  expect(screen.getAllByRole("region", { name: /Timeline|Trace/ }).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Decision tree", pressed: false }));
+  expect(screen.getByRole("button", { name: "Decision tree", pressed: true })).toBeInTheDocument();
+  expect(screen.getAllByRole("region", { name: "Decision tree" }).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Conversation", pressed: false }));
+  expect(await screen.findByRole("region", { name: "Conversation" })).toBeInTheDocument();
+  const graph = screen.getByRole("link", { name: "Work graph" });
+  expect(new URL(graph.getAttribute("href")!, "https://relay.test").searchParams.get("workspace")).toBe(W);
+});
+
+it("keeps conversation selected when visualizations become available after mount", async () => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: undefined };
+  window.history.replaceState(null, "", "/?session=s%2F1&source=codex&workspace=w%2F1");
+  const page = render(<Dashboard />);
+  expect(await screen.findByRole("region", { name: "Conversation" })).toBeInTheDocument();
+  const streamReads = () => calls.filter(url => /\/(events|turns)$/.test(url.pathname)).length;
+  const before = streamReads();
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
+  page.rerender(<Dashboard />);
+  expect(await screen.findByRole("button", { name: "Conversation", pressed: true })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Conversation" })).toBeInTheDocument();
+  expect(streamReads()).toBe(before);
+});
+
+it("follows recorded graph relationships and keeps the workspace in Open session", async () => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
+  window.history.replaceState(null, "", "/?view=graph&workspace=w%2F1");
+  respond(/\/sessions\/s%2F1\/catalog$/, () => ({ sessionId: "s/1", source: "codex", workspaceId: W, found: true,
+    catalog: { title: "Fix session loading" }, parents: [], children: [{ relationshipUid: "child-edge", parentSessionId: "s/1", childSessionId: "child-1", relationship: "delegated", identityStatus: "observed" }], commitLinks: [], truncated: false,
+  }));
+  render(<Dashboard />);
+  expect(await screen.findByRole("heading", { name: "Work graph" })).toBeInTheDocument();
+  const open = await screen.findByRole("link", { name: "Open session" });
+  const url = new URL(open.getAttribute("href")!, "https://relay.test");
+  expect(url.searchParams.get("workspace")).toBe(W);
+  expect(url.searchParams.get("source")).toBe("codex");
+  await waitFor(() => expect(calls.some((url) => url.pathname.includes("/child-1/catalog"))).toBe(true));
+  fireEvent.click(open);
+  expect(await screen.findByRole("group", { name: "Session view" })).toBeInTheDocument();
+  expect(window.location.search).toContain("workspace=w%2F1");
+});
+
+it("progressively loads both trace streams and stops completed cursors", async () => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
+  window.history.replaceState(null, "", "/?session=s%2F1&source=codex");
+  respond(/\/sessions\/s%2F1\/events$/, (url) => ({ events: url.searchParams.get("cursor") ? [{ ...transcript[4], eventId: "later-event" }] : transcript, members, nextCursor: url.searchParams.get("cursor") ? null : "event-next" }));
+  respond(/\/sessions\/s%2F1\/turns$/, (url) => ({ turns: [{ id: url.searchParams.get("cursor") ? "turn-next" : "turn-first", ts: now, role: "user", content: "Another request" }], nextCursor: url.searchParams.get("cursor") ? null : "turn-next" }));
+  render(<Dashboard />);
+  await screen.findByRole("group", { name: "Session view" });
+  await waitFor(() => expect(calls.filter((url) => url.pathname.endsWith("/events"))).toHaveLength(2));
+  await waitFor(() => expect(calls.filter((url) => url.pathname.endsWith("/turns"))).toHaveLength(2));
+  expect(calls.filter((url) => url.pathname.endsWith("/events")).map((url) => url.searchParams.get("cursor"))).toEqual([null, "event-next"]);
+  expect(calls.filter((url) => url.pathname.endsWith("/turns")).map((url) => url.searchParams.get("cursor"))).toEqual([null, "turn-next"]);
+});
+
+it("pauses trace loading on failure and resumes from the failed cursor after retry", async () => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
+  window.history.replaceState(null, "", "/?session=s%2F1&source=codex");
+  let failed = true;
+  respond(/\/sessions\/s%2F1\/events$/, (url) => {
+    const cursor = url.searchParams.get("cursor");
+    if (cursor === "second" && failed) return new Response("{}", { status: 503 });
+    return { events: transcript, members, nextCursor: cursor === null ? "second" : cursor === "second" ? "third" : null };
+  });
+  render(<Dashboard />);
+  const retry = await screen.findByRole("button", { name: "Retry loading history" });
+  expect(calls.filter((url) => url.pathname.endsWith("/events"))).toHaveLength(2);
+  failed = false;
+  fireEvent.click(retry);
+  await waitFor(() => expect(calls.filter((url) => url.pathname.endsWith("/events"))).toHaveLength(4));
+  expect(calls.filter((url) => url.pathname.endsWith("/events")).map((url) => url.searchParams.get("cursor"))).toEqual([null, "second", "second", "third"]);
+  expect(screen.queryByRole("button", { name: "Retry loading history" })).not.toBeInTheDocument();
+});
+
+it("stops trace auto-loading when the server repeats a cursor", async () => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
+  window.history.replaceState(null, "", "/?session=s%2F1&source=codex");
+  respond(/\/sessions\/s%2F1\/events$/, () => ({ events: transcript, members, nextCursor: "same" }));
+  render(<Dashboard />);
+  await screen.findByRole("button", { name: "Retry loading history" });
+  expect(calls.filter((url) => url.pathname.endsWith("/events"))).toHaveLength(2);
+  expect(screen.getByRole("alert")).toHaveTextContent("History pagination did not advance");
+});
+
+it("automatically discovers a recorded relative's own child without rescanning identities", async () => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
+  window.history.replaceState(null, "", "/?view=graph&workspace=w%2F1");
+  respond(/\/sessions$/, () => ({ items: [sessions[0]], members, nextCursor: null, error: false, now }));
+  respond(/\/sessions\/[^/]+\/catalog$/, (url) => {
+    const id = decodeURIComponent(/sessions\/([^/]+)\/catalog/.exec(url.pathname)![1]!);
+    const child = id === "s/1" ? "child" : id === "child" ? "grandchild" : null;
+    return { sessionId: id, source: "codex", workspaceId: W, found: true, catalog: {}, parents: [], children: child ? [{ relationshipUid: `edge-${id}`, parentSessionId: id, childSessionId: child, relationship: "delegated", identityStatus: "observed" }] : [], truncated: false };
+  });
+  respond(/\/sessions\/[^/]+\/events$/, () => ({ events: [], members, nextCursor: null }));
+  respond(/\/sessions\/[^/]+\/turns$/, () => ({ turns: [], nextCursor: null }));
+  render(<Dashboard />);
+  await waitFor(() => expect(calls.some((url) => url.pathname.endsWith("/grandchild/catalog"))).toBe(true));
+  expect(calls.filter((url) => url.pathname.endsWith("/child/catalog"))).toHaveLength(1);
+  expect(calls.filter((url) => url.pathname.endsWith("/grandchild/catalog"))).toHaveLength(1);
+});
+
+it("bounds automatic graph discovery to 80 off-page identities and reports the remaining family", async () => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
+  window.history.replaceState(null, "", "/?view=graph&workspace=w%2F1");
+  respond(/\/sessions$/, () => ({ items: [sessions[0]], members, nextCursor: null, error: false, now }));
+  respond(/\/sessions\/[^/]+\/catalog$/, (url) => {
+    const id = decodeURIComponent(/sessions\/([^/]+)\/catalog/.exec(url.pathname)![1]!);
+    return { sessionId: id, source: "codex", workspaceId: W, found: true, catalog: {}, parents: [], children: id === "s/1" ? Array.from({ length: 85 }, (_, i) => ({ relationshipUid: `edge-${i}`, parentSessionId: id, childSessionId: `child-${i}`, relationship: "delegated", identityStatus: "observed" })) : [], truncated: false };
+  });
+  respond(/\/sessions\/[^/]+\/events$/, () => ({ events: [], members, nextCursor: null }));
+  respond(/\/sessions\/[^/]+\/turns$/, () => ({ turns: [], nextCursor: null }));
+  render(<Dashboard />);
+  await screen.findByText(/Automatic discovery is limited to 80 related sessions/);
+  const relatives = () => calls.filter((url) => /\/child-\d+\/catalog$/.test(url.pathname));
+  await waitFor(() => expect(relatives()).toHaveLength(80), { timeout: 5000 });
+  expect(new Set(relatives().map((url) => url.pathname)).size).toBe(80);
+  expect(calls.some((url) => url.pathname.endsWith("/child-80/catalog"))).toBe(false);
+});
+
+it.each([false, true])("opens a trace tool in its original collapsed conversation group (identified copy: %s)", async (identifiedCopy) => {
+  const scroll = vi.fn();
+  Element.prototype.scrollIntoView = scroll;
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("prefers-reduced-motion") }));
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
+  window.history.replaceState(null, "", "/?session=s%2F1&source=codex");
+  if (identifiedCopy) {
+    const native = { ...transcript[1]!, actorRole: "assistant", messageId: "shared" };
+    const copy = { ...native, eventId: "e2-copy", type: "assistant" };
+    respond(/\/sessions\/s%2F1\/events$/, () => ({ events: [transcript[0], copy, native, ...transcript.slice(2)], members, nextCursor: null }));
+  }
+  render(<Dashboard />);
+  const step = await screen.findByRole("treeitem", { name: /Run tests/ });
+  fireEvent.click(step);
+  expect(await screen.findByRole("dialog", { name: "Trace event details" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /View in conversation/ }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Conversation", pressed: true })).toBeInTheDocument());
+  await waitFor(() => expect(window.location.hash).toContain(identifiedCopy ? "cell-e2-copy:0" : "cell-e2:0"));
+  await waitFor(() => expect(scroll).toHaveBeenCalledWith({ block: "start" }));
+  await waitFor(() => expect(screen.getByRole("region", { name: "Conversation" }).querySelector(".activity-group .disclosure[open]")).toBeTruthy());
 });

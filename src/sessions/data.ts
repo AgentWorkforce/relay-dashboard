@@ -1,3 +1,4 @@
+import { recordedPullRequest } from "./model/recorded-pull-request";
 // Session row presentation, following the hosted dashboard's
 // session-table-data.ts (labels, work status, attribution).
 import {
@@ -13,6 +14,7 @@ export type WorkState = {
 export type Member = { id: string; name: string | null };
 
 export type SessionRow = {
+  pullRequest?: { url: string; number: string };
   sessionId: string;
   source: string;
   title: string | null;
@@ -91,10 +93,12 @@ export function recordedWorkState(value: unknown): WorkState | null {
 
 /** Map a RelayHistory session summary onto a dashboard row. */
 export function sessionRow(value: Record<string, unknown>): SessionRow {
+  const pullRequest = recordedPullRequest(value.taskRefs);
   const catalog = isRecord(value.catalog) ? value.catalog : {};
   const project = isRecord(value.project) ? text(value.project.name) : null;
   const search = isRecord(value.search) ? value.search : null;
   return {
+    ...(pullRequest ? { pullRequest } : {}),
     sessionId: String(value.sessionId),
     source: String(value.source),
     title: text(catalog.title) ?? text(value.title),

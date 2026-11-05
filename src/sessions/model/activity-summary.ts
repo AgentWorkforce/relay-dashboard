@@ -29,9 +29,13 @@ function normalizedKind(event: ReplayEvent): string {
   return (event.type || event.kind).toLowerCase();
 }
 
+export function isNativeToolUseEvent(event: ReplayEvent): boolean {
+  return TOOL_USE_KINDS.has(normalizedKind(event));
+}
+
 export function isToolUseEvent(event: ReplayEvent): boolean {
   return (
-    TOOL_USE_KINDS.has(normalizedKind(event)) ||
+    isNativeToolUseEvent(event) ||
     (event.actorRole === "assistant" &&
       /^[\w.:-]+\s+\{[\s\S]*\}$/.test(event.content?.trim() ?? ""))
   );

@@ -11,7 +11,7 @@ const ready = {
   builtAt: "2026-11-05T05:01:00Z",
   state: { state: "done", classifiedAt: "2026-11-05T05:00:00Z" },
 } as const;
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); delete window.__AGENT_RELAY_DASHBOARD_CONFIG__; });
 
 it("reads the fixed summary route with the browser cookie and validates the projection", async () => {
   const fetch = vi.fn().mockResolvedValue(Response.json({ summary: ready }));
@@ -168,4 +168,23 @@ it("discards an old workspace's pending summary after navigation", async () => {
     old(Response.json({ summary: ready }));
   });
   expect(screen.queryByText(ready.summary)).toBeNull();
+});
+
+it("keeps visualizations and conversation usable while the independently loaded summary settles", async () => {
+  window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { sessionVisualizations: true };
+  let finish!: (response: Response) => void;
+  history(() => new Promise<Response>((resolve) => { finish = resolve; }));
+  render(<SessionView workspaceId="w" sessionId="s" source="codex" event={null} />);
+  expect(await screen.findByRole("button", { name: "Timeline", pressed: true })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Details" }));
+  expect(screen.getByRole("heading", { name: "Session overview" })).toBeVisible();
+  expect(screen.queryByText(ready.summary)).not.toBeInTheDocument();
+  await act(async () => { finish(Response.json({ summary: ready })); });
+  expect(await screen.findByText(ready.summary)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Decision tree" }));
+  expect(screen.getByRole("button", { name: "Decision tree", pressed: true })).toBeInTheDocument();
+  expect(screen.getByText(ready.summary)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Conversation" }));
+  expect(await screen.findByText("Transcript remains usable")).toBeVisible();
+  expect(screen.getByText(ready.summary)).toBeVisible();
 });

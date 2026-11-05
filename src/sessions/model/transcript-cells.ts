@@ -75,7 +75,20 @@ export function parseToolCall(event: ReplayEvent): {
 } {
   const content = event.content?.trim() ?? "";
   const leading = /^([\w.:/-]+)(?:\s+|$)/.exec(content);
-  const name = event.toolName ?? leading?.[1] ?? "";
+  const metadata = Array.isArray(event.toolCalls) ? event.toolCalls.find(isRecord) : event.toolCalls;
+  const recorded = isRecord(metadata) ? metadata : null;
+  const recordedName = recorded?.name ?? recorded?.tool;
+  const name = event.toolName ?? (typeof recordedName === "string" ? recordedName : null) ?? leading?.[1] ?? "";
+  const rawArgs = recorded?.args ?? recorded?.arguments ?? recorded?.input ?? recorded?.parameters;
+  if (isRecord(rawArgs)) return { name, args: rawArgs, target: null };
+  if (typeof rawArgs === "string") {
+    try {
+      const args: unknown = JSON.parse(rawArgs);
+      if (isRecord(args)) return { name, args, target: null };
+    } catch {
+      // Fall back to recorded display text for incomplete structured arguments.
+    }
+  }
   const rest =
     leading && leading[1] === name ? content.slice(leading[0].length) : content;
   if (rest.startsWith("{")) {
@@ -86,7 +99,7 @@ export function parseToolCall(event: ReplayEvent): {
       // Truncated or display-only argument text still names a target.
     }
   }
-  return { name, args: null, target: rest || null };
+  return { name, args: null, target: rest && rest !== event.kind && rest !== event.type ? rest : null };
 }
 
 // Claude Code wraps oversized results and tool errors; show only their text.

@@ -30,6 +30,11 @@ require_path() {
   esac
 }
 
+session_visualizations="${DASHBOARD_SESSION_VISUALIZATIONS_ENABLED:-false}"
+case "$session_visualizations" in
+  true|false) ;;
+  *) echo "40-runtime-config: DASHBOARD_SESSION_VISUALIZATIONS_ENABLED must be true or false" >&2; exit 1 ;;
+esac
 app_path="${DASHBOARD_APP_PATH:-/}"
 api_base_path="${DASHBOARD_API_BASE_PATH:-/cloud/api}"
 login_path="${DASHBOARD_LOGIN_PATH:-/login}"
@@ -69,6 +74,7 @@ esac
 tmp="${target}.tmp.$$"
 {
   printf 'window.__AGENT_RELAY_DASHBOARD_CONFIG__ = Object.freeze({\n'
+  printf '  sessionVisualizations: %s,\n' "$session_visualizations"
   printf '  appPath: %s,\n' "$(json_string "$app_path" DASHBOARD_APP_PATH)"
   printf '  apiBasePath: %s,\n' "$(json_string "$api_base_path" DASHBOARD_API_BASE_PATH)"
   printf '  loginPath: %s,\n' "$(json_string "$login_path" DASHBOARD_LOGIN_PATH)"
