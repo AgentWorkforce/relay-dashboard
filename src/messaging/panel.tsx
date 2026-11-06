@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { getAccount, SignedOut } from "../api/client";
 import { loginHref, redirectBrowser } from "../app-path";
+import { createClientMessageId } from "./client-message-id";
 import {
   ensurePerson,
   listPeople,
@@ -108,7 +109,7 @@ export function MessagingPanel() {
     const existing = pending.current.get(key);
     const op: PendingSend = existing && existing.text === typed
       ? existing
-      : { id: `ui-${crypto.randomUUID()}`, text: typed };
+      : { id: createClientMessageId(), text: typed };
     pending.current.set(key, op);
     const gen = generation.current;
     const recipient = selected.name;

@@ -21,6 +21,14 @@ vi.mock("../api/client", () => ({
 const people = {
   people: [
     {
+      userId: "user-2",
+      displayName: "Owner",
+      email: "owner@example.test",
+      handle: "@mowner",
+      name: "mowner",
+      photo: null,
+    },
+    {
       userId: "user-1",
       displayName: "Ada",
       email: "ada@example.test",
@@ -94,6 +102,7 @@ it("lists a person, shows an inbound message, and sends once", async () => {
   vi.stubGlobal("crypto", { randomUUID: () => "1" });
   render(<MessagingPanel />);
   fireEvent.click(await screen.findByRole("button", { name: "Ada @mada" }));
+  expect(screen.queryByRole("button", { name: "Owner @mowner" })).toBeNull();
   expect(await screen.findByText("hello")).toBeInTheDocument();
   expect(screen.getByText("from ada")).toBeInTheDocument();
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "again" } });
@@ -104,6 +113,9 @@ it("lists a person, shows an inbound message, and sends once", async () => {
   expect(String(posts[0]?.[0])).toContain("/identity/credential");
   expect((posts[0]?.[1] as RequestInit).body).toBe("{}");
   expect(String(posts[1]?.[0])).toContain("/cloud/api/v1/workspaces/ws-1/messaging/conversations/mada");
+  expect(JSON.parse(String((posts[1]?.[1] as RequestInit).body))).toEqual({
+    text: "again", clientMessageId: "ui-1",
+  });
 });
 
 it("sends a double click once and retries an uncertain send with the same id", async () => {
