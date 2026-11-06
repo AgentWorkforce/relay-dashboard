@@ -88,3 +88,10 @@ own origin when that origin qualifies; a dashboard served over plain `http`
 Desktop links here.
 
 `npm run check` runs lint, tests and the production build. Apache-2.0.
+
+Session details also read a recorded model summary through relaycontrol's
+workspace-scoped `/sessions/:sessionId/summary` route, matching Cloud #6011.
+The summary loads independently of the transcript and overview. Missing History
+support renders no summary block; an empty stored result says “No summary yet”.
+A failed read cannot delay the transcript or invent a summary. This requires
+the companion relaycontrol summary route; existing login and cookies are reused.

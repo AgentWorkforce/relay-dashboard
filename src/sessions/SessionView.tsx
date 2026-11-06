@@ -47,6 +47,7 @@ import {
 import { formatSessionDuration } from "./model/session-timing";
 import { backHref, onLinkClick, sessionHref } from "./route";
 import { Transcript } from "./Transcript";
+import { SessionModelSummary, sessionModelSummary } from "./model-summary";
 
 type Loaded = {
   events: Record<string, unknown>[];
@@ -95,6 +96,10 @@ export function SessionView({
     nextCursor: string | null;
   } | null>(null);
   const key = JSON.stringify([workspaceId, sessionId, source, event, attempt]);
+  // Optional summaries must not hold the transcript or existing overview back.
+  // useLoad aborts old workspace/session reads and never displays their result.
+  const modelSummary = useLoad(source ? JSON.stringify([workspaceId, sessionId, source, attempt]) : null,
+    (signal) => sessionModelSummary(workspaceId, { sessionId, source }, signal));
   useEffect(() => () => moreRequest.current?.abort(), [key]);
   const loaded = useLoad<Loaded>(key, async (signal) => {
     const session = { sessionId, source };
@@ -171,8 +176,8 @@ export function SessionView({
   const moreError = moreFailure?.key === key ? moreFailure.error : null;
   const error = loaded.error ?? moreError;
   useEffect(() => {
-    if (error instanceof SignedOut) onSignedOut?.();
-  }, [error, onSignedOut]);
+    if (error instanceof SignedOut || modelSummary.error instanceof SignedOut) onSignedOut?.();
+  }, [error, modelSummary.error, onSignedOut]);
 
   const replay = useMemo(
     () => (data ? mergeReplay(data.events, data.turns) : []),
@@ -509,6 +514,7 @@ export function SessionView({
               <h2 className="text-xs font-medium text-muted-foreground">
                 Session overview
               </h2>
+              <SessionModelSummary summary={modelSummary.error ? { status: "unavailable" } : modelSummary.data} />
               {overviewList}
               {data.catalog?.parents.length || data.catalog?.children.length ? (
                 <section className="subagents" aria-label="Related sessions">
