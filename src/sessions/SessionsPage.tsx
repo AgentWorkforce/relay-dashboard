@@ -1003,11 +1003,16 @@ function SessionList({
                         )}
                         onClick={onLinkClick}
                         title={title}
-                        aria-label={title}
+                        aria-label={row.shortSummary ? `${title}. ${row.shortSummary}` : title}
                         className={`${styles.sessionLink} flex min-w-0 items-center gap-2 font-medium`}
                       >
                         <span className={styles.sessionTitle}>
                           <span className="truncate">{title}</span>
+                          {row.shortSummary && (
+                            <span className="block truncate text-xs font-normal text-muted-foreground" title={row.shortSummary}>
+                              {row.shortSummary}
+                            </span>
+                          )}
                           <span className={styles.executionDetails}>
                             {[harnessName(row.source), row.models[0]]
                               .filter(Boolean)

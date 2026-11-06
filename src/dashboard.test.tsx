@@ -194,8 +194,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 it("lists sessions with agent, project, people, and status, linking in-app", async () => {
+  const shortSummary = "Restored session loading after a History outage.";
+  respond(/\/sessions$/, () => ({
+    items: [{ ...sessions[0], shortSummary }, sessions[1]], members, nextCursor: null, error: false, now,
+  }));
   render(<Dashboard />);
-  const link = await screen.findByRole("link", { name: "Fix session loading" });
+  const link = await screen.findByRole("link", { name: `Fix session loading. ${shortSummary}` });
   expect(link).toHaveAttribute("href", "/?session=s%2F1&source=codex");
   expect(
     screen.queryByRole("button", { name: "Retry" }),
@@ -206,6 +210,7 @@ it("lists sessions with agent, project, people, and status, linking in-app", asy
   expect(within(row).getByText("Alex")).toBeInTheDocument();
   expect(within(row).getByText("Active")).toBeInTheDocument();
   expect(within(row).getByText("1 subagent")).toBeInTheDocument();
+  expect(within(row).getByText(shortSummary)).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Write docs" })).toBeInTheDocument();
   expect(
     calls.find((url) => url.pathname === base)?.searchParams.get("metadata"),
