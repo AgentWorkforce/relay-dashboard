@@ -6,6 +6,7 @@ import { DevicePage } from "./device/DevicePage";
 import { userCodeFromHash } from "./device/api";
 import { parseRoute } from "./sessions/route";
 import { Shell } from "./shell/shell";
+import { MessagingPanel } from "./messaging/panel";
 
 /** Hash routes keep the static host simple (no SPA fallback needed). */
 function route(hash: string) {
@@ -14,6 +15,8 @@ function route(hash: string) {
     return { page: "device" as const, path: "", section: "" };
   const flows = /^#(\/flows(?:\/.*)?)$/.exec(hash);
   if (flows) return { page: "flows" as const, path: flows[1]!, section: "" };
+  if (hash === "#/messages" || hash.startsWith("#/messages?"))
+    return { page: "messages" as const, path: "", section: "" };
   const settings = /^#\/settings(?:\/([a-z-]+))?$/.exec(hash);
   if (settings)
     return {
@@ -42,6 +45,8 @@ function chrome(current: ReturnType<typeof route>) {
                 : "Flows",
     };
   }
+  if (current.page === "messages")
+    return { rail: "Agents" as const, label: "Messages" };
   if (current.page === "settings")
     return { rail: "Settings" as const, label: "Settings" };
   return {
@@ -77,6 +82,7 @@ export function App() {
     <Shell rail={rail} label={label}>
       {current.page === "flows" && <FlowsApp path={current.path} />}
       {current.page === "settings" && <Settings section={current.section} />}
+      {current.page === "messages" && <MessagingPanel />}
       {current.page === "sessions" && <Dashboard />}
     </Shell>
   );

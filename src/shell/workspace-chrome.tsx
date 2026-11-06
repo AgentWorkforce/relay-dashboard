@@ -18,6 +18,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   PanelLeftOpen,
+  MessageSquare,
   Settings2,
   X,
 } from "lucide-react";
@@ -197,6 +198,7 @@ export function WorkspaceChrome({
   const brand = branding();
   const views: ViewLink[] = [
     { href: appPath(), label: "Sessions", icon: SessionsIcon, rail: "Agents" },
+    { href: "#/messages", label: "Messages", icon: MessageSquare, rail: "Agents" },
     { href: "#/flows", label: "Flows", icon: FlowsIcon, rail: "Flows" },
   ];
 
