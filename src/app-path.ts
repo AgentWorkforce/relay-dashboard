@@ -57,3 +57,8 @@ export function loginHref(
       : "/login";
   return `${login}?next=${encodeURIComponent(next)}`;
 }
+
+/** Leave the current page. Tests replace this instead of `window.location`. */
+export function redirectBrowser(href: string): void {
+  window.location.replace(href);
+}

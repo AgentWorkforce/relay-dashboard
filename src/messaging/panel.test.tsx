@@ -3,6 +3,16 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { getAccount, SignedOut } from "../api/client";
 import { MessagingPanel } from "./panel";
 
+const redirectBrowser = vi.hoisted(() => vi.fn());
+
+vi.mock("../app-path", async () => {
+  const actual = await vi.importActual<typeof import("../app-path")>("../app-path");
+  return {
+    ...actual,
+    redirectBrowser: (href: string) => redirectBrowser(href),
+  };
+});
+
 vi.mock("../api/client", () => ({
   getAccount: vi.fn(),
   SignedOut: class SignedOut extends Error {},
@@ -50,32 +60,18 @@ function signedIn() {
 afterEach(() => {
   vi.unstubAllGlobals();
   delete window.__AGENT_RELAY_DASHBOARD_CONFIG__;
+  window.location.hash = "";
+  redirectBrowser.mockReset();
   vi.restoreAllMocks();
 });
 
-function stubLocation(hash = "#/messages") {
-  const replace = vi.fn();
-  const current = window.location;
-  Reflect.deleteProperty(window, "location");
-  Object.defineProperty(window, "location", {
-    configurable: true,
-    value: {
-      pathname: current.pathname,
-      search: current.search,
-      hash,
-      replace,
-    },
-  });
-  return replace;
-}
-
 it("redirects a signed-out visitor to the configured login path", async () => {
   window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { loginPath: "/session/login" };
-  const replace = stubLocation();
+  window.location.hash = "#/messages";
   vi.mocked(getAccount).mockRejectedValue(new SignedOut());
   render(<MessagingPanel />);
-  await waitFor(() => expect(replace).toHaveBeenCalled());
-  const target = String(replace.mock.calls[0]?.[0]);
+  await waitFor(() => expect(redirectBrowser).toHaveBeenCalled());
+  const target = String(redirectBrowser.mock.calls[0]?.[0]);
   expect(target.startsWith("/session/login?next=")).toBe(true);
   expect(decodeURIComponent(target.split("next=")[1] ?? "")).toContain("#/messages");
   expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
@@ -239,7 +235,7 @@ it("does not keep the previous person's thread when a load fails, and follows a 
   });
   vi.stubGlobal("fetch", fetch);
   window.__AGENT_RELAY_DASHBOARD_CONFIG__ = { loginPath: "/session/login" };
-  const replace = stubLocation();
+  window.location.hash = "#/messages";
   render(<MessagingPanel />);
   fireEvent.click(await screen.findByRole("button", { name: "Ada @mada" }));
   expect(await screen.findByText("hello")).toBeInTheDocument();
@@ -251,6 +247,106 @@ it("does not keep the previous person's thread when a load fails, and follows a 
   unauthorized = true;
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "later" } });
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  await waitFor(() => expect(replace).toHaveBeenCalled());
-  expect(String(replace.mock.calls[0]?.[0])).toContain("/session/login?next=");
+  await waitFor(() => expect(redirectBrowser).toHaveBeenCalled());
+  expect(String(redirectBrowser.mock.calls[0]?.[0])).toContain("/session/login?next=");
+});
+
+it("sends an edit after an uncertain send as a new message", async () => {
+  signedIn();
+  let sends = 0;
+  const fetch = vi.fn(async (path: string, init?: RequestInit) => {
+    if (String(path).endsWith("/identity/credential")) return Response.json({ identity: { name: "mowner" } });
+    if (String(path).endsWith("/people")) return Response.json(people);
+    if (init?.method === "POST") {
+      sends += 1;
+      const body = JSON.parse(String(init.body)) as { clientMessageId?: string; text?: string };
+      if (sends === 1) return Response.json({ error: "send_uncertain" }, { status: 502 });
+      return Response.json({
+        you: "mowner",
+        message: { id: "m-new", clientMessageId: body.clientMessageId, text: body.text, mine: true },
+      });
+    }
+    return Response.json(thread);
+  });
+  vi.stubGlobal("fetch", fetch);
+  let ids = 0;
+  vi.stubGlobal("crypto", { randomUUID: () => `0000000${++ids}` });
+  render(<MessagingPanel />);
+  fireEvent.click(await screen.findByRole("button", { name: "Ada @mada" }));
+  await screen.findByText("hello");
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "original" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("will not send it twice");
+  expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("original");
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "edited after" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  expect(await screen.findByText("edited after")).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("");
+  const bodies = fetch.mock.calls
+    .filter((call) => String(call[0]).includes("/conversations/") && (call[1] as RequestInit | undefined)?.method === "POST")
+    .map((call) => JSON.parse(String((call[1] as RequestInit).body)) as { clientMessageId: string; text: string });
+  expect(bodies.map((body) => body.text)).toEqual(["original", "edited after"]);
+  expect(bodies[1]?.clientMessageId).not.toBe(bodies[0]?.clientMessageId);
+});
+
+it("clears a sent draft after the view moves to another thread", async () => {
+  signedIn();
+  const reads = new Map<string, (response: Response) => void>();
+  let sendRelease: ((response: Response) => void) | undefined;
+  const fetch = vi.fn(async (path: string, init?: RequestInit) => {
+    const target = String(path);
+    if (target.endsWith("/identity/credential")) return Response.json({ identity: { name: "mowner" } });
+    if (target.endsWith("/people")) return Response.json(people);
+    if (init?.method === "POST") return new Promise<Response>((resolve) => { sendRelease = resolve; });
+    const name = target.includes("/mbob") ? "mbob" : "mada";
+    return new Promise<Response>((resolve) => { reads.set(name, resolve); });
+  });
+  vi.stubGlobal("fetch", fetch);
+  vi.stubGlobal("crypto", { randomUUID: () => "0000000b" });
+  render(<MessagingPanel />);
+  fireEvent.click(await screen.findByRole("button", { name: "Ada @mada" }));
+  reads.get("mada")?.(Response.json(thread));
+  expect(await screen.findByText("hello")).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "for ada" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  fireEvent.click(screen.getByRole("button", { name: "Bob @mbob" }));
+  reads.get("mbob")?.(Response.json({ you: "mowner", peer: "mbob", messages: [], earlier: null }));
+  expect(await screen.findByRole("heading", { name: "Bob" })).toBeInTheDocument();
+  sendRelease?.(Response.json({
+    you: "mowner",
+    message: { id: "late", clientMessageId: "ui-0000000b", text: "for ada", mine: true },
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "Ada @mada" }));
+  reads.get("mada")?.(Response.json(thread));
+  expect(await screen.findByText("hello")).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue(""));
+});
+
+it("does not send while the conversation is still loading", async () => {
+  signedIn();
+  let resolveRead: ((response: Response) => void) | undefined;
+  const fetch = vi.fn(async (path: string, init?: RequestInit) => {
+    if (String(path).endsWith("/identity/credential")) return Response.json({ identity: { name: "mowner" } });
+    if (String(path).endsWith("/people")) return Response.json(people);
+    if (init?.method === "POST") {
+      return Response.json({
+        you: "mowner",
+        message: { id: "m-early", clientMessageId: "ui-early", text: "too soon", mine: true },
+      });
+    }
+    return new Promise<Response>((resolve) => { resolveRead = resolve; });
+  });
+  vi.stubGlobal("fetch", fetch);
+  render(<MessagingPanel />);
+  fireEvent.click(await screen.findByRole("button", { name: "Ada @mada" }));
+  const send = await screen.findByRole("button", { name: "Send" });
+  expect(send).toBeDisabled();
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "too soon" } });
+  fireEvent.submit(send.closest("form")!);
+  const posts = () => fetch.mock.calls.filter((call) =>
+    String(call[0]).includes("/conversations/") && (call[1] as RequestInit | undefined)?.method === "POST");
+  expect(posts()).toHaveLength(0);
+  resolveRead?.(Response.json(thread));
+  expect(await screen.findByText("hello")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
 });

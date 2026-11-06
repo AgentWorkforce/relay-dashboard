@@ -71,6 +71,19 @@ type ViewLink = {
   rail: RailSection;
 };
 
+// A shared rail has more than one link. A session detail is still Sessions.
+function viewIsCurrent(
+  name: string,
+  target: RailSection,
+  rail: RailSection,
+  label: string,
+  views: readonly ViewLink[],
+): boolean {
+  if (rail !== target) return false;
+  if (views.filter((view) => view.rail === target).length < 2) return true;
+  return name === (label === "Session" ? "Sessions" : label);
+}
+
 export function WorkspaceChrome({
   children,
   rail,
@@ -226,7 +239,7 @@ export function WorkspaceChrome({
               title={name}
               href={href}
               className={s.sidebarRow}
-              aria-current={rail === target ? "page" : undefined}
+              aria-current={viewIsCurrent(name, target, rail, label, views) ? "page" : undefined}
               onClick={closeSidebar}
             >
               <Icon aria-hidden="true" />

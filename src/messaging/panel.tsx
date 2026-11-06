@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { getAccount, SignedOut } from "../api/client";
-import { loginHref } from "../app-path";
+import { loginHref, redirectBrowser } from "../app-path";
 import {
   ensurePerson,
   listPeople,
@@ -14,14 +14,7 @@ const MAX_MESSAGE_CHARS = 16_000;
 
 type Person = { userId: string; displayName: string; handle: string; name: string };
 type Message = { id: string | null; clientMessageId?: string; text: string; mine: boolean };
-type PendingSend = {
-  id: string;
-  workspaceId: string;
-  recipient: string;
-  text: string;
-  draftVersion: number;
-  terminal: boolean;
-};
+type PendingSend = { id: string; text: string };
 
 function threadKey(workspaceId: string, recipient: string): string {
   return `${workspaceId}:${recipient}`;
@@ -42,10 +35,9 @@ export function MessagingPanel() {
   const inFlightThreads = useRef(new Set<string>());
   const pending = useRef(new Map<string, PendingSend>());
   const drafts = useRef<Record<string, string>>({});
-  const draftVersion = useRef(0);
 
   useEffect(() => {
-    if (signedOut) window.location.replace(loginHref());
+    if (signedOut) redirectBrowser(loginHref());
   }, [signedOut]);
 
   useEffect(() => {
@@ -72,7 +64,6 @@ export function MessagingPanel() {
   }, []);
 
   function rememberDraft(value: string, person: Person | null, workspace: string | null) {
-    draftVersion.current += 1;
     setDraft(value);
     if (workspace && person) drafts.current[threadKey(workspace, person.name)] = value;
   }
@@ -87,7 +78,6 @@ export function MessagingPanel() {
     setError(null);
     setLoading(true);
     const restored = drafts.current[threadKey(workspaceId, person.name)] ?? "";
-    draftVersion.current += 1;
     setDraft(restored);
     try {
       const thread = await readConversation(workspaceId, person.name);
@@ -105,7 +95,7 @@ export function MessagingPanel() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!workspaceId || !selected) return;
+    if (loading || !workspaceId || !selected) return;
     const key = threadKey(workspaceId, selected.name);
     if (inFlightThreads.current.has(key)) return;
     const typed = draft.trim();
@@ -114,34 +104,28 @@ export function MessagingPanel() {
       setError(`Messages must be 1–${MAX_MESSAGE_CHARS} characters.`);
       return;
     }
+    // Same text keeps the uncertain id. A different draft is a new message.
     const existing = pending.current.get(key);
-    const reusable = existing && !existing.terminal ? existing : null;
-    const op: PendingSend = reusable ?? {
-      id: `ui-${crypto.randomUUID()}`,
-      workspaceId,
-      recipient: selected.name,
-      text: typed,
-      draftVersion: draftVersion.current,
-      terminal: false,
-    };
+    const op: PendingSend = existing && existing.text === typed
+      ? existing
+      : { id: `ui-${crypto.randomUUID()}`, text: typed };
     pending.current.set(key, op);
     const gen = generation.current;
     const recipient = selected.name;
-    const submittedVersion = draftVersion.current;
     inFlightThreads.current.add(key);
     setSendingThread(key);
     setError(null);
     try {
       const sent = await sendMessage(workspaceId, recipient, op.text, op.id);
       pending.current.delete(key);
-      if (gen !== generation.current || selectedRef.current?.name !== recipient) return;
+      const draftWasSent = (drafts.current[key] ?? "").trim() === op.text;
+      if (draftWasSent) drafts.current[key] = "";
+      const stillHere = selectedRef.current?.name === recipient;
+      if (draftWasSent && stillHere) setDraft("");
+      if (gen !== generation.current || !stillHere) return;
       setMessages((current) => current.some((message) => message.id && message.id === sent.message.id)
         ? current
         : [...current, sent.message]);
-      if (draftVersion.current === submittedVersion) {
-        drafts.current[key] = "";
-        setDraft("");
-      }
     } catch (caught) {
       if (gen !== generation.current || selectedRef.current?.name !== recipient) return;
       if (caught instanceof MessagingSignedOut) {
@@ -196,7 +180,7 @@ export function MessagingPanel() {
               />
             </label>
             <p>Messages can be up to {MAX_MESSAGE_CHARS} characters.</p>
-            <button type="submit" disabled={sendingThread === threadKey(workspaceId ?? "", selected.name)}>Send</button>
+            <button type="submit" disabled={loading || sendingThread === threadKey(workspaceId ?? "", selected.name)}>Send</button>
           </form>
         </div>
       )}

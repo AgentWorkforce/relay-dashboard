@@ -81,6 +81,22 @@ it("marks the current rail and keeps hosted-only views out", () => {
   expect(screen.getByRole("heading", { name: "Flows" })).toBeInTheDocument();
 });
 
+it("marks only the open agents view when sessions and messages share a rail", () => {
+  const chrome = (label: string) => (
+    <WorkspaceChrome rail="Agents" label={label}>
+      <p>content</p>
+    </WorkspaceChrome>
+  );
+  const view = render(chrome("Messages"));
+  const views = screen.getByRole("navigation", { name: "Workspace views" });
+  expect(within(views).getByRole("link", { name: "Messages" })).toHaveAttribute("aria-current", "page");
+  expect(within(views).getByRole("link", { name: "Sessions" })).not.toHaveAttribute("aria-current");
+  view.rerender(chrome("Session"));
+  expect(within(views).getByRole("link", { name: "Sessions" })).toHaveAttribute("aria-current", "page");
+  expect(within(views).getByRole("link", { name: "Messages" })).not.toHaveAttribute("aria-current");
+  expect(within(views).getByRole("link", { name: "Flows" })).not.toHaveAttribute("aria-current");
+});
+
 it("lets pages replace the heading and fill the sidebar", () => {
   render(
     <WorkspaceChrome rail="Agents" label="Sessions">
