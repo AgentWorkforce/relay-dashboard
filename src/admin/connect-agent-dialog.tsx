@@ -249,7 +249,7 @@ export function ConnectAgentDialog({
           <X size={18} />
         </button>
         {selected ? (
-          <button type="button" className={s.back} onClick={reset}>
+          <button type="button" className={`${s.back} ${s.providerBack}`} onClick={reset}>
             <ArrowLeft size={15} /> All agents
           </button>
         ) : null}
