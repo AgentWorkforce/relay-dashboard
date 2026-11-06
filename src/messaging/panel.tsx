@@ -154,7 +154,7 @@ export function MessagingPanel() {
         return;
       }
       if (caught instanceof MessagingRequestError && caught.code === "send_uncertain") {
-        setError("The relay did not confirm the message. Retrying will not send it twice.");
+        setError("The relay did not confirm the message. It may have been delivered. Sending again will not send it twice.");
         return;
       }
       setError("Couldn’t send that message.");
